@@ -1,6 +1,6 @@
 {
   "name": "dsh-fish",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Fish 自建 DSH 插件全家桶聚合包：一键安装全部本人自建插件（approval-guide / session-title-refresh / git-sync）。",
   "type": "module",
   "main": "./lib/index.js",

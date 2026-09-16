@@ -49,11 +49,17 @@ function makeCtx(sessions) {
     streamCalls: [],
     warnings: [],
     errors: [],
-    /** 默认的假模型输出；单个用例可替换。 */
+    /**
+     * 默认的假模型输出；单个用例可替换。
+     *
+     * 注意 `finish.reason` 必须是 DSH 真实协议里的**对象**（`{ kind }`）：
+     * 早期测试替身喂的是字符串 `'stop'`，正好掩盖了"把对象当字符串用"的缺陷，
+     * 结果真实会话第 3 轮自动命名全部报「结束原因异常（[object Object]）」。
+     */
     streamScript: () => [
       { type: 'block-start', index: 0, blockType: 'text' },
       { type: 'text-delta', index: 0, text: '"插件自动命名"' },
-      { type: 'finish', reason: 'stop' },
+      { type: 'finish', reason: { kind: 'stop' } },
     ],
   };
 
@@ -291,18 +297,42 @@ test('提供方：工具调用或超长结束原因都判为失败', async () =>
 
   api.streamScript = () => [
     { type: 'block-start', index: 0, blockType: 'tool-call' },
-    { type: 'finish', reason: 'tool-calls' },
+    { type: 'finish', reason: { kind: 'tool-calls' } },
   ];
   await assert.rejects(() => api.provider.generate(request), /text only|tool/);
 
   api.streamScript = () => [
     { type: 'text-delta', index: 0, text: '半截' },
-    { type: 'finish', reason: 'max-tokens' },
+    { type: 'finish', reason: { kind: 'max-tokens' } },
   ];
   await assert.rejects(() => api.provider.generate(request), /max-tokens/);
 
-  api.streamScript = () => [{ type: 'finish', reason: 'stop' }];
+  api.streamScript = () => [{ type: 'finish', reason: { kind: 'stop' } }];
   await assert.rejects(() => api.provider.generate(request), /没有产出文本/);
+});
+
+test('提供方：模型报错时给出具体原因，而不是 [object Object]', async () => {
+  const sessions = new Map();
+  const { ctx, api } = makeCtx(sessions);
+  apply(ctx, {});
+  const session = makeSession('session-err');
+  const request = { session, messages: [{ seq: 0, text: '你好' }], route: { provider: 'p', model: 'm' }, signal: new AbortController().signal };
+
+  // 回归：真实适配器报错时 reason 是 { kind: 'error', failure: {...} }，
+  // 曾经被 String() 成 "[object Object]"，用户看到的报错完全没有信息量。
+  api.streamScript = () => [
+    { type: 'finish', reason: { kind: 'error', failure: { message: '连接被重置', code: 'ECONNRESET' } } },
+  ];
+  await assert.rejects(() => api.provider.generate(request), (error) => {
+    assert.match(error.message, /error/, '应当带上 kind');
+    assert.match(error.message, /连接被重置/, '应当带上具体失败原因');
+    assert.match(error.message, /ECONNRESET/, '应当带上失败码');
+    assert.doesNotMatch(error.message, /\[object Object\]/, '不允许再出现 [object Object]');
+    return true;
+  });
+
+  api.streamScript = () => [{ type: 'finish', reason: { kind: 'aborted', failure: { message: '上游取消' } } }];
+  await assert.rejects(() => api.provider.generate(request), /上游取消/);
 });
 
 test('提供方：已取消的信号不会被忽略', async () => {

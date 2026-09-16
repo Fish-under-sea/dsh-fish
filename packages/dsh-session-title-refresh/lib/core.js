@@ -319,17 +319,49 @@ export function buildTitleSystem(config) {
 }
 
 /**
+ * 归一化一个结束原因。
+ *
+ * DSH 的 `FinishReason` 是**可合并扩展的对象**（`{ kind: 'stop' }`、
+ * `{ kind: 'error', failure: {...} }`），只有 `kind` 是稳定字段。曾经这里
+ * 直接取了 `chunk.reason` 当字符串，结果错误信息变成「结束原因异常
+ * （[object Object]）」——真实会话的第 3 轮自动命名全部失败。
+ *
+ * 字符串形式仍然认（测试替身与老适配器），但对象一律按 `kind` 解析，
+ * 并把 `error` / `aborted` 的具体失败原因一并带出来。
+ * @param reason - `finish` 块里的原始结束原因。
+ * @returns `{ finish, failure }`；无法识别时为 `{}`。
+ */
+function normalizeFinishReason(reason) {
+  if (typeof reason === 'string' && reason !== '') return { finish: reason };
+  if (reason === null || typeof reason !== 'object') return {};
+  const kind = typeof reason.kind === 'string' && reason.kind !== '' ? reason.kind : undefined;
+  if (kind === undefined) return {};
+  const failure = reason.failure;
+  if (failure !== null && typeof failure === 'object') {
+    return {
+      finish: kind,
+      failure: {
+        message: typeof failure.message === 'string' ? failure.message : String(failure.message ?? ''),
+        code: typeof failure.code === 'string' ? failure.code : failure.code,
+      },
+    };
+  }
+  return { finish: kind };
+}
+
+/**
  * 装配流式响应：按块序号拼出文本，并报告结束原因与是否出现工具调用。
  *
  * 只认 `text-delta` 与文本块的 `block-end`（兼容不发增量的适配器）；
  * 推理增量不算标题内容。
  * @param chunks - `ctx.llm.stream()` 产出的原始块。
- * @returns `{ text, finish, toolCalls }`；`finish` 缺省表示流没给结束块。
+ * @returns `{ text, finish, failure, toolCalls }`；`finish` 缺省表示流没给结束块。
  */
 export function assembleStreamText(chunks) {
   const parts = new Map();
   const seenDelta = new Set();
   let finish;
+  let failure;
   let toolCalls = false;
   for (const chunk of Array.isArray(chunks) ? chunks : []) {
     if (chunk === null || typeof chunk !== 'object') continue;
@@ -356,7 +388,11 @@ export function assembleStreamText(chunks) {
         break;
       }
       case 'finish': {
-        finish = chunk.reason;
+        const parsed = normalizeFinishReason(chunk.reason);
+        if (parsed.finish !== undefined) {
+          finish = parsed.finish;
+          failure = parsed.failure;
+        }
         break;
       }
       default:
@@ -367,7 +403,7 @@ export function assembleStreamText(chunks) {
     .sort((a, b) => a[0] - b[0])
     .map((entry) => entry[1])
     .join(' ');
-  return { text, finish, toolCalls };
+  return { text, finish, failure, toolCalls };
 }
 
 const ANSI_CSI = /\u001b\[[0-9;?]*[A-Za-z]/g;

@@ -238,7 +238,9 @@ export function createProvider(ctx, state) {
 
         const assembled = assembleStreamText(chunks);
         if (assembled.finish !== FINISH_STOP) {
-          throw new Error(`dsh-session-title-refresh: 标题模型结束原因异常（${String(assembled.finish ?? '无结束块')}）`);
+          const detail = assembled.failure?.message ? `：${assembled.failure.message}` : '';
+          const code = assembled.failure?.code ? `（${assembled.failure.code}）` : '';
+          throw new Error(`dsh-session-title-refresh: 标题模型结束原因异常（${String(assembled.finish ?? '无结束块')}）${detail}${code}`);
         }
         if (assembled.toolCalls) throw new Error('dsh-session-title-refresh: 标题输出必须是纯文本');
         const title = cleanTitle(assembled.text);

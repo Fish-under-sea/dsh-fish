@@ -160,22 +160,54 @@ test('assembleStreamText：按块序号拼文本、识别工具调用与结束�
     { type: 'block-start', index: 0, blockType: 'text' },
     { type: 'text-delta', index: 0, text: '会话' },
     { type: 'text-delta', index: 0, text: '标题' },
-    { type: 'finish', reason: 'stop' },
+    { type: 'finish', reason: { kind: 'stop' } },
   ];
-  assert.deepEqual(assembleStreamText(chunks), { text: '会话标题', finish: 'stop', toolCalls: false });
+  assert.deepEqual(assembleStreamText(chunks), { text: '会话标题', finish: 'stop', failure: undefined, toolCalls: false });
 
   // 只有 block-end 没有 delta 的适配器也能拿到文本
   assert.equal(
-    assembleStreamText([{ type: 'block-end', index: 0, block: { type: 'text', text: '兜底' } }, { type: 'finish', reason: 'stop' }]).text,
+    assembleStreamText([{ type: 'block-end', index: 0, block: { type: 'text', text: '兜底' } }, { type: 'finish', reason: { kind: 'stop' } }]).text,
     '兜底',
   );
 
-  const tool = assembleStreamText([{ type: 'block-start', index: 0, blockType: 'tool-call' }, { type: 'block-end', index: 0, block: { type: 'tool-call', name: 'x' } }, { type: 'finish', reason: 'tool-calls' }]);
+  const tool = assembleStreamText([{ type: 'block-start', index: 0, blockType: 'tool-call' }, { type: 'block-end', index: 0, block: { type: 'tool-call', name: 'x' } }, { type: 'finish', reason: { kind: 'tool-calls' } }]);
   assert.equal(tool.toolCalls, true);
   assert.equal(tool.finish, 'tool-calls');
 
   // 推理增量不算标题文本
   assert.equal(assembleStreamText([{ type: 'reasoning-delta', index: 0, text: '想想' }, { type: 'text-delta', index: 1, text: '真标题' }]).text, '真标题');
+});
+
+test('assembleStreamText：DSH 的 FinishReason 是对象，不能把对象当字符串用', () => {
+  // 回归：曾经直接取 chunk.reason，报错信息变成「结束原因异常（[object Object]）」，
+  // 真实会话第 3 轮自动命名因此全部失败。
+  const ok = assembleStreamText([{ type: 'text-delta', index: 0, text: '标题' }, { type: 'finish', reason: { kind: 'stop' } }]);
+  assert.equal(ok.finish, 'stop');
+  assert.notEqual(String(ok.finish), '[object Object]');
+
+  // error / aborted 要带上具体失败原因，而不是丢掉
+  const failed = assembleStreamText([
+    { type: 'finish', reason: { kind: 'error', failure: { message: '连接被重置', code: 'ECONNRESET' } } },
+  ]);
+  assert.equal(failed.finish, 'error');
+  assert.equal(failed.failure.message, '连接被重置');
+  assert.equal(failed.failure.code, 'ECONNRESET');
+
+  const aborted = assembleStreamText([{ type: 'finish', reason: { kind: 'aborted', failure: { message: '调用方取消' } } }]);
+  assert.equal(aborted.finish, 'aborted');
+  assert.equal(aborted.failure.message, '调用方取消');
+
+  // 适配器扩展出来的未知结束原因：保留 kind 原文，别丢信息
+  const custom = assembleStreamText([{ type: 'finish', reason: { kind: 'content-filter' } }]);
+  assert.equal(custom.finish, 'content-filter');
+
+  // 兼容性：字符串形式仍然认（测试替身与老适配器）
+  assert.equal(assembleStreamText([{ type: 'finish', reason: 'stop' }]).finish, 'stop');
+
+  // 没有结束块
+  assert.equal(assembleStreamText([{ type: 'text-delta', index: 0, text: 'x' }]).finish, undefined);
+  // 缺 kind 的畸形 reason 不能变成 "[object Object]"
+  assert.equal(assembleStreamText([{ type: 'finish', reason: {} }]).finish, undefined);
 });
 
 test('cleanTitle：去掉控制码、引号、Markdown 前缀，只保留第一行', () => {

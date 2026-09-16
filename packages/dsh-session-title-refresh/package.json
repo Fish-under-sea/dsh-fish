@@ -1,6 +1,6 @@
 {
   "name": "dsh-session-title-refresh",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DeepSeek Harness Web 会话标题自动刷新：对话到第 N 轮总结出会话方向并命名，此后每 M 轮刷新一次；轮次与上下限均可在「设置 → 会话标题自动刷新」里调整。",
   "type": "module",
   "main": "./lib/index.js",
