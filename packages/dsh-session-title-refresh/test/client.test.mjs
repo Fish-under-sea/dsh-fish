@@ -60,6 +60,7 @@ function makeFakeReact() {
 function statusPayload() {
   return {
     ok: true,
+    version: '0.1.2',
     config: {
       enabled: true, firstRound: 3, interval: 5, maxFirstRound: 10, maxInterval: 20,
       windowSize: 8, maxInputBytes: 4096, maxOutputTokens: 64, timeoutMs: 60000,
@@ -72,12 +73,17 @@ function statusPayload() {
       { id: 'aggressive', label: '积极', hint: '更贴当前方向', firstRound: 2, interval: 3, recommended: false },
     ],
     configPath: 'C:/Users/x/.dsh/dsh-session-title-refresh/config.json',
+    historyPath: 'C:/Users/x/.dsh/dsh-session-title-refresh/history.json',
     schedule: '第 3 轮首次总结，之后每 5 轮刷新一次',
     sessionList: [
       { sessionId: 'session-a', rounds: 4, nextDue: 5, refreshes: 1, title: '插件自动命名', titleSource: 'provider', subagent: false },
       { sessionId: 'child-1', rounds: 2, nextDue: 3, refreshes: 0, title: undefined, subagent: true },
     ],
-    log: [{ at: new Date().toISOString(), sessionId: 'session-a', round: 3, ok: true, title: '插件自动命名' }],
+    log: [
+      { at: new Date().toISOString(), sessionId: 'session-a', round: 3, ok: true, title: '插件自动命名', version: '0.1.2' },
+      { at: new Date().toISOString(), sessionId: 'session-empty', round: 4, ok: true, skipped: true, reason: '该会话还没有人类消息，已跳过', version: '0.1.2' },
+      { at: new Date().toISOString(), sessionId: 'session-x', round: 3, ok: false, error: '标题模型结束原因异常（error）：连接被重置（ECONNRESET）', version: '0.1.1' },
+    ],
   };
 }
 
@@ -168,6 +174,13 @@ test('首屏先显示读取中，随后渲染出档位、规则、会话表与�
   assert.match(text, /最近自动命名/);
   assert.match(text, /高级：极限阈值与生成预算/);
   assert.match(text, /立即刷新所有会话标题/);
+  // 版本号要显眼，用来确认跑的是哪一版（0.1.1 的 [object Object] 缺陷排查靠它）
+  assert.match(text, /v0\.1\.2/);
+  assert.match(text, /\[v0\.1\.1\]/, '旧版本产生的记录要能分辨出来');
+  // 跳过与失败必须区分：跳过不是故障
+  assert.match(text, /该会话还没有人类消息，已跳过/);
+  assert.match(text, /标题模型结束原因异常（error）：连接被重置（ECONNRESET）/);
+  assert.ok(!/\(无标题\)/.test(text), '界面不该再出现含糊的「(无标题)」');
   assert.ok(calls.some((call) => String(call.url).endsWith('/status')), '应当请求过 /status');
 });
 

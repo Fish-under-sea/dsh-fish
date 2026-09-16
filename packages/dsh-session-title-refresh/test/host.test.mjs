@@ -434,6 +434,84 @@ test('Web API：跨站请求被拒、未知路由 404', async () => {
   assert.equal(missing.ok, false);
 });
 
+test('可观测性：状态带插件版本，记录带产生它的版本', async () => {
+  const sessions = new Map();
+  const { ctx, api } = makeCtx(sessions);
+  apply(ctx, {});
+  const status = await callApi(api, 'GET', '/status');
+  assert.match(String(status.version), /^\d+\.\d+\.\d+$/, '状态里要有插件版本，便于确认跑的是哪一版');
+  assert.ok(String(status.historyPath).endsWith('history.json'), '状态里要给出记录文件路径');
+
+  const session = makeSession('session-version');
+  sessions.set(session.id, session);
+  session.feed(human(0, '一'));
+  const refreshed = await callApi(api, 'POST', '/refresh', { sessionId: 'session-version' });
+  assert.equal(refreshed.log[0].version, status.version, '每条记录都要标记版本，才知道是不是修复版产生的');
+});
+
+test('可观测性：命名记录落盘，DSH 重启后仍能看到重启前的记录', async () => {
+  const isolated = path.join(HERE, '.tmp-home-history');
+  const previous = process.env.DSH_HOME;
+  process.env.DSH_HOME = isolated;
+  fs.rmSync(isolated, { recursive: true, force: true });
+  try {
+    const sessions = new Map();
+    const session = makeSession('session-persist');
+    sessions.set(session.id, session);
+    session.feed(human(0, '第一轮'));
+
+    const first = makeCtx(sessions);
+    apply(first.ctx, {});
+    const refreshed = await callApi(first.api, 'POST', '/refresh', { sessionId: 'session-persist' });
+    assert.equal(refreshed.log[0].sessionId, 'session-persist');
+    const file = path.join(isolated, 'dsh-session-title-refresh', 'history.json');
+    assert.ok(fs.existsSync(file), 'history.json 应当被写出');
+    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8'))[0].sessionId, 'session-persist');
+
+    // 模拟 DSH 重启：同一个 home 上重新装载插件
+    const second = makeCtx(new Map([[session.id, session]]));
+    apply(second.ctx, {});
+    const after = await callApi(second.api, 'GET', '/status');
+    assert.ok(
+      after.log.some((record) => record.sessionId === 'session-persist'),
+      '重启后应当还能看到重启前的记录（否则用户无法判断修复是否生效）',
+    );
+  } finally {
+    process.env.DSH_HOME = previous;
+    fs.rmSync(isolated, { recursive: true, force: true });
+  }
+});
+
+test('手动刷新：失败记录真实轮次；无人类消息时记为跳过而非裸成功', async () => {
+  const sessions = new Map();
+  const { ctx, api } = makeCtx(sessions);
+  apply(ctx, {});
+  const session = makeSession('session-manual-round');
+  sessions.set(session.id, session);
+  for (let round = 1; round <= 4; round += 1) session.feed(human(round, `第 ${round} 轮`));
+
+  // 失败：轮次必须是真实值（用户看到的「第 0 轮」没有任何信息量）
+  ctx.sessionTitle.refresh = async () => {
+    throw new Error('上游超时');
+  };
+  const failed = await callApi(api, 'POST', '/refresh', { sessionId: 'session-manual-round' });
+  assert.equal(failed.failed.length, 1);
+  assert.equal(failed.log[0].ok, false);
+  assert.equal(failed.log[0].round, 4, '失败记录也应带真实轮次');
+  assert.match(failed.log[0].error, /上游超时/);
+
+  // 无人类消息：refresh 解析为 undefined 时说清是「跳过」，不能显示成「成功但没标题」
+  const empty = makeSession('session-no-message');
+  sessions.set(empty.id, empty);
+  ctx.sessionTitle.refresh = async () => undefined;
+  const skipped = await callApi(api, 'POST', '/refresh', { sessionId: 'session-no-message' });
+  assert.equal(skipped.ok, true);
+  assert.equal(skipped.refreshed[0].skipped, true);
+  assert.match(skipped.refreshed[0].reason, /人类消息/);
+  assert.equal(skipped.log[0].skipped, true);
+  assert.match(skipped.log[0].reason, /人类消息/);
+});
+
 /** 造一个假 req/res 对，直接把插件的 HTTP 处理器当函数调。 */
 async function callApi(api, method, route, body, headers = {}) {
   const url = `http://localhost/dsh-session-title-refresh/api${route}`;

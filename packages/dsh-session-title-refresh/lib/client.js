@@ -229,7 +229,7 @@ window.__ModuleLoader__.load({
 
 			return h('div', { className: 'str-page' },
 				h('style', null, styles),
-				h('h3', null, '会话标题自动刷新'),
+				h('h3', null, `会话标题自动刷新${status.version ? ` v${status.version}` : ''}`),
 				h('div', { className: 'str-note key' },
 					'与一个会话对话到设定的轮次后，agent 会总结这次会话的方向并自动命名；此后每隔若干轮再刷新一次标题。',
 					h('br'),
@@ -384,13 +384,21 @@ window.__ModuleLoader__.load({
 							records
 								.map((record) => {
 									const when = record.at ? new Date(record.at).toLocaleString('zh-CN') : '—';
-									const mark = record.ok ? '✓' : '✗';
+									// 三种结果要能一眼分清：成功 / 跳过（没什么可总结）/ 失败
+									const mark = record.skipped ? '·' : record.ok ? '✓' : '✗';
 									const where = `${record.sessionId} · 第 ${record.round} 轮${record.manual ? ' · 手动' : ''}`;
-									const what = record.ok ? record.title ?? '(无标题)' : record.error;
-									return `${mark} ${when} ${where} → ${what}`;
+									const what = record.skipped
+										? record.reason ?? '已跳过'
+										: record.ok
+											? record.title ?? '(无标题)'
+											: record.error;
+									const by = record.version ? ` [v${record.version}]` : '';
+									return `${mark} ${when} ${where} → ${what}${by}`;
 								})
 								.join('\n'),
 						),
+					h('small', { style: { color: 'var(--dsw-alias-label-tertiary)' } },
+						'记录会落盘（最多 50 条），DSH 重启后依然看得到——每行末尾的 [v版本号] 用来分辨是哪一版产生的。'),
 				),
 
 				h('div', { className: 'str-note' },
@@ -401,7 +409,11 @@ window.__ModuleLoader__.load({
 					'宿主侧的系统指令会要求标题概括「这次会话整体在做什么」，而不是某一处细节；',
 					'生成失败（超时、无路由、模型没吐文本）只会保留旧标题并在上方记录一行，不影响对话。',
 					h('br'),
-					h('span', { className: 'str-mono' }, status.configPath ?? ''),
+					'「· 跳过」表示这个会话还没有人类发言，没什么可总结的——不是故障。',
+					h('br'),
+					h('span', { className: 'str-mono' }, `v${status.version ?? '?'} · ${status.configPath ?? ''}`),
+					h('br'),
+					h('span', { className: 'str-mono' }, status.historyPath ?? ''),
 				),
 			);
 		}

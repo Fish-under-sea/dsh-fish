@@ -54,6 +54,25 @@ const TITLE_MAX_BYTES = 512;
 /** 标题提供的结束原因（不认识的原因一律判失败，保留旧标题）。 */
 const FINISH_STOP = 'stop';
 
+/** 界面记录里"这一条是谁产生的"——重启后靠它分辨是哪一版的行为。 */
+const VERSION = readPluginVersion();
+
+/**
+ * 读自己的版本号。
+ *
+ * 界面必须能回答"现在跑的是哪一版"：0.1.1 修掉 `FinishReason` 被当字符串用的缺陷时，
+ * 用户手上的记录混着重启前后的条目，却没有任何字段能区分。
+ * @returns 版本字符串；读不到时回退 `0.0.0`。
+ */
+function readPluginVersion() {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+    return typeof manifest.version === 'string' && manifest.version !== '' ? manifest.version : '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
+
 /** DSH home：与 @deepseek-ai/dsh-home-paths 的解析口径一致。 */
 export function resolveHome() {
   const configured = process.env.DSH_HOME;
@@ -64,6 +83,32 @@ export function resolveHome() {
 /** 界面保存的配置落在这里（不进任何同步仓库，与 DSH_HOME 绑定）。 */
 export function statePath(home = resolveHome()) {
   return path.join(home, 'dsh-session-title-refresh', 'config.json');
+}
+
+/** 最近的命名记录落在这里：跨重启保留，否则用户无法判断修复是否生效。 */
+export function historyPath(home = resolveHome()) {
+  return path.join(home, 'dsh-session-title-refresh', 'history.json');
+}
+
+/** 读上次进程留下的命名记录；损坏或缺失都当作空。 */
+function readHistory(home) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(historyPath(home), 'utf8'));
+    return Array.isArray(parsed) ? parsed.slice(0, 50) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** 尽力写回命名记录：写不进去也只是丢历史，绝不影响命名本身。 */
+function writeHistory(home, log) {
+  try {
+    const file = historyPath(home);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(log.slice(0, 50), null, 2), 'utf8');
+  } catch {
+    /* 忽略：历史记录是尽力而为的观测数据 */
+  }
 }
 
 /** 读取界面保存的配置；文件损坏时当作空配置，绝不让插件起不来。 */
@@ -141,10 +186,11 @@ function skipReasonFor(entry, config) {
   return undefined;
 }
 
-/** 追加一条运行记录（界面"最近自动命名"用），最多留 50 条。 */
+/** 追加一条运行记录（界面"最近自动命名"用），最多留 50 条，并落盘跨重启保留。 */
 function pushLog(state, record) {
-  state.log.unshift(record);
+  state.log.unshift({ version: VERSION, ...record });
   if (state.log.length > 50) state.log.length = 50;
+  writeHistory(state.home, state.log);
 }
 
 /** 把一个会话推进一格：数轮次 → 到点则刷新一次。 */
@@ -343,8 +389,10 @@ function buildStatus(state, titleApi) {
 
   return {
     ok: true,
+    version: VERSION,
     home: resolveHome(),
     configPath: statePath(),
+    historyPath: historyPath(state.home),
     config,
     defaults: DEFAULTS,
     presets: PRESETS,
@@ -367,7 +415,7 @@ export function apply(ctx, config) {
     ctx,
     config: normalizeConfig(config, readState(home)),
     entries: new Map(),
-    log: [],
+    log: readHistory(home),
     running: false,
     sessions: ctx.sessions,
   };
@@ -469,18 +517,27 @@ export function apply(ctx, config) {
               const refreshed = [];
               const failed = [];
               for (const session of targets) {
+                // 先建条目：失败路径也要用真实轮次，不能记成「第 0 轮」。
+                const entry = ensureEntry(state, session, state.config);
                 try {
                   const snapshot = await ctx.sessionTitle.refresh(session);
-                  const entry = ensureEntry(state, session, state.config);
                   entry.refreshes += 1;
                   entry.lastRefreshAt = isoTime();
-                  entry.lastTitle = snapshot?.title;
-                  entry.lastSource = snapshot?.source?.kind;
-                  pushLog(state, { at: entry.lastRefreshAt, sessionId: session.id, round: entry.rounds, ok: true, title: snapshot?.title, manual: true });
-                  refreshed.push({ sessionId: session.id, title: snapshot?.title, source: snapshot?.source?.kind });
+                  // refresh 解析为 undefined 表示"这个会话还没有可用的人类消息"，
+                  // 那是跳过而不是成功——必须说清楚，否则界面显示成「(无标题)」误导人。
+                  if (snapshot === undefined) {
+                    const reason = '该会话还没有人类消息，已跳过';
+                    pushLog(state, { at: entry.lastRefreshAt, sessionId: session.id, round: entry.rounds, ok: true, skipped: true, reason, manual: true });
+                    refreshed.push({ sessionId: session.id, skipped: true, reason });
+                    continue;
+                  }
+                  entry.lastTitle = snapshot.title;
+                  entry.lastSource = snapshot.source?.kind;
+                  pushLog(state, { at: entry.lastRefreshAt, sessionId: session.id, round: entry.rounds, ok: true, title: snapshot.title, manual: true });
+                  refreshed.push({ sessionId: session.id, title: snapshot.title, source: snapshot.source?.kind });
                 } catch (error) {
                   const message = String(error?.message ?? error);
-                  pushLog(state, { at: isoTime(), sessionId: session.id, round: 0, ok: false, error: message, manual: true });
+                  pushLog(state, { at: isoTime(), sessionId: session.id, round: entry.rounds, ok: false, error: message, manual: true });
                   failed.push({ sessionId: session.id, error: message });
                 }
               }
