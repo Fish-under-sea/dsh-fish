@@ -1,0 +1,57 @@
+{
+  "name": "dsh-session-title-refresh",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness Web 会话标题自动刷新：对话到第 N 轮总结出会话方向并命名，此后每 M 轮刷新一次；轮次与上下限均可在「设置 → 会话标题自动刷新」里调整。",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./core": {
+      "default": "./lib/core.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "session-title",
+    "rename",
+    "auto-title"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Fish-under-sea/dsh-fish.git",
+    "directory": "packages/dsh-session-title-refresh"
+  },
+  "dsh": {
+    "engines": {
+      "dsh": ">=0.1.5-rc.1"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ],
+      "platform": "web"
+    }
+  }
+}

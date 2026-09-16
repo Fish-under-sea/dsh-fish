@@ -1,0 +1,12 @@
+# dsh-approval-guide bundle layer —— 把插件行插入 web profile 的 roster。
+#
+# 唯一的一行：宿主半区是空实现（纯浏览器插件），浏览器半区占用
+# conversation.approval.detail 插槽渲染中文说明。
+#
+# 安装（在任意目录执行，profile 名按需替换）：
+#   dsh plugin --profile web add link:<本目录>
+#
+# 本插件没有任何配置项，也不读写设置文件。
+- insert:
+    - id: approval-guide
+      name: dsh-approval-guide

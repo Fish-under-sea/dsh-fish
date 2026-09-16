@@ -1,0 +1,37 @@
+# dsh-fish bundle layer —— Fish 自建插件聚合包的 bundle 入口。
+#
+# 本文件把三个自建插件的宿主行一次性插入 web profile 的 roster，
+# 装一个 dsh-fish 就等于装齐下面三个插件。
+#
+# 关于「子包的 cordis.patch.yml 为什么在这里重写一遍」：
+# bundle 层只在 `dsh plugin add <包>` 时按包的 `dsh.bundle.patch` 字段
+# 展开一层，子包作为传递依赖被装进来时，它们的 patch 不会被自动叠加。
+# 所以聚合包必须自己把子包的插行动作复述一遍（这也是 @linxin666/dsh-web-all
+# 的做法），否则装了聚合包却一个插件都不生效。
+#
+# 三个插件的运行期参数都写在 $DSH_HOME 下的各自 config.json 里
+# （在 GUI 设置页改），不写在这里，因此不会跟着本包同步到别的机器。
+
+# ─ 1) dsh-session-title-refresh ─────────────────────────────────────
+# 会话标题服务每个进程只接受一个提供方，第二次注册直接抛错。
+# 所以必须先停用 DSH 内置的「首条消息」提供方（行 id = session-title-llm），
+# 让位给本插件的提供方。行为不变：本插件同样以 first-prompt 节奏注册，
+# 第 1 轮照样会生成标题。
+- id: session-title-llm
+  name: '@deepseek-ai/dsh-session-title-first-prompt-llm'
+  disabled: true
+
+- insert:
+    # ── 2) dsh-session-title-refresh 宿主行 ──────────────────────────
+    - id: session-title-refresh
+      name: dsh-session-title-refresh
+
+    # ── 3) dsh-approval-guide 宿主行（纯浏览器插件，宿主侧空实现）──
+    - id: approval-guide
+      name: dsh-approval-guide
+
+    # ── 4) dsh-git-sync 宿主行 ───────────────────────────────────────
+    # 仓库目录等设置请在「设置 → Git 同步」面板里改，存在
+    # $DSH_HOME/dsh-git-sync/config.json，不跟着本仓库同步。
+    - id: dsh-git-sync
+      name: dsh-git-sync

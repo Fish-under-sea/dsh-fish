@@ -1,0 +1,22 @@
+# dsh-session-title-refresh bundle layer。
+#
+# 本文件在本插件被 `dsh plugin add` 成 bundle 后自动生效，做两件事：
+#
+#  1. 停用 DSH 内置的「首条消息」标题提供方
+#     （@deepseek-ai/dsh-session-title-first-prompt-llm，行 id = session-title-llm）。
+#     会话标题服务每个会话只接受一个提供方，第二次注册会直接抛错，
+#     所以必须让位给本插件的提供方。停用后行为不变：本插件的提供方同样以
+#     `first-prompt` 节奏注册，第 1 轮照样会生成标题。
+#
+#  2. 插入本插件的宿主行。
+#
+# 运行期参数（轮次、间隔、上下限、路由…）不写在这里：
+# 它们在「设置 → 会话标题自动刷新」里改，存在
+# $DSH_HOME/dsh-session-title-refresh/config.json，因此不会跟着本行被同步到别的机器。
+- id: session-title-llm
+  name: '@deepseek-ai/dsh-session-title-first-prompt-llm'
+  disabled: true
+
+- insert:
+    - id: session-title-refresh
+      name: dsh-session-title-refresh

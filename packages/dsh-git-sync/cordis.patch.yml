@@ -1,0 +1,18 @@
+# dsh-git-sync bundle layer —— 把插件行插入 web profile 的 roster。
+#
+# 宿主半边的 apply(ctx, config) 会读这个 config 块（本插件不导出 Config
+# schema，所以这里写什么就原样传进去；全部字段都可选）。
+#
+#   - id: dsh-git-sync
+#     name: dsh-git-sync
+#     config:
+#       repoDir: 'D:\path\to\your\sync-repo'   # 也可在 GUI 里改（推荐，按机器不同）
+#       includeSessions: true
+#       includeAttachments: true
+#
+# 通常不需要改这里：仓库目录等设置可以在
+# 「设置 → Git 同步」面板里直接改，存在 $DSH_HOME/dsh-git-sync/config.json，
+# 因此不会跟着本仓库被同步到另一台机器。
+- insert:
+    - id: dsh-git-sync
+      name: dsh-git-sync
