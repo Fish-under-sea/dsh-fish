@@ -84,10 +84,22 @@ const SECRET_NAME_RE = /(^|[\\/])(\.credentials|\.env|credentials\.|.*\.pem$|.*\
  */
 const BAK_ALLOW = new Set(['profiles/web/cordis.patch.yml.bak-plugin-manager']);
 
+/**
+ * 唯一的例外判定入口 —— 所有防御层都必须走这里，否则会各自漂移。
+ *
+ * 曾经踩过：白名单放行 + testForbidden 放行 + .gitignore 反向规则放行，
+ * 但提交前复查用的 SECRET_NAME_RE 仍把该文件判为疑似密钥而中止提交。
+ * 四层防御「各自为政」的结果就是文件永远进不了提交。
+ *
+ * 只按**精确整路径**匹配，不做前缀/后缀放宽；传入任意其它路径一律返回 false。
+ */
+function isBakAllowed(relPath) {
+  return BAK_ALLOW.has(String(relPath).split(/[\\/]/).join('/'));
+}
+
 function testForbidden(relPath) {
   // 先看例外，且必须是精确整路径匹配（不做前缀/后缀放宽）。
-  const norm = String(relPath).split(/[\\/]/).join('/');
-  if (BAK_ALLOW.has(norm)) return false;
+  if (isBakAllowed(relPath)) return false;
 
   const parts = String(relPath).split(/[\\/]/);
   for (const part of parts) {
@@ -284,7 +296,9 @@ async function commitAll(repoDir, message) {
   const staged = (await git(repoDir, ['diff', '--cached', '--name-only']))
     .split('\n').map((s) => s.trim()).filter(Boolean);
 
-  const suspicious = staged.filter((f) => SECRET_NAME_RE.test(f));
+  // 必须与 testForbidden / 白名单 共用同一份例外（isBakAllowed），
+  // 否则会出现「前几层放行、这一层拦下」的僵局。
+  const suspicious = staged.filter((f) => SECRET_NAME_RE.test(f) && !isBakAllowed(f));
   if (suspicious.length) {
     await gitTry(repoDir, ['reset']);
     return { ok: false, staged, error: `暂存区出现疑似密钥文件，已中止提交：${suspicious.join(', ')}` };
