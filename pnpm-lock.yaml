@@ -1,0 +1,25 @@
+lockfileVersion: '9.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+importers:
+
+  .:
+    dependencies:
+      dsh-approval-guide:
+        specifier: workspace:*
+        version: link:packages/dsh-approval-guide
+      dsh-git-sync:
+        specifier: workspace:*
+        version: link:packages/dsh-git-sync
+      dsh-session-title-refresh:
+        specifier: workspace:*
+        version: link:packages/dsh-session-title-refresh
+
+  packages/dsh-approval-guide: {}
+
+  packages/dsh-git-sync: {}
+
+  packages/dsh-session-title-refresh: {}

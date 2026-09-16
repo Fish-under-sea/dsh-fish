@@ -41,9 +41,9 @@
     }
   },
   "dependencies": {
-    "dsh-approval-guide": "workspace:*",
-    "dsh-git-sync": "workspace:*",
-    "dsh-session-title-refresh": "workspace:*"
+    "dsh-approval-guide": "file:packages/dsh-approval-guide",
+    "dsh-git-sync": "file:packages/dsh-git-sync",
+    "dsh-session-title-refresh": "file:packages/dsh-session-title-refresh"
   },
   "repository": {
     "type": "git",
