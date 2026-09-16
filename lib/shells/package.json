@@ -1,7 +1,0 @@
-{
-  "type": "module",
-  "main": "./shell.js",
-  "exports": {
-    ".": "./shell.js"
-  }
-}

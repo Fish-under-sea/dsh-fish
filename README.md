@@ -2,9 +2,9 @@
 
 Fish 自建 DSH（DeepSeek Harness）插件聚合包。
 
-一个包，装齐本人自建的全部 DSH 插件。结构对齐 `@linxin666/dsh-web-all`：
-根目录是聚合包，子插件源码在 `packages/` 下，聚合包通过 workspace 依赖引入它们，
-并由自己的 bundle 层把三个插件的宿主行一次性插入 web profile。
+一个包，装齐本人自建的全部 DSH 插件。根目录是聚合包，子插件源码在
+`packages/` 下，聚合包由自己的 bundle 层（`cordis.patch.yml`）把三个插件的
+插件行一次性插入 web profile —— 装一次 dsh-fish 等于装齐三个插件。
 
 ## 包含的插件
 
@@ -16,19 +16,42 @@ Fish 自建 DSH（DeepSeek Harness）插件聚合包。
 
 ## 安装
 
-在任意目录执行：
+**本包必须连同三个子包一起声明**，不能只装聚合包一个。原因是 DSH 的
+浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locatePkgJson`）
+用 `exactPackageSpecifier()` 过滤插件行：非 scoped 的包名只要含 `/` 就判为
+「不是包」直接跳过。因此插件行只能写裸包名（`dsh-approval-guide`），而裸包名
+要求子包位于 profile 顶层 —— 子包不被声明时，插件的设置页与界面不会加载。
 
-```bash
-dsh plugin --profile web add github:Fish-under-sea/dsh-fish
+### 从 GitHub 安装（换机复原 / 同步仓用这套）
+
+```jsonc
+// profiles/web/package.json 的 dependencies
+"dsh-fish": "github:Fish-under-sea/dsh-fish",
+"dsh-approval-guide": "github:Fish-under-sea/dsh-fish#path:packages/dsh-approval-guide",
+"dsh-git-sync": "github:Fish-under-sea/dsh-fish#path:packages/dsh-git-sync",
+"dsh-session-title-refresh": "github:Fish-under-sea/dsh-fish#path:packages/dsh-session-title-refresh"
 ```
 
-装完重启 DSH Web。三个插件会随聚合包一起生效。
+`#path:` 是 pnpm 的子目录语法，让一个仓库同时提供多个包 —— 这样四个依赖
+全部指向同一个仓库，换机 `pnpm install` 后直接从 dsh-fish 下载，不依赖任何
+本机绝对路径。`bundles` 里只需列 `"dsh-fish"`（它的 patch 负责插入三行）。
 
-### 为什么不写三行 `insert` 就够了
+### 本地开发安装
 
-聚合包相对「直接往 profile 里写三个插件行」多了一层**故障隔离外壳**：
-每个子插件都在自己的隔离边界里启动。某个子插件 import 或 start 失败时，
-只记录 degraded 状态并跳过它，不会拖垮整个宿主启动。
+用 `link:` 指向本仓库，改源码即时生效，无需重装：
+
+```jsonc
+"dsh-fish": "link:D:/Fish-code/DSH/插件安装/dsh-fish",
+"dsh-approval-guide": "link:D:/Fish-code/DSH/插件安装/dsh-fish/packages/dsh-approval-guide",
+"dsh-git-sync": "link:D:/Fish-code/DSH/插件安装/dsh-fish/packages/dsh-git-sync",
+"dsh-session-title-refresh": "link:D:/Fish-code/DSH/插件安装/dsh-fish/packages/dsh-session-title-refresh"
+```
+
+不要用 `file:` 指向本仓库：pnpm 会把 `file:` 目录依赖当「无哈希的目录依赖」
+缓存，改了源码后 `pnpm install`（连 `--force` 也一样）不会重新复制，必须手动
+删掉 `node_modules/dsh-*` 再装。`link:` 没有这个问题。
+
+装完重启 DSH Web。
 
 ### 子插件的运行期配置
 
@@ -48,25 +71,29 @@ dsh plugin --profile web add github:Fish-under-sea/dsh-fish
 ```
 dsh-fish/
 ├── package.json          # 聚合包清单（dsh.bundle.patch 指向 cordis.patch.yml）
-├── cordis.patch.yml      # bundle 层：插入三个插件的宿主行
-├── pnpm-workspace.yaml   # workspace 声明
-├── lib/                  # 聚合包自身的宿主/浏览器半边（故障隔离外壳）
+├── cordis.patch.yml      # bundle 层：插入三个插件的插件行
+├── pnpm-workspace.yaml   # workspace 声明（本地开发用）
+├── lib/                  # 聚合包自身的空实现（本包不注册任何东西）
 │   ├── index.js
-│   ├── client.js
-│   └── shells/shell.js   # exports 里各子插件路径共用的外壳入口
+│   └── client.js
 └── packages/
     ├── dsh-approval-guide/
     ├── dsh-session-title-refresh/
     └── dsh-git-sync/
 ```
 
+聚合包本身不实现功能，也**不把子包声明为自己的 dependencies** ——
+那样 pnpm 会把 `file:packages/*` 解析成「相对于安装方目录」的路径，
+从 GitHub 安装时直接报 `ERR_PNPM_LINKED_PKG_DIR_NOT_FOUND` 失败。
+子包由安装方的 profile 显式声明（见上面的两种安装方式）。
+
 ## 开发
 
 ```bash
-# 装 workspace 依赖
+# 装 workspace 依赖（本地开发用，不会影响安装方的解析）
 pnpm install
 
-# 跑单个插件的测试
+# 跑测试
 node packages/dsh-approval-guide/test/guide.test.mjs
 node packages/dsh-session-title-refresh/test/run-all.mjs
 ```

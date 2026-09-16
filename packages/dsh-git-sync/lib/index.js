@@ -45,6 +45,7 @@ const WHITE_LIST = [
   'storages/workspace.json',          // 工作区 ↔ 会话映射（内含绝对路径）
   '.agent-presets',                   // agent 预设
   'skills',                           // Skill 目录（~/.dsh/skills）
+  'AGENTS.md',                        // 用户级全局指令：Skill 加载优先级总表
   'task-board/ledger-v2.json',
   'task-board/scheduler-v2.json',
   'dsh-session-archive',

@@ -6,17 +6,7 @@ settings:
 
 importers:
 
-  .:
-    dependencies:
-      dsh-approval-guide:
-        specifier: workspace:*
-        version: link:packages/dsh-approval-guide
-      dsh-git-sync:
-        specifier: workspace:*
-        version: link:packages/dsh-git-sync
-      dsh-session-title-refresh:
-        specifier: workspace:*
-        version: link:packages/dsh-session-title-refresh
+  .: {}
 
   packages/dsh-approval-guide: {}
 
