@@ -17,6 +17,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SOURCE = path.join(HERE, '..', 'lib', 'client.js');
 /** 源码读取一次即可（同一个文件被反复 new Function 执行）。 */
 const CODE = fs.readFileSync(SOURCE, 'utf8');
+/** 包清单：注册名必须等于包名，这里直接读 name 而不硬编码，改名后测试不会跟着漂移。 */
+const PKG = JSON.parse(fs.readFileSync(path.join(HERE, '..', 'package.json'), 'utf8'));
 
 /** 最小的 react 替身：createElement 造普通对象，hooks 用一个数组轮转。
  *  useEffect 立即执行一次（等价于真实 react 的首次提交），
@@ -103,7 +105,7 @@ function loadClient() {
   };
   new Function('window', CODE)(window);
   assert.ok(window.__loaded, '客户端源码应调用 window.__ModuleLoader__.load');
-  assert.equal(window.__loaded.id, 'dsh-session-title-refresh');
+  assert.equal(window.__loaded.id, PKG.name, '注册名必须是包名（loader 按包名认领 factory）');
   const module = window.__loaded.factory(requireImpl);
   return { module, react, calls };
 }

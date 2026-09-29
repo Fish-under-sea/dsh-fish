@@ -7,8 +7,11 @@
  * 这里不用 JSX，直接用 react.createElement，也不 require 任何
  * @deepseek-ai/* 客户端包 —— 只依赖加载器提供的 react。
  */
+// 注册名必须严格等于 package.json 的 name：loader 按行里解析出的包名去
+// factories 里认领 factory（@deepseek-ai/dsh-client-modules 的
+// "loaded without registering" 校验），对不上就在浏览器侧加载失败。
 window.__ModuleLoader__.load({
-	id: 'dsh-git-sync',
+	id: '@fish-under-sea/dsh-git-sync',
 	factory: (require) => {
 		var module = { exports: {} };
 		var exports = module.exports;

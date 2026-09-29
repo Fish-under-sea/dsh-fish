@@ -1,4 +1,4 @@
-# dsh-git-sync
+# @fish-under-sea/dsh-git-sync
 
 给 DeepSeek Harness Web GUI 的**一键 GitHub 同步**插件。把你的 DSH 环境——
 **已安装的插件、每个插件是否启用、插件配置、本地设置、会话记录、附件**——
@@ -35,10 +35,10 @@ dsh plugin --profile web add "file:<仓库路径>/dsh-git-sync-0.1.0.tgz"
 装完**重启 DSH**（插件行与设置页都是下次启动生效）。
 
 > **换机提醒**：安装会把**本机绝对路径**写进 `profiles/web/package.json`
-> （`"dsh-git-sync": "link:D:/…/plugin"`）。这个文件会被同步到另一台机器，
+> （`"@fish-under-sea/dsh-git-sync": "link:D:/…/plugin"`）。这个文件会被同步到另一台机器，
 > 而那边没有这个目录，`dsh plugin install` 会在这一项上失败。
 > 要么两台机器 clone 到同一路径，要么在新机器上先
-> `dsh plugin --profile web remove dsh-git-sync` 再按本机路径 `add` 回去。
+> `dsh plugin --profile web remove @fish-under-sea/dsh-git-sync` 再按本机路径 `add` 回去。
 
 ## 使用
 

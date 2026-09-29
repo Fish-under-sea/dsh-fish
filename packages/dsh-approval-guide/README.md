@@ -1,4 +1,4 @@
-# dsh-approval-guide
+# @fish-under-sea/dsh-approval-guide
 
 给 DSH Web GUI 的审批弹窗补一段**中文说明**：这次审批会做什么、有什么风险、依据是什么。
 
@@ -80,7 +80,7 @@ dsh plugin --profile web add link:D:/Fish-code/DSH/plugins/dsh-approval-guide
 ### 卸载
 
 ```sh
-dsh plugin --profile web remove dsh-approval-guide
+dsh plugin --profile web remove @fish-under-sea/dsh-approval-guide
 ```
 
 ### 安装后自检
@@ -89,7 +89,7 @@ dsh plugin --profile web remove dsh-approval-guide
 dsh --profile web --dump-config
 ```
 
-输出末尾应恰好出现一行 `- id: approval-guide` / `name: dsh-approval-guide`。多行即重复挂载，应用会启动失败。
+输出末尾应恰好出现一行 `- id: approval-guide` / `name: @fish-under-sea/dsh-approval-guide`。多行即重复挂载，应用会启动失败。
 
 ## 测试
 

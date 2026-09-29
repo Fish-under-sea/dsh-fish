@@ -19,4 +19,4 @@
 
 - insert:
     - id: session-title-refresh
-      name: dsh-session-title-refresh
+      name: '@fish-under-sea/dsh-session-title-refresh'

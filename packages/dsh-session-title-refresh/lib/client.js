@@ -12,8 +12,11 @@
  * 只 require('react')，不依赖任何 @deepseek-ai/* 客户端包。
  * 数据全部走宿主半边的同源 API（lib/index.js）。
  */
+// 注册名必须严格等于 package.json 的 name：loader 按行里解析出的包名去
+// factories 里认领 factory（@deepseek-ai/dsh-client-modules 的
+// "loaded without registering" 校验），对不上就在浏览器侧加载失败。
 window.__ModuleLoader__.load({
-	id: 'dsh-session-title-refresh',
+	id: '@fish-under-sea/dsh-session-title-refresh',
 	factory: (require) => {
 		var module = { exports: {} };
 		var exports = module.exports;

@@ -16,6 +16,8 @@ import vm from 'node:vm'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const clientPath = join(here, '..', 'lib', 'client.js')
+/** 包清单：注册名必须等于包名，这里直接读 name 而不硬编码，改名后测试不会跟着漂移。 */
+const PKG = JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf8'))
 
 /** 把 vm 世界里造出来的对象搬回本 realm，便于深比较。 */
 function plain(value) {
@@ -60,6 +62,7 @@ function loadPlugin() {
 	vm.createContext(sandbox)
 	vm.runInContext(source, sandbox, { filename: clientPath })
 	assert.ok(entry !== undefined, 'bundle 必须调用 window.__ModuleLoader__.load')
+	assert.equal(entry.id, PKG.name, '注册名必须是包名（loader 按包名认领 factory）')
 	const modules = {
 		'react': { createElement: (type, props, ...children) => ({ type, props: { ...props, children }, key: props?.key }) },
 		'react/jsx-runtime': recordingJsxRuntime(),

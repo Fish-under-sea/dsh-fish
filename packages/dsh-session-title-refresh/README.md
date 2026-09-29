@@ -1,4 +1,4 @@
-# dsh-session-title-refresh
+# @fish-under-sea/dsh-session-title-refresh
 
 给 DeepSeek Harness Web GUI 的**会话标题自动刷新**插件。跟一个会话聊到第 N 轮，就让它
 总结这次对话的方向、自动命名；之后每隔 M 轮再刷新一次。N 和 M 在
@@ -54,7 +54,7 @@ dsh plugin --profile web add "link:D:/Fish-code/DSH/插件安装/dsh-session-tit
 ### 卸载 / 回退
 
 ```powershell
-dsh plugin --profile web remove dsh-session-title-refresh
+dsh plugin --profile web remove @fish-under-sea/dsh-session-title-refresh
 ```
 
 移除后，`cordis.patch.yml` 里那条「停用内置首条消息提供方」的 patch 会随之失效，

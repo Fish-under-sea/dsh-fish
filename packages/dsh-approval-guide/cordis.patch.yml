@@ -9,4 +9,4 @@
 # 本插件没有任何配置项，也不读写设置文件。
 - insert:
     - id: approval-guide
-      name: dsh-approval-guide
+      name: '@fish-under-sea/dsh-approval-guide'

@@ -1,5 +1,8 @@
+// 注册名必须严格等于 package.json 的 name：loader 按行里解析出的包名去
+// factories 里认领 factory（@deepseek-ai/dsh-client-modules 的
+// "loaded without registering" 校验），对不上就在浏览器侧加载失败。
 window.__ModuleLoader__.load({
-	id: "dsh-approval-guide",
+	id: "@fish-under-sea/dsh-approval-guide",
 	factory: (require) => {
 		var module = { exports: {} };
 		var exports = module.exports;
