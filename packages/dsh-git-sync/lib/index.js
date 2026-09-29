@@ -57,8 +57,16 @@ const WHITE_LIST = [
   'profiles/web/pnpm-workspace.yaml',
 ];
 
-/** 会话与附件体积大、二进制，默认关闭，由 UI 开关决定。 */
-const OPTIONAL_LIST = ['sessions', 'attachments'];
+/**
+ * 会话与附件**不再同步**（0.2.0 起的能力收缩）。
+ *
+ * 原因：二者是只增不减的 zstd 二进制，git 无法 diff、无法行级合并，两台机器
+ * 同时改必然冲突；仓库只增不减；且它们是本机隐私数据。同步范围收敛为「配置面」，
+ * 换机后靠这一份配置 + 各自的会话副本复原。
+ *
+ * 历史：0.1.x 时代本清单是 `['sessions', 'attachments']`，由 UI 开关控制。
+ * 已提交到仓库的旧会话文件不删除（只停新增）。
+ */
 
 /**
  * 永不搬运：路径的任一段命中即拒绝。
@@ -141,17 +149,12 @@ function resolveSettings(home, config) {
   );
   return {
     repoDir: path.resolve(repoDir),
-    includeSessions: state.includeSessions ?? cfg.includeSessions ?? true,
-    includeAttachments: state.includeAttachments ?? cfg.includeAttachments ?? true,
     lastRun: state.lastRun ?? null,
   };
 }
 
 function activeList(settings) {
-  const list = [...WHITE_LIST];
-  if (settings.includeSessions) list.push('sessions');
-  if (settings.includeAttachments) list.push('attachments');
-  return list;
+  return [...WHITE_LIST];
 }
 
 // ── 文件搬运 ──────────────────────────────────────────────────────────
@@ -428,8 +431,6 @@ async function readStatus(home, settings) {
   const status = {
     home,
     repoDir: settings.repoDir,
-    includeSessions: settings.includeSessions,
-    includeAttachments: settings.includeAttachments,
     repoExists: fs.existsSync(settings.repoDir),
     isGitRepo: fs.existsSync(path.join(settings.repoDir, '.git')),
     branch: null,
@@ -611,11 +612,8 @@ export function apply(ctx, config) {
             const repoDir = url.searchParams.get('repoDir');
             const patch = {};
             if (repoDir && repoDir.trim()) patch.repoDir = repoDir.trim();
-            for (const key of ['includeSessions', 'includeAttachments']) {
-              const v = url.searchParams.get(key);
-              if (v === '1') patch[key] = true;
-              if (v === '0') patch[key] = false;
-            }
+            // includeSessions / includeAttachments 已废弃：会话与附件不再属于同步范围，
+            // 这里不再接受这两个开关（旧 config.json 里的残留字段被 resolveSettings 忽略）。
             writeState(home, patch);
             const next = resolveSettings(home, config);
             sendJson(res, 200, { ok: true, ...(await readStatus(home, next)) });

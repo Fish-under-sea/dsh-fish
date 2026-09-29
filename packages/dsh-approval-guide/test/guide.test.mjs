@@ -3,8 +3,8 @@
  *
  * 测试装载的是真正会进浏览器的 client bundle：用 node:vm 提供一个
  * `window.__ModuleLoader__`，抓住 bundle 注册的 factory，再用假的模块表
- * 实例化它。组件函数只用注入进来的 hook（`useChat` /
- * `useSessionPendingInteraction`）取数据，本身不调用 React hook，所以可以
+ * 实例化它。组件函数只用注入进来的 hook（`useChat` / `useSessionStatus`，
+ * 旧版宿主回退 `useSessionPendingInteraction`）取数据，本身不调用 React hook，所以可以
  * 直接调用并检查它产出的元素树——不需要为测试安装 React。
  */
 import { test } from 'node:test'
@@ -65,8 +65,7 @@ function loadPlugin() {
 	assert.equal(entry.id, PKG.name, '注册名必须是包名（loader 按包名认领 factory）')
 	const modules = {
 		'react': { createElement: (type, props, ...children) => ({ type, props: { ...props, children }, key: props?.key }) },
-		'react/jsx-runtime': recordingJsxRuntime(),
-		'@deepseek-ai/dsh-client-ui-primitives': {}
+		'react/jsx-runtime': recordingJsxRuntime()
 	}
 	const requireFn = (spec) => {
 		if (Object.hasOwn(modules, spec)) return modules[spec]
@@ -188,7 +187,7 @@ test('argsRaw 不是合法 JSON 时按无参数处理', () => {
 	assert.equal(__internals.parseCallArgs('[1,2]'), undefined, '数组参数不是工具调用对象')
 })
 
-test('组件：审批卡里同时出现原命令与中文说明块', () => {
+test('组件：审批卡里同时出现原命令与中文说明块（0.2.0 的 useSessionStatus）', () => {
 	const { __internals } = loadPlugin().exports
 	const props = {
 		callId: 'call-1',
@@ -198,8 +197,8 @@ test('组件：审批卡里同时出现原命令与中文说明块', () => {
 			sandbox_permissions: 'danger-full-access',
 			justification: '需要核对配置'
 		}))),
-		useSessionPendingInteraction: (selector) => selector(new Map([
-			['session-1', { kind: 'approval', toolName: 'pwsh', reason: 'escalate sandbox to danger-full-access: 需要核对配置' }]
+		useSessionStatus: (selector) => selector(new Map([
+			['session-1', { pendingInteraction: { kind: 'approval', toolName: 'pwsh', reason: 'escalate sandbox to danger-full-access: 需要核对配置' } }]
 		]))
 	}
 	const text = collectText(__internals.ApprovalGuide(props)).join('\n')
@@ -209,13 +208,28 @@ test('组件：审批卡里同时出现原命令与中文说明块', () => {
 	assert.match(text, /拒绝/)
 })
 
+test('组件：0.1.x 回退路径仍然可用（useSessionPendingInteraction）', () => {
+	const { __internals } = loadPlugin().exports
+	const props = {
+		callId: 'call-1',
+		sessionId: 'session-1',
+		useChat: (selector) => selector(chatSnapshot('call-1', JSON.stringify({ command: 'echo hi' }))),
+		useSessionPendingInteraction: (selector) => selector(new Map([
+			['session-1', { kind: 'approval', toolName: 'pwsh', reason: 'escalate sandbox to danger-full-access: 需要核对配置' }]
+		]))
+	}
+	const text = collectText(__internals.ApprovalGuide(props)).join('\n')
+	assert.match(text, /pwsh/, '旧版宿主下也必须取到待审批工具名')
+	assert.match(text, /任意文件/)
+})
+
 test('组件：取不到 pending/关联调用时降级但绝不崩溃', () => {
 	const { __internals } = loadPlugin().exports
 	const props = {
 		callId: 'call-404',
 		sessionId: 'session-1',
 		useChat: (selector) => selector(chatSnapshot('other-call', '{}')),
-		useSessionPendingInteraction: (selector) => selector(new Map())
+		useSessionStatus: (selector) => selector(new Map())
 	}
 	const text = collectText(__internals.ApprovalGuide(props)).join('\n')
 	assert.match(text, /未知工具/)
@@ -234,7 +248,7 @@ test('组件：chat 选择器返回字符串，两次取值同一身份（避开
 			captured = selector
 			return selector(snapshot)
 		},
-		useSessionPendingInteraction: (selector) => selector(new Map())
+		useSessionStatus: (selector) => selector(new Map())
 	})
 	assert.equal(typeof captured, 'function', '组件必须用 useChat 读取关联调用')
 	const first = captured(snapshot)

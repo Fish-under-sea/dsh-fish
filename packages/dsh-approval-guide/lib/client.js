@@ -169,8 +169,13 @@ window.__ModuleLoader__.load({
 		* @returns 详情区元素。
 		*/
 		function ApprovalGuide(props) {
-			const readPending = props.useSessionPendingInteraction;
-			const pending = typeof readPending === "function" ? readPending((bySession) => bySession === void 0 || bySession === null ? void 0 : bySession.get(props.sessionId)) : void 0;
+			// 插槽标准属性在 DSH 0.2.0 改名：useSessionPendingInteraction → useSessionStatus，
+			// 且选择器形状由「会话 Map」变为「会话状态快照」。这里同时兼容两代宿主：
+			// 0.2.0 走 useSessionStatus(snapshot => snapshot.get(id)?.pendingInteraction)，
+			// 0.1.x 回退 useSessionPendingInteraction(bySession => bySession.get(id))。
+			const readStatus = props.useSessionStatus;
+			const readPendingLegacy = props.useSessionPendingInteraction;
+			const pending = typeof readStatus === "function" ? readStatus((snapshot) => snapshot === void 0 || snapshot === null ? void 0 : snapshot.get(props.sessionId)?.pendingInteraction) : typeof readPendingLegacy === "function" ? readPendingLegacy((bySession) => bySession === void 0 || bySession === null ? void 0 : bySession.get(props.sessionId)) : void 0;
 			const approval = pending !== void 0 && pending !== null && pending.kind === "approval" ? pending : void 0;
 			const readChat = props.useChat;
 			const argsRaw = typeof readChat === "function" ? readChat((snapshot) => {

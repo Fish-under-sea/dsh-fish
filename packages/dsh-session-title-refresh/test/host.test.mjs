@@ -265,7 +265,10 @@ test('提供方：取样首条+最近若干条、用会话当前路由、清洗�
   assert.equal(call.sessionId, 'session-gen');
   assert.match(call.system, /overall direction/);
   assert.match(call.messages[0].content[0].text, /JSON array/);
-  assert.equal(call.messages[0].source.kind, 'plugin');
+  // DSH 0.2.0 起 v4 会话格式拒绝通用的 kind:'plugin'，来源必须是「产生方自有的 kind」；
+  // 官方迁移器对未登记第三方插件产出的就是 `plugin:<包名>` 这一形式。
+  assert.equal(call.messages[0].source.kind, 'plugin:dsh-session-title-refresh');
+  assert.equal(call.messages[0].source.plugin, undefined, '不再使用已废止的 plugin 成员');
   assert.equal(call.messages[0].role, 'user');
 });
 

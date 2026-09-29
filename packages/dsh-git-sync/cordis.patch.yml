@@ -7,8 +7,9 @@
 #     name: '@fish-under-sea/dsh-git-sync'
 #     config:
 #       repoDir: 'D:\path\to\your\sync-repo'   # 也可在 GUI 里改（推荐，按机器不同）
-#       includeSessions: true
-#       includeAttachments: true
+#
+# 注：0.2.0 起同步范围收缩为「配置面」——includeSessions / includeAttachments
+# 两个开关已下线（会话与附件永不搬运）。旧 config.json 里的残留字段会被忽略。
 #
 # 通常不需要改这里：仓库目录等设置可以在
 # 「设置 → Git 同步」面板里直接改，存在 $DSH_HOME/dsh-git-sync/config.json，

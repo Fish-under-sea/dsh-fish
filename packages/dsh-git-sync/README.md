@@ -62,10 +62,12 @@ dsh plugin --profile web add "file:<仓库路径>/dsh-git-sync-0.1.0.tgz"
 > **「仅采集并提交」是「先看后推」的闸口。** 它只提交、不推送，方便你先看差异
 > 再决定要不要送上 GitHub。（`pushgit` 动作仍在 API 上保留，作为应急通道。）
 
-面板里的开关：
+**同步范围 0.2.0 起收缩为「配置面」**：会话记录与附件**不再上传**。
 
-- **含会话记录** — `~/.dsh/sessions`（zstd 二进制，只增不减、无法 diff）
-- **含附件** — `~/.dsh/attachments`
+> **为什么下线了「含会话记录 / 含附件」两个开关**：`sessions/` 是 zstd 二进制，
+> 只增不减、git 无法 diff 也无法行级合并，两台机器同时改必然冲突；`attachments/`
+> 同理且属本机隐私数据。配置面换机后靠这一份清单 + 各自的会话副本复原即可。
+> **已提交到仓库的旧会话文件不会被删除**（只停新增），历史保留可查。
 
 单个文件读不到（被锁定、权限不足、或被文件策略拒绝）**只会跳过并在日志里列出，
 不会中断整次同步**。
@@ -103,7 +105,10 @@ dsh plugin --profile web add "file:<仓库路径>/dsh-git-sync-0.1.0.tgz"
 | `storages/workspace.json` | 工作区 ↔ 会话映射 |
 | `task-board/`、`dsh-session-archive/`、`dsh-usage/` | 看板账本、归档状态、用量账本 |
 | `pet.json`、`skin-center-active.json` | 桌宠、皮肤 |
-| `sessions/`、`attachments/` | 会话记录与附件（可选开关） |
+
+> **不在范围内**：`sessions/`、`attachments/`（0.2.0 起永久排除，见上文）、
+> `node_modules`、`.credentials.yaml` 等密钥文件、派生物（`cordis.yml`、
+> `storages/session_projcache`）、本机状态（`.anonymous-user-id` 等）。
 
 > **Skill 位置很关键。** DSH 会从多个根目录读 Skill：`<项目根>/.dsh/skills`、
 > `<项目根>/.agents/skills`、`<DSH_HOME>/skills`、`~/.agents/skills`。

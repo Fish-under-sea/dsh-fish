@@ -110,9 +110,11 @@ for (const label of ['一键同步', '仅采集并提交', '从仓库还原到�
 }
 check('已移除冗余的「推送到远端」按钮', !buttons.includes('推送到远端'), `实际=${JSON.stringify(buttons)}`);
 check('说明了一键同步会补推未推送的提交', all.includes('补推'));
+// 0.2.0 起同步范围收缩为「配置面」：会话与附件不再上传，开关必须彻底消失。
 for (const label of ['含会话记录', '含附件']) {
-  check(`开关存在：${label}`, all.includes(label));
+  check(`开关已移除：${label}`, !all.includes(label), '该能力已下线，不应再出现在设置页');
 }
+check('说明了不再同步会话与附件', all.includes('不再同步会话记录与附件'));
 check('声明了 Skill 会被同步', all.includes('Skill（skills/）'));
 check('说明了「仅采集并提交」只提交不推送', all.includes('只提交、不推送'));
 check('声明了单文件失败不中断', all.includes('不会中断整次同步'));

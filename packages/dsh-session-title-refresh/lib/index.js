@@ -272,7 +272,7 @@ export function createProvider(ctx, state) {
           model: route.model,
           purpose: 'session-title',
           sessionId: request.session.id,
-          messages: [{ role: 'user', content: [{ type: 'text', text: prompt }], source: { kind: 'plugin', plugin: name } }],
+          messages: [{ role: 'user', content: [{ type: 'text', text: prompt }], source: { kind: 'plugin:dsh-session-title-refresh' } }],
           system,
           maxTokens: config.maxOutputTokens,
           signal: deadline.signal,

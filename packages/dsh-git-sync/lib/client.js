@@ -54,18 +54,11 @@ window.__ModuleLoader__.load({
 			const [busy, setBusy] = react.useState(false);
 			const [log, setLog] = react.useState([]);
 			const [repoDir, setRepoDir] = react.useState('');
-			const [opts, setOpts] = react.useState({ sessions: true, attachments: true, autoPush: false });
+			const [opts, setOpts] = react.useState({ autoPush: false });
 
 			const applyStatus = (data) => {
 				setStatus(data);
 				if (typeof data?.repoDir === 'string') setRepoDir(data.repoDir);
-				if (typeof data?.includeSessions === 'boolean' || typeof data?.includeAttachments === 'boolean') {
-					setOpts((prev) => ({
-						...prev,
-						sessions: data.includeSessions ?? prev.sessions,
-						attachments: data.includeAttachments ?? prev.attachments,
-					}));
-				}
 			};
 
 			const refresh = react.useCallback(() => {
@@ -104,8 +97,6 @@ window.__ModuleLoader__.load({
 				setBusy(true);
 				const params = new URLSearchParams({
 					repoDir,
-					includeSessions: opts.sessions ? '1' : '0',
-					includeAttachments: opts.attachments ? '1' : '0',
 				});
 				return fetch(`${API}/config?${params}`, { method: 'POST', credentials: 'same-origin' })
 					.then(async (r) => {
@@ -154,15 +145,6 @@ window.__ModuleLoader__.load({
 				),
 
 				h('div', { className: 'dgs-row' },
-					h('label', { className: 'dgs-chk' },
-						h('input', { type: 'checkbox', checked: opts.sessions, onChange: (e) => setOpts({ ...opts, sessions: e.target.checked }) }),
-						'含会话记录'),
-					h('label', { className: 'dgs-chk' },
-						h('input', { type: 'checkbox', checked: opts.attachments, onChange: (e) => setOpts({ ...opts, attachments: e.target.checked }) }),
-						'含附件'),
-				),
-
-				h('div', { className: 'dgs-row' },
 					h('button', { className: 'dgs-btn primary', disabled: busy, onClick: () => run('pull', { gitPush: '1' }) }, '一键同步'),
 					h('button', { className: 'dgs-btn', disabled: busy, onClick: () => run('pull', { gitPush: '0' }) }, '仅采集并提交'),
 					h('button', { className: 'dgs-btn', disabled: busy, onClick: () => run('restore') }, '从仓库还原到本机'),
@@ -183,7 +165,9 @@ window.__ModuleLoader__.load({
 
 				h('div', { className: 'dgs-note' },
 					'采集走白名单：插件清单、插件启用状态、插件配置、本地设置、',
-					'Skill（skills/）、agent 预设、工作区映射、会话记录、附件。',
+					'Skill（skills/）、agent 预设、工作区映射、任务看板账本、归档与用量账本。',
+					h('br'),
+					'自 0.2.0 起**不再同步会话记录与附件**（sessions/、attachments/）：它们是只增不减的 zstd 二进制，无法 diff、无法合并，且属于本机隐私数据。',
 					h('br'),
 					'个别文件读不到（被锁定 / 被文件策略拒绝）只会跳过并在上方列出，不会中断整次同步。',
 					h('br'),

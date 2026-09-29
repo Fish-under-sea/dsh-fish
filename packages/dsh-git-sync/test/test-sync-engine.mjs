@@ -124,6 +124,37 @@ console.log('\n=== 5. 本机 vs 仓库 差异统计（「待同步」应该是�
 console.log('\n=== 3. skills 内容确实会被同步进去 ===');
 check('skills/core-rules.md 在白名单覆盖范围内', WHITE_LIST.some((w) => 'skills/core-rules.md' === w || 'skills/core-rules.md'.startsWith(w + '/')));
 
+console.log('\n=== 6. 0.2.0 能力收缩：会话与附件永不进仓库 ===');
+{
+  check('白名单不含 sessions', !WHITE_LIST.includes('sessions'), `实际=${JSON.stringify(WHITE_LIST)}`);
+  check('白名单不含 attachments', !WHITE_LIST.includes('attachments'));
+
+  const h3 = path.join(TMP, 'home3');
+  const r3 = path.join(TMP, 'repo3');
+  mkdirSync(path.join(h3, 'sessions', '--ws--', 'sid-1'), { recursive: true });
+  mkdirSync(path.join(h3, 'attachments', 'v1', 'files', 'ab'), { recursive: true });
+  mkdirSync(path.join(h3, 'skills'), { recursive: true });
+  mkdirSync(r3, { recursive: true });
+  writeFileSync(path.join(h3, 'sessions', '--ws--', 'sid-1', 'session.v3.jsonl.zstd'), 'zstd-bytes\n');
+  writeFileSync(path.join(h3, 'attachments', 'v1', 'files', 'ab', 'shot.png'), 'png-bytes\n');
+  writeFileSync(path.join(h3, 'settings.yaml'), 'theme: dark\n');
+  writeFileSync(path.join(h3, 'skills', 'core-rules.md'), '# rules\n');
+
+  const r = copyToRepo(h3, { repoDir: r3 });
+  check('会话文件未被拷贝', !existsSync(path.join(r3, 'sessions')), 'sessions/ 不应出现在仓库里');
+  check('附件未被拷贝', !existsSync(path.join(r3, 'attachments')), 'attachments/ 不应出现在仓库里');
+  check('配置面照常拷贝（settings.yaml）', existsSync(path.join(r3, 'settings.yaml')));
+  check('配置面照常拷贝（skills/）', existsSync(path.join(r3, 'skills', 'core-rules.md')));
+  check('copied 里不含任何 sessions/attachments 路径',
+    !r.copied.some((p) => p.startsWith('sessions') || p.startsWith('attachments')),
+    JSON.stringify(r.copied));
+  check('旧配置里的 includeSessions=true 不再生效（传了也不拷）',
+    (() => {
+      const r4 = copyToRepo(h3, { repoDir: r3, includeSessions: true, includeAttachments: true });
+      return !existsSync(path.join(r3, 'sessions')) && !r4.copied.some((p) => p.startsWith('sessions'));
+    })());
+}
+
 rmSync(TMP, { recursive: true, force: true });
 console.log(`\n────────────  通过 ${pass} / 失败 ${fail}  ───────────`);
 process.exit(fail ? 1 : 0);
