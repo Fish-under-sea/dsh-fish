@@ -52,3 +52,8 @@
     # 存在 $DSH_HOME/dsh-git-sync/config.json，不跟着本仓库同步。
     - id: dsh-git-sync
       name: '@fish-under-sea/dsh-git-sync'
+
+    # 设置导航顺序自定义：把左侧设置菜单排成自己要的样子（纯浏览器插件，
+    # 顺序存在浏览器 localStorage，不改任何第三方插件的代码）。
+    - id: settings-nav-order
+      name: '@fish-under-sea/dsh-settings-nav-order'
