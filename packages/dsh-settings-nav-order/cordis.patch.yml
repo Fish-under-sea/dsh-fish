@@ -1,0 +1,11 @@
+# dsh-settings-nav-order bundle layer。
+#
+# 只做一件事：把本插件的宿主行插进 roster。宿主半边是空实现，但这一行不能省——
+# @deepseek-ai/dsh-client-modules 的扫描器只遍历 loader entries，从声明了
+# `dsh.client` 的包里取浏览器半区；没有宿主行，设置页与重排逻辑都不会被装载。
+#
+# 顺序数据存在浏览器 localStorage（键 dsh-settings-nav-order/v1），是「这台
+# 机器上这个浏览器」的显示偏好，不写进任何配置文件，因此不跟着本包同步。
+- insert:
+    - id: settings-nav-order
+      name: '@fish-under-sea/dsh-settings-nav-order'
