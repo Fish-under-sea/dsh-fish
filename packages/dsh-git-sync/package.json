@@ -1,6 +1,6 @@
 {
   "name": "@fish-under-sea/dsh-git-sync",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "One-click GitHub sync for DeepSeek Harness: installed plugins, per-plugin enabled state, plugin config, local settings and session records — into your own private git repo. Secrets are never copied.",
   "type": "module",
   "main": "./lib/index.js",
