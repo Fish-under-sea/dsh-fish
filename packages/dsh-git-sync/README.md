@@ -17,21 +17,21 @@ DSH 把所有用户状态收敛在单个 home 目录（`$DSH_HOME`，默认 `~/.
 ## 安装
 
 ```powershell
-# 方式一（推荐）：link 安装 —— 仓库源码就是安装源
+# 方式一（推荐）：从 npm 安装
 # --profile 后跟本机实际的 profile 名：桌面版是 desktop，Web 版是 web
-dsh plugin --profile <profile> add "link:<仓库路径>/plugin"
+dsh plugin --profile <profile> add @fish-under-sea/dsh-git-sync
 
-# 方式二：拷贝安装（file:）—— 改完源码必须重装才生效
-dsh plugin --profile <profile> add "file:<仓库路径>/plugin"
+# 方式二：link 安装（改源码开发时用）—— 仓库源码即安装源，改完重启 DSH 即生效
+dsh plugin --profile <profile> add "link:<仓库路径>/packages/dsh-git-sync"
 
-# 方式三：从打包好的 tarball 安装
-dsh plugin --profile <profile> add "file:<仓库路径>/dsh-git-sync-0.1.0.tgz"
+# 方式三：拷贝安装（file:）—— 改完源码必须重新 add 才生效
+dsh plugin --profile <profile> add "file:<仓库路径>/packages/dsh-git-sync"
 ```
 
-**为什么推荐 `link:`**：`file:` 是 pnpm 的**目录拷贝** —— 装完之后，
-你在仓库里改 `plugin/lib/*.js` **不会**反映到已安装的那份，
-重启也没用，必须重新 `add` 一次。`link:` 建的是目录联接（Junction），
-仓库源码即安装源，以后改完只要重启 DSH 即可。
+**怎么选**：日常使用走方式一（npm，版本可追溯、可 `update`）；要改源码时用
+方式二（`link:` 建的是目录联接，仓库源码即安装源，改完重启 DSH 即可）。
+`file:` 是 pnpm 的**目录拷贝** —— 装完之后改 `lib/*.js` **不会**反映到已安装的
+那份，重启也没用，必须重新 `add` 一次，只适合一次性试用。
 
 装完**重启 DSH**（插件行与设置页都是下次启动生效）。
 
