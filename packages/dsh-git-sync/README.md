@@ -18,13 +18,14 @@ DSH 把所有用户状态收敛在单个 home 目录（`$DSH_HOME`，默认 `~/.
 
 ```powershell
 # 方式一（推荐）：link 安装 —— 仓库源码就是安装源
-dsh plugin --profile web add "link:<仓库路径>/plugin"
+# --profile 后跟本机实际的 profile 名：桌面版是 desktop，Web 版是 web
+dsh plugin --profile <profile> add "link:<仓库路径>/plugin"
 
 # 方式二：拷贝安装（file:）—— 改完源码必须重装才生效
-dsh plugin --profile web add "file:<仓库路径>/plugin"
+dsh plugin --profile <profile> add "file:<仓库路径>/plugin"
 
 # 方式三：从打包好的 tarball 安装
-dsh plugin --profile web add "file:<仓库路径>/dsh-git-sync-0.1.0.tgz"
+dsh plugin --profile <profile> add "file:<仓库路径>/dsh-git-sync-0.1.0.tgz"
 ```
 
 **为什么推荐 `link:`**：`file:` 是 pnpm 的**目录拷贝** —— 装完之后，
@@ -34,7 +35,7 @@ dsh plugin --profile web add "file:<仓库路径>/dsh-git-sync-0.1.0.tgz"
 
 装完**重启 DSH**（插件行与设置页都是下次启动生效）。
 
-> **换机提醒**：安装会把**本机绝对路径**写进 `profiles/web/package.json`
+> **换机提醒**：安装会把**本机绝对路径**写进 `profiles/<profile>/package.json`
 > （`"@fish-under-sea/dsh-git-sync": "link:D:/…/plugin"`）。这个文件会被同步到另一台机器，
 > 而那边没有这个目录，`dsh plugin install` 会在这一项上失败。
 > 要么两台机器 clone 到同一路径，要么在新机器上先
@@ -96,10 +97,15 @@ dsh plugin --profile web add "file:<仓库路径>/dsh-git-sync-0.1.0.tgz"
 
 | 路径 | 含义 |
 | --- | --- |
-| `profiles/web/package.json` | 装了什么插件 + bundle 层顺序 |
-| `profiles/web/cordis.patch.yml` | **每个插件是否启用**（`disabled:` 行）+ 配置覆盖 |
-| `profiles/web/pnpm-lock.yaml` / `pnpm-workspace.yaml` | 精确版本与 pnpm 配置 |
-| `settings.yaml` | 全局设置（主题、模型、provider、皮肤、桌宠…） |
+| `profiles/<profile>/package.json` | 装了什么插件 + bundle 层顺序 |
+| `profiles/<profile>/cordis.patch.yml` | **每个插件是否启用**（`disabled:` 行）+ 配置覆盖 |
+| `profiles/<profile>/pnpm-lock.yaml` / `pnpm-workspace.yaml` | 精确版本与 pnpm 配置 |
+| `settings.yaml` | 0.1.x 口径的全局设置；0.2.0 起 home 下的它已被 patch layer 改名 `settings.yaml.imported`，实际设置落在 `profiles/<profile>/cordis.patch.yml` |
+
+> **`<profile>` 按目录动态枚举**：本机 `profiles/` 下每个 profile 目录都会被覆盖，
+> 桌面版是 `desktop`、Web 版是 `web`。写死 profile 名会漏掉「装了什么插件 /
+> 每个插件是否启用 / 精确版本」这最要紧的三样 —— 0.2.0 桌面版踩过这个坑：
+> profile 改名后白名单一条都命中不了，仓库里只剩 0.1.x 的 `profiles/web` 快照。
 | **`skills/`** | **Skill 目录**（`~/.dsh/skills`） |
 | `.agent-presets/` | agent 预设 |
 | `storages/workspace.json` | 工作区 ↔ 会话映射 |
@@ -118,7 +124,7 @@ dsh plugin --profile web add "file:<仓库路径>/dsh-git-sync-0.1.0.tgz"
 ## 永不搬运
 
 `.credentials.yaml` · `.env` · `*.pem` · `*.key` · `node_modules/` · `.pnpm/` ·
-`profiles/web/cordis.yml`（派生的空根）· `storages/session_projcache/` ·
+`profiles/*/cordis.yml`（派生的空根）· `storages/session_projcache/` ·
 `.anonymous-user-id` · `.dshw-size.json` · `.dshw-usage.json` ·
 `workspace-local-paths.json` · 各类 `*.bak*` / `*.pre-sync-*`
 
