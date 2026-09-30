@@ -61,8 +61,10 @@
 通常随聚合包 `@fish-under-sea/dsh-fish` 一起装（见仓库根 README）。单独装：
 
 ```sh
-dsh plugin --profile desktop add link:<本目录的绝对路径>
+dsh plugin --profile <profile> add @fish-under-sea/dsh-settings-nav-order
 ```
+
+要改源码时才用 `link:<本目录的绝对路径>`。
 
 装完必须**重启 DSH**：`cordis.patch.yml` 的插件行只在启动时展开，刷新页面不够。
 

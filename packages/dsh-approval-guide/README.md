@@ -64,18 +64,19 @@ SSH 密钥与凭据文件，本次执行也不再逐条征求你的同意。只�
 需要 DSH 0.1.5-rc.1 或更高版本。
 
 ```sh
-dsh plugin --profile web add link:<本目录的绝对路径>
+# 从 npm 安装（推荐）
+dsh plugin --profile <profile> add @fish-under-sea/dsh-approval-guide
 ```
 
-例如：
+`--profile` 后跟本机实际的 profile 名：桌面版是 `desktop`，Web 版是 `web`。
+
+要改源码时才用 `link:` 指向本目录（仓库源码即安装源，改完重启 DSH 即生效）：
 
 ```sh
-dsh plugin --profile web add link:D:/Fish-code/DSH/plugins/dsh-approval-guide
+dsh plugin --profile <profile> add "link:<本目录的绝对路径>"
 ```
 
 安装后 **Web 端没有原地重启**，需要手动重启 DSH 应用、再刷新页面才会生效。
-
-换机器复现：把本目录复制过去，改一下安装命令里的路径即可；也可以推到自己的 Git 仓库，用 GUI 的插件管理面板按 Git 地址安装（本包没有构建脚本，不需要放行 pnpm 的构建许可）。
 
 ### 卸载
 

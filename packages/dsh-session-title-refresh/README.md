@@ -33,23 +33,16 @@
 ## 安装
 
 ```powershell
-# 推荐 link 安装：仓库源码即安装源，改完只要重启 DSH
-dsh plugin --profile web add "link:D:/Fish-code/DSH/插件安装/dsh-session-title-refresh"
+# 从 npm 安装（推荐）
+# --profile 后跟本机实际的 profile 名：桌面版是 desktop，Web 版是 web
+dsh plugin --profile <profile> add @fish-under-sea/dsh-session-title-refresh
 ```
 
 装完**重启 DSH**（插件行与设置页都是下次启动生效），然后打开
 **设置 → 会话标题自动刷新**。
 
-> 本机（DSH 桌面版）直接调用随包 CLI 的方式：
->
-> ```powershell
-> $node = "C:\Program Files\DeepSeek Harness\resources\runtime\node\node.exe"
-> $bin  = "C:\Program Files\DeepSeek Harness\resources\runtime\host\node_modules\@deepseek-ai\dsh\lib\bin.js"
-> & $node $bin plugin --profile web add "link:D:/Fish-code/DSH/插件安装/dsh-session-title-refresh"
-> ```
->
-> 换机器时注意：安装会把**本机绝对路径**写进 `profiles/web/package.json`，
-> 而那台机器上未必有这个目录，先 `remove` 再按本机路径 `add` 回去。
+要改源码时才用 `link:` 指向本机 clone（仓库源码即安装源，改完重启 DSH 即生效）：
+它会把手写路径写进 `profiles/<profile>/package.json`，换机器前记得先 `remove`。
 
 ### 卸载 / 回退
 
