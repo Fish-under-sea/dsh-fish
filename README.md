@@ -1,3 +1,6 @@
+> **🟢 活跃维护** · 最近更新：2026-09-29
+>
+> 插件仍在持续增加与迭代，欢迎提 Issue / PR。
 # @fish-under-sea/dsh-fish
 
 Fish 自建 DSH（DeepSeek Harness）插件聚合包。
