@@ -19,17 +19,20 @@ const { WHITE_LIST, copyToRepo } = mod;
 
 console.log('=== 1. 白名单必须覆盖 skills（当前缺口）===');
 check('WHITE_LIST 含 skills', WHITE_LIST.includes('skills'), `实际=${JSON.stringify(WHITE_LIST)}`);
-check('白名单仍含 profiles/web/cordis.patch.yml', WHITE_LIST.includes('profiles/web/cordis.patch.yml'));
+check('profiles 条目不再写死 web（改由 activeList 按 profile 目录动态枚举）',
+  !WHITE_LIST.some((w) => w.startsWith('profiles/')));
 
 console.log('\n=== 1b. 模型配置同步范围（含密钥安全）===');
 check('白名单含 settings.yaml（模型配置 llm-pi-ai / llm-deepseek / agent-default-model 都在这个文件里）',
   WHITE_LIST.includes('settings.yaml'));
-check('白名单含 cordis.patch.yml.bak-plugin-manager（插件管理器配置备份）',
-  WHITE_LIST.includes('profiles/web/cordis.patch.yml.bak-plugin-manager'));
+check('白名单不再写死 profiles/web 的 bak（改由路径规则放行）',
+  !WHITE_LIST.includes('profiles/web/cordis.patch.yml.bak-plugin-manager'));
 
 // 安全回归：放行了那个 bak 之后，其它 .bak 与密钥文件必须仍然被拒。
 const { testForbidden } = mod;
 check('放行的 bak 确实不被拒', testForbidden('profiles/web/cordis.patch.yml.bak-plugin-manager') === false);
+check('★ 任意 profile 的 bak 都被放行（desktop）', testForbidden('profiles/desktop/cordis.patch.yml.bak-plugin-manager') === false);
+check('★ 任意 profile 的其它 .bak 仍被拒（desktop）', testForbidden('profiles/desktop/cordis.patch.yml.bak-something') === true);
 check('★ 其它 .bak 仍被拒', testForbidden('profiles/web/cordis.patch.yml.bak-something') === true);
 check('★ settings.yaml.bak-20260916-llm-audit 仍被拒', testForbidden('settings.yaml.bak-20260916-llm-audit') === true);
 check('★ .credentials.yaml 仍被拒（密钥不进仓库）', testForbidden('.credentials.yaml') === true);
@@ -153,6 +156,45 @@ console.log('\n=== 6. 0.2.0 能力收缩：会话与附件永不进仓库 ===');
       const r4 = copyToRepo(h3, { repoDir: r3, includeSessions: true, includeAttachments: true });
       return !existsSync(path.join(r3, 'sessions')) && !r4.copied.some((p) => p.startsWith('sessions'));
     })());
+}
+
+
+console.log('\n=== 7. profile 名不得写死：任意 profile（desktop 等）都在同步范围 ===');
+{
+  const h4 = path.join(TMP, 'home4');
+  const r4 = path.join(TMP, 'repo4');
+  const p4 = path.join(h4, 'profiles', 'desktop');
+  mkdirSync(path.join(p4, 'node_modules', 'noise'), { recursive: true });
+  mkdirSync(r4, { recursive: true });
+  writeFileSync(path.join(p4, 'package.json'), '{"name":"dsh-profile-desktop"}\n');
+  writeFileSync(path.join(p4, 'cordis.patch.yml'), '- id: desktop-shell\n');
+  writeFileSync(path.join(p4, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+  writeFileSync(path.join(p4, 'pnpm-workspace.yaml'), 'packages: []\n');
+  writeFileSync(path.join(p4, 'node_modules', 'noise', 'index.js'), 'noise\n');
+
+  const { activeList, copyToRepo: ctr, diffHomeVsRepo: dhv } = mod;
+  const rel = (p) => p.split(path.sep).join('/');
+  check('导出 activeList', typeof activeList === 'function');
+  const list = typeof activeList === 'function' ? activeList(h4) : [];
+  check('activeList 覆盖 desktop/package.json（装了什么插件）', list.includes('profiles/desktop/package.json'), JSON.stringify(list.filter((x) => x.startsWith('profiles/'))));
+  check('activeList 覆盖 desktop/cordis.patch.yml（插件启用状态）', list.includes('profiles/desktop/cordis.patch.yml'));
+  check('activeList 覆盖 desktop/pnpm-lock.yaml（精确版本）', list.includes('profiles/desktop/pnpm-lock.yaml'));
+  check('activeList 不把 node_modules 卷进来', !list.some((x) => x.includes('node_modules')));
+
+  const r = ctr(h4, { repoDir: r4 });
+  check('采集：desktop/package.json 真的进了仓库', existsSync(path.join(r4, 'profiles', 'desktop', 'package.json')));
+  check('采集：desktop/cordis.patch.yml 真的进了仓库', existsSync(path.join(r4, 'profiles', 'desktop', 'cordis.patch.yml')));
+  check('采集：desktop/node_modules 未进仓库', !existsSync(path.join(r4, 'profiles', 'desktop', 'node_modules')));
+  check('采集：copied 里含 profiles/desktop/cordis.patch.yml', r.copied.map(rel).includes('profiles/desktop/cordis.patch.yml'), JSON.stringify(r.copied));
+
+  const d = dhv(h4, { repoDir: r4 });
+  check('diff：本机 desktop 的 4 个文件都在本机侧', d.homeFiles === 4, `homeFiles=${d.homeFiles}`);
+  check('diff：采集后两边一致，差异为 0', d.added.length + d.changed.length + d.removed.length === 0, JSON.stringify({ added: d.added, changed: d.changed, removed: d.removed }));
+
+  mkdirSync(path.join(r4, 'profiles', 'legacy'), { recursive: true });
+  writeFileSync(path.join(r4, 'profiles', 'legacy', 'package.json'), '{}\n');
+  const d2 = dhv(h4, { repoDir: r4 });
+  check('diff：仓库里的旧 profile 残留记入 removed', d2.removed.includes('profiles/legacy/package.json'), JSON.stringify(d2.removed));
 }
 
 rmSync(TMP, { recursive: true, force: true });

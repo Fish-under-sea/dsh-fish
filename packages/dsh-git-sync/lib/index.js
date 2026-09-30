@@ -50,11 +50,24 @@ const WHITE_LIST = [
   'task-board/scheduler-v2.json',
   'dsh-session-archive',
   'dsh-usage',
-  'profiles/web/package.json',        // 装了什么插件
-  'profiles/web/cordis.patch.yml',    // 每个插件是否启用（disabled 行）
-  'profiles/web/cordis.patch.yml.bak-plugin-manager',
-  'profiles/web/pnpm-lock.yaml',      // 精确版本，保证可复现
-  'profiles/web/pnpm-workspace.yaml',
+  // `profiles/<profile>/` 下的配置面不在这里写死，见下方 PROFILE_FILES + activeList()。
+  //
+  // 曾经的写法是 'profiles/web/package.json' 这类字面量：0.2.0 桌面版把 profile
+  // 从 web 改名为 desktop 之后，这些条目一条都命中不了 ——「装了什么插件 /
+  // 每个插件是否启用 / 精确版本」三样全部没进仓库，只剩 0.1.x 的 web 快照。
+];
+
+/**
+ * 每个 profile 下值得跨机复原的配置面（相对 profile 目录）。
+ *
+ * 只列具体文件、绝不整目录：`profiles/<name>/node_modules/` 因此天然被排除。
+ */
+const PROFILE_FILES = [
+  'package.json',                        // 装了什么插件 + bundle 层顺序
+  'cordis.patch.yml',                    // 每个插件是否启用（disabled 行）+ 配置覆盖
+  'cordis.patch.yml.bak-plugin-manager', // 插件管理器写的配置备份
+  'pnpm-lock.yaml',                      // 精确版本，保证可复现
+  'pnpm-workspace.yaml',                 // pnpm 配置
 ];
 
 /**
@@ -88,9 +101,9 @@ const SECRET_NAME_RE = /(^|[\\/])(\.credentials|\.env|credentials\.|.*\.pem$|.*\
  * 但 `cordis.patch.yml.bak-plugin-manager` 是插件管理器写的配置备份，
  * 换机复原时它有用，所以按**精确整路径**放行。
  *
- * 只放行这一个字面量，任何其它 .bak 仍然一律拒绝。
+ * 只放行这一个文件名（profile 段通配），任何其它 .bak 仍然一律拒绝。
  */
-const BAK_ALLOW = new Set(['profiles/web/cordis.patch.yml.bak-plugin-manager']);
+const BAK_ALLOW_RE = /^profiles\/[^/]+\/cordis\.patch\.yml\.bak-plugin-manager$/;
 
 /**
  * 唯一的例外判定入口 —— 所有防御层都必须走这里，否则会各自漂移。
@@ -102,7 +115,7 @@ const BAK_ALLOW = new Set(['profiles/web/cordis.patch.yml.bak-plugin-manager']);
  * 只按**精确整路径**匹配，不做前缀/后缀放宽；传入任意其它路径一律返回 false。
  */
 function isBakAllowed(relPath) {
-  return BAK_ALLOW.has(String(relPath).split(/[\\/]/).join('/'));
+  return BAK_ALLOW_RE.test(String(relPath).split(/[\\/]/).join('/'));
 }
 
 function testForbidden(relPath) {
@@ -153,8 +166,35 @@ function resolveSettings(home, config) {
   };
 }
 
-function activeList(settings) {
-  return [...WHITE_LIST];
+/**
+ * 列出某个扫描根下、白名单覆盖的相对路径。
+ *
+ * 必须**按根动态枚举**：本机与仓库两侧各有自己的 profile 目录（本机是
+ * desktop，仓库里可能还留着历史的 web），只有各自枚举，「本机 ↔ 仓库」
+ * 的差异才能如实反映。
+ *
+ * 调用约定：采集传 home（源）、还原传 repoDir（源）、差异比较各传各侧。
+ */
+function activeList(root) {
+  const list = [...WHITE_LIST];
+  for (const profile of listProfileDirs(root)) {
+    for (const file of PROFILE_FILES) list.push(`profiles/${profile}/${file}`);
+  }
+  return list;
+}
+
+/** 列出 `<root>/profiles` 下的 profile 目录名；读不到就当作一个都没有。 */
+function listProfileDirs(root) {
+  let entries;
+  try {
+    entries = fs.readdirSync(path.join(root, 'profiles'), { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((entry) => entry.isDirectory() || entry.isSymbolicLink())
+    .map((entry) => entry.name)
+    .sort();
 }
 
 // ── 文件搬运 ──────────────────────────────────────────────────────────
@@ -212,7 +252,7 @@ export function copyToRepo(home, settings, io = {}) {
   const copyFile = io.copyFile ?? copyFileRobust;
   const copied = [];
   const skipped = [];
-  for (const rel of activeList(settings)) {
+  for (const rel of activeList(home)) {
     if (testForbidden(rel)) continue;
     for (const src of collectFiles(home, rel)) {
       const relFile = path.relative(home, src);
@@ -236,7 +276,7 @@ export function copyToHome(home, settings) {
   const backedUp = [];
   const skipped = [];
   const backupDir = path.join(settings.repoDir, '_backup');
-  for (const rel of activeList(settings)) {
+  for (const rel of activeList(settings.repoDir)) {
     if (testForbidden(rel)) continue;
     for (const src of collectFiles(settings.repoDir, rel)) {
       const relFile = path.relative(settings.repoDir, src);
@@ -347,7 +387,7 @@ function extractCredentialValues(home) {
 function scanForSecrets(home, settings) {
   const findings = [];
   const targets = [];
-  for (const rel of activeList(settings)) {
+  for (const rel of activeList(home)) {
     for (const f of collectFiles(home, rel)) {
       // 只扫文本类，跳过 zstd 二进制（纯文本扫描无法解释压缩内容）
       if (/\.(jsonl\.zstd|zst|gz|zip|png|jpe?g|webp|gif|pdf|tgz)$/i.test(f)) continue;
@@ -386,7 +426,7 @@ function sameFile(a, b) {
 /** 收集白名单范围内某一侧的全部文件，键为统一的相对路径。 */
 function collectSide(root, settings) {
   const map = new Map();
-  for (const rel of activeList(settings)) {
+  for (const rel of activeList(root)) {
     if (testForbidden(rel)) continue;
     for (const abs of collectFiles(root, rel)) {
       const r = path.relative(root, abs);
@@ -446,7 +486,7 @@ async function readStatus(home, settings) {
   };
   if (!status.repoExists) return status;
 
-  for (const rel of activeList(settings)) {
+  for (const rel of activeList(settings.repoDir)) {
     for (const f of collectFiles(settings.repoDir, rel)) {
       status.files += 1;
       try { status.sizeKB += fs.statSync(f).size / 1024; } catch { /* 忽略 */ }
@@ -652,4 +692,4 @@ export function apply(ctx, config) {
   );
 }
 
-export { resolveHome, WHITE_LIST, NEVER_COPY, testForbidden };
+export { resolveHome, WHITE_LIST, PROFILE_FILES, activeList, NEVER_COPY, testForbidden };
