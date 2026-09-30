@@ -517,6 +517,66 @@ async function readStatus(home, settings) {
   return status;
 }
 
+// ── 远端合并 ──────────────────────────────────────────────────────────
+/**
+ * 采集/推送之前，先把远端的变化取回来。
+ *
+ * 为什么必须有：本插件原先只会 push。远端一旦有别的机器推过的提交，本机就会
+ * 卡死在两种坏状态之一 ——
+ *   1) 本地有提交：push 被拒（`! [rejected] main -> main (fetch first)`）；
+ *   2) 本地无提交：@{u} 引用陈旧，rev-list 算出来是 0，于是**谎报**
+ *      「本地与远端完全一致」，本地永远拿不到远端的新内容。
+ * 面板上没有任何按钮能救，用户只能手工进仓库处理。
+ *
+ * 策略：
+ *  - fetch 失败（断网、TLS 拦截、凭据过期）**不阻断**采集：本地提交本身是
+ *    安全的，真推不上去时后面的 push 会如实报错。
+ *  - 远端领先、本地无提交 → `merge --ff-only` 快进。
+ *  - 两边都有提交（分叉）→ `rebase`，保持线性历史。
+ *  - 合并冲突 → `--abort` 回滚到操作前并报 ok:false，**绝不留半合并状态**。
+ */
+async function syncWithRemote(repoDir, say) {
+  if (!fs.existsSync(path.join(repoDir, '.git'))) return { ok: true, merged: 0 };
+  const remote = await gitTry(repoDir, ['remote', 'get-url', 'origin']);
+  if (!remote.ok) { say('（仓库未配置 origin，跳过拉取远端）'); return { ok: true, merged: 0 }; }
+
+  const fetched = await gitTry(repoDir, ['fetch', 'origin'], { timeout: 180000 });
+  if (!fetched.ok) {
+    say('[!] 拉取远端失败（不阻断本次同步；若远端有新提交，推送会被拒）：');
+    for (const line of fetched.out.split('\n').slice(0, 3)) if (line.trim()) say(`    ${line}`);
+    return { ok: true, merged: 0 };
+  }
+
+  const behind = await gitTry(repoDir, ['rev-list', '--count', 'HEAD..@{u}']);
+  const behindCount = behind.ok ? (Number.parseInt(behind.out.trim(), 10) || 0) : 0;
+  if (!behindCount) return { ok: true, merged: 0 };
+
+  const ahead = await gitTry(repoDir, ['rev-list', '--count', '@{u}..HEAD']);
+  const aheadCount = ahead.ok ? (Number.parseInt(ahead.out.trim(), 10) || 0) : 0;
+
+  if (!aheadCount) {
+    const ff = await gitTry(repoDir, ['merge', '--ff-only', '@{u}'], { timeout: 180000 });
+    if (ff.ok) {
+      say(`远端领先 ${behindCount} 个提交，已快进合并。`);
+      return { ok: true, merged: behindCount };
+    }
+    say(`[x] 快进合并失败：\n${ff.out}`);
+    return { ok: false, merged: 0 };
+  }
+
+  say(`远端有 ${behindCount} 个本机没有的提交，本机有 ${aheadCount} 个未推送提交 —— 正在 rebase…`);
+  const rb = await gitTry(repoDir, ['rebase', '@{u}'], { timeout: 180000 });
+  if (rb.ok) {
+    say(`已把本机 ${aheadCount} 个提交重放到远端之上（远端 ${behindCount} 个提交已并入）。`);
+    return { ok: true, merged: behindCount };
+  }
+
+  await gitTry(repoDir, ['rebase', '--abort']);
+  say('[x] 自动合并失败（已回滚，仓库保持合并前的样子）：');
+  for (const line of rb.out.split('\n').slice(0, 6)) if (line.trim()) say(`    ${line}`);
+  say('需要人工处理：进仓库执行 `git pull --rebase` 解决冲突后，再点同步。');
+  return { ok: false, merged: 0 };
+}
 // ── 动作 ──────────────────────────────────────────────────────────────
 async function runAction(home, settings, action, options) {
   const log = [];
@@ -542,6 +602,11 @@ async function runAction(home, settings, action, options) {
   }
 
   if (action === 'pull') {
+    // 采集之前先把远端取回来：否则远端一旦有别的机器推过的提交，本机既推不上去，
+    // 又会因为 @{u} 引用陈旧而谎报「本地与远端完全一致」。
+    const sync = await syncWithRemote(settings.repoDir, say);
+    if (!sync.ok) return { ok: false, log, merged: 0 };
+
     const { copied, skipped } = copyToRepo(home, settings);
     say(`采集 ${copied.length} 个文件 → ${settings.repoDir}`);
     reportSkipped(say, skipped);
@@ -579,6 +644,10 @@ async function runAction(home, settings, action, options) {
   }
 
   if (action === 'pushgit') {
+    // 应急通道同样要先合并远端，否则一样被 fetch first 顶回来。
+    const sync = await syncWithRemote(settings.repoDir, say);
+    if (!sync.ok) return { ok: false, log, merged: 0 };
+
     // 先看有没有东西可推 —— 否则 git push 会「成功但什么都没做」，
     // 用户会以为同步生效了。这里必须把这种情况说清楚。
     const ahead = await gitTry(settings.repoDir, ['rev-list', '--count', '@{u}..HEAD']);
