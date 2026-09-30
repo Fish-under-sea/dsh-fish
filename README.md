@@ -193,7 +193,7 @@ node packages/dsh-settings-nav-order/test/client.test.mjs
 
 **MIT**（聚合包与四个子包一致）。
 
-> ⚠️ 说明：仓库当前**未放置 `LICENSE` 文件**。`package.json` 中 `license` 字段声明为 MIT，但若需严格的法律效力，建议在根目录补充 `LICENSE` 文件。
+> 仓库根目录已放置 `LICENSE` 文件，与 `package.json` 中的 `license` 字段（MIT）及四个子包保持一致。
 
 ---
 
