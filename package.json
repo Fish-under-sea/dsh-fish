@@ -17,6 +17,12 @@
   "publishConfig": {
     "access": "public"
   },
+  "dependencies": {
+    "@fish-under-sea/dsh-approval-guide": "^0.2.0",
+    "@fish-under-sea/dsh-session-title-refresh": "^0.2.0",
+    "@fish-under-sea/dsh-git-sync": "^0.2.0",
+    "@fish-under-sea/dsh-settings-nav-order": "^0.1.0"
+  },
   "engines": {
     "node": ">=20"
   },

@@ -1,4 +1,4 @@
-> **🟢 活跃维护** · 最近更新：2026-09-29
+> **🟢 活跃维护** · 最近更新：2026-09-30
 >
 > 插件仍在持续增加与迭代，欢迎提 Issue / PR。
 # @fish-under-sea/dsh-fish
@@ -19,30 +19,38 @@ npm 包名（`@fish-under-sea/*`）与仓库目录名（`dsh-fish/`）、GitHub 
 | --- | --- |
 | [`@fish-under-sea/dsh-approval-guide`](packages/dsh-approval-guide) | 在审批弹窗里追加中文说明：这次审批会做什么、有什么风险、依据是什么 |
 | [`@fish-under-sea/dsh-session-title-refresh`](packages/dsh-session-title-refresh) | 会话标题自动刷新：第 N 轮起总结命名，此后每 M 轮刷新一次 |
-| [`@fish-under-sea/dsh-git-sync`](packages/dsh-git-sync) | 一键把插件清单、启用状态、本地设置与会话记录同步到自己的 Git 仓库 |
+| [`@fish-under-sea/dsh-git-sync`](packages/dsh-git-sync) | 一键把插件清单、启用状态、本地设置、Skills 与看板/用量账本同步到自己的 Git 仓库（0.2.0 起不再同步会话与附件） |
 | [`@fish-under-sea/dsh-settings-nav-order`](packages/dsh-settings-nav-order) | 把设置面板左边那列菜单排成自己要的顺序、把不想看到的项收起来（存在浏览器 `localStorage`，不改任何第三方插件） |
 
 ## 安装
 
-**本包必须连同四个子包一起声明**，不能只装聚合包一个；而且四个子包要写在
-`devDependencies` 里。两条原因：
+**从 npm 安装：装一个包就够**（聚合包已声明四个子包依赖）：
 
-1. **必须显式声明** —— DSH 的浏览器半区扫描器
+```powershell
+dsh plugin --profile <profile> add @fish-under-sea/dsh-fish
+```
+
+子包作为传递依赖被 pnpm 装到 profile 顶层（本 profile 用 `nodeLinker: hoisted`），
+插件行按包名解析得到；而对账逻辑（`dsh-plugin-manager` 的 `reconcile`）只遍历
+**profile 自己的 `dependencies`**，不递归看传递依赖，所以子包不会被提升为
+bundle 层 —— 插行不会叠加成重复行。
+
+**手工声明依赖时**（下面的 GitHub / link 方式）仍需注意原来那两条，否则会踩同样的坑：
+
+1. **子包必须能被 profile 顶层解析到** —— DSH 的浏览器半区扫描器
    （`@deepseek-ai/dsh-client-modules` 的 `locatePkgJson`）按插件行里的**包名**
    去 profile 顶层解析包目录：行名必须是完整的包名
    （`@fish-under-sea/dsh-approval-guide` 这种 `@scope/name` 两段式 scoped 名；
    多带一段子路径会被 `exactPackageSpecifier()` 判为「不是包」直接跳过）。
-   子包不被声明时，它不会出现在 profile 顶层的 `node_modules/@fish-under-sea/`
-   下，行就解析不到 package.json，插件的设置页与界面也不会加载。
-2. **要写在 `devDependencies`** —— `dsh plugin` 每次执行都会对账
-   （`@deepseek-ai/dsh` 的 `reconcilePlugins`），把 `dependencies` 里任何
-   **声明了 `dsh.bundle` 的包**自动追加进 `dsh.profile.bundles`。四个子包各自
-   都声明了 `dsh.bundle`，而聚合包的 patch 已经把四行插行复述了一遍 —— 子包一旦
-   被提升为 bundle 层，插行就会叠加成重复行，**重复挂载会让应用启动失败**。
-   `devDependencies` 同样会被 pnpm 装到 profile 顶层（`hoisted` linker），行名
-   照常解析得到，但不会被对账逻辑提升为 bundle 层。
+   子包不在 profile 顶层时，行就解析不到 package.json，插件的设置页与界面不会加载。
+2. **手工声明时子包要写在 `devDependencies`** —— `dsh plugin` 每次执行都会对账，
+   把 **profile 的 `dependencies`** 里任何声明了 `dsh.bundle` 的包自动追加进
+   `dsh.profile.bundles`。四个子包各自都声明了 `dsh.bundle`，而聚合包的 patch
+   已经把四行插行复述了一遍 —— 子包一旦被提升为 bundle 层，插行就会叠加成重复行，
+   **重复挂载会让应用启动失败**。`devDependencies` 同样会被装到 profile 顶层，
+   行名照常解析得到，但不会被对账逻辑提升为 bundle 层。
 
-### 从 GitHub 安装（换机复原 / 同步仓用这套）
+### 从 GitHub 安装（不想用 npm registry 时用这套）
 
 ```jsonc
 // profiles/web/package.json
