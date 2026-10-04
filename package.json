@@ -22,7 +22,7 @@
     "@fish-under-sea/dsh-session-title-refresh": "^0.2.0",
     "@fish-under-sea/dsh-git-sync": "^0.2.0",
     "@fish-under-sea/dsh-settings-nav-order": "^0.1.0",
-    "dsh-agent-teams-fish": "^0.1.22"
+    "dsh-agent-teams-fish": "^0.1.23"
   },
   "engines": {
     "node": ">=20"

@@ -32,7 +32,7 @@ Fish 自建 DSH（[DeepSeek Harness](https://github.com/Fish-under-sea/DSH)）�
 | [`dsh-session-title-refresh`](packages/dsh-session-title-refresh) | 0.2.0 | **会话标题自动刷新**：第 N 轮起总结命名，此后每 M 轮刷新一次 |
 | [`dsh-git-sync`](packages/dsh-git-sync) | 0.2.1 | **一键 Git 同步**：把插件清单、启用状态、本地设置、Skills 与看板/用量账本同步到自己的私有仓库 |
 | [`dsh-settings-nav-order`](packages/dsh-settings-nav-order) | 0.1.0 | **设置导航重排**：把设置面板左侧菜单排成自己要的顺序、把不想看的项收起来 |
-| [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-src) | 0.1.22 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；本版新增**自定义美术目录**、九厂商 × 九岗位头像与厂商商标徽标 |
+| [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-src) | 0.1.23 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；本版新增**自定义美术目录**、九厂商 × 九岗位头像与厂商商标徽标 |
 
 ## ⚠️ 本包会停用一个 DSH 内置插件
 
