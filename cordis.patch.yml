@@ -57,3 +57,14 @@
     # 顺序存在浏览器 localStorage，不改任何第三方插件的代码）。
     - id: settings-nav-order
       name: '@fish-under-sea/dsh-settings-nav-order'
+
+    # AgentTeams 多智能体团队协作 —— **外部补充版，不是本仓库子包**：
+    # 上游 NanmiCoder/dsh-agent-teams 的补充版，新增自定义美术目录、
+    # 九厂商 × 九岗位头像与厂商商标徽标。行名 = 它的 npm 包名。
+    # artworkDir（自定义美术目录）是机器相关绝对路径，故意不写在这里：
+    # 需要时在自己 profile 的 patch 层覆盖同一个 id 行即可。
+    - id: agent-teams
+      name: 'dsh-agent-teams-fish'
+      config:
+        stateDir: .agent-teams
+        memberProvider: spawn

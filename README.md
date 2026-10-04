@@ -1,4 +1,4 @@
-> **🟢 活跃维护** · 最近更新：2026-09-29
+> **🟢 活跃维护** · 最近更新：2026-10-05
 >
 > 插件仍在持续增加与迭代，欢迎提 Issue / PR。
 
@@ -10,7 +10,7 @@
 
 Fish 自建 DSH（[DeepSeek Harness](https://github.com/Fish-under-sea/DSH)）插件聚合包
 
-![version](https://img.shields.io/badge/version-0.3.0-22d3ee?style=flat-square) ![license](https://img.shields.io/badge/license-MIT-green?style=flat-square) ![node](https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square)
+![version](https://img.shields.io/badge/version-0.4.0-22d3ee?style=flat-square) ![license](https://img.shields.io/badge/license-MIT-green?style=flat-square) ![node](https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square) ![npm](https://img.shields.io/npm/v/@fish-under-sea/dsh-fish?style=flat-square&label=npm&color=cb3837)
 
 </div>
 
@@ -18,9 +18,9 @@ Fish 自建 DSH（[DeepSeek Harness](https://github.com/Fish-under-sea/DSH)）�
 
 ## 📖 这是什么
 
-根目录是**聚合包**，子插件源码在 `packages/` 下。聚合包靠自己的 bundle 层（`cordis.patch.yml`）把四个插件的插件行**一次性插入** profile 的 roster ——
+根目录是**聚合包**，子插件源码在 `packages/` 下。聚合包靠自己的 bundle 层（`cordis.patch.yml`）把五个插件的插件行**一次性插入** profile 的 roster —— 其中四个是本仓库 `packages/` 下的自建插件，第五个是**外部补充版** `dsh-agent-teams-fish`（独立仓库，非本仓库子包）。
 
-> **装一次 `@fish-under-sea/dsh-fish` ＝ 装齐四个插件。**
+> **装一次 `@fish-under-sea/dsh-fish` ＝ 装齐五个插件。**
 
 **命名差异（容易踩）**：npm 包名 `@fish-under-sea/*` 带 scope，但仓库目录名（`dsh-fish/`）与 GitHub 仓库名（`Fish-under-sea/dsh-fish`）**不带**。
 
@@ -32,6 +32,7 @@ Fish 自建 DSH（[DeepSeek Harness](https://github.com/Fish-under-sea/DSH)）�
 | [`dsh-session-title-refresh`](packages/dsh-session-title-refresh) | 0.2.0 | **会话标题自动刷新**：第 N 轮起总结命名，此后每 M 轮刷新一次 |
 | [`dsh-git-sync`](packages/dsh-git-sync) | 0.2.1 | **一键 Git 同步**：把插件清单、启用状态、本地设置、Skills 与看板/用量账本同步到自己的私有仓库 |
 | [`dsh-settings-nav-order`](packages/dsh-settings-nav-order) | 0.1.0 | **设置导航重排**：把设置面板左侧菜单排成自己要的顺序、把不想看的项收起来 |
+| [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-src) | 0.1.22 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；本版新增**自定义美术目录**、九厂商 × 九岗位头像与厂商商标徽标 |
 
 ## ⚠️ 本包会停用一个 DSH 内置插件
 
@@ -55,7 +56,7 @@ Fish 自建 DSH（[DeepSeek Harness](https://github.com/Fish-under-sea/DSH)）�
 dsh plugin --profile <profile> add @fish-under-sea/dsh-fish
 ```
 
-聚合包已声明四个子包依赖，子包作为传递依赖被 pnpm 装到 profile 顶层（本 profile 用 `nodeLinker: hoisted`），插件行按包名解析即可得到。
+聚合包已声明五个插件依赖，它们作为传递依赖被 pnpm 装到 profile 顶层（本 profile 用 `nodeLinker: hoisted`），插件行按包名解析即可得到。
 
 **为什么不会插出重复行**：对账逻辑（`dsh-plugin-manager` 的 `reconcile`）只遍历 **profile 自己的 `dependencies`**，不递归看传递依赖，所以子包不会被提升为 bundle 层，插行不会叠加。
 
@@ -70,11 +71,12 @@ dsh plugin --profile <profile> add @fish-under-sea/dsh-fish
   "@fish-under-sea/dsh-approval-guide": "github:Fish-under-sea/dsh-fish#path:packages/dsh-approval-guide",
   "@fish-under-sea/dsh-git-sync": "github:Fish-under-sea/dsh-fish#path:packages/dsh-git-sync",
   "@fish-under-sea/dsh-session-title-refresh": "github:Fish-under-sea/dsh-fish#path:packages/dsh-session-title-refresh",
-  "@fish-under-sea/dsh-settings-nav-order": "github:Fish-under-sea/dsh-fish#path:packages/dsh-settings-nav-order"
+  "@fish-under-sea/dsh-settings-nav-order": "github:Fish-under-sea/dsh-fish#path:packages/dsh-settings-nav-order",
+  "dsh-agent-teams-fish": "github:Fish-under-sea/dsh-agent-teams-src"
 }
 ```
 
-`#path:` 是 pnpm 的子目录语法，让一个仓库同时提供多个包 —— 五个依赖全部指向同一仓库，换机 `pnpm install` 后直接从仓库下载，**不依赖任何本机绝对路径**。`bundles` 里只需列 `"@fish-under-sea/dsh-fish"`（它的 patch 负责插入四行）。
+`#path:` 是 pnpm 的子目录语法，让一个仓库同时提供多个包 —— 四个子包指向本仓库，外部补充版指向[它自己的仓库](https://github.com/Fish-under-sea/dsh-agent-teams-src)；换机 `pnpm install` 后直接从仓库下载，**不依赖任何本机绝对路径**。`bundles` 里只需列 `"@fish-under-sea/dsh-fish"`（它的 patch 负责插入五行）。
 
 ### 方式三：本地开发安装（改源码即时生效）
 
@@ -87,7 +89,8 @@ dsh plugin --profile <profile> add @fish-under-sea/dsh-fish
   "@fish-under-sea/dsh-approval-guide": "link:<本仓库路径>/packages/dsh-approval-guide",
   "@fish-under-sea/dsh-git-sync": "link:<本仓库路径>/packages/dsh-git-sync",
   "@fish-under-sea/dsh-session-title-refresh": "link:<本仓库路径>/packages/dsh-session-title-refresh",
-  "@fish-under-sea/dsh-settings-nav-order": "link:<本仓库路径>/packages/dsh-settings-nav-order"
+  "@fish-under-sea/dsh-settings-nav-order": "link:<本仓库路径>/packages/dsh-settings-nav-order",
+  "dsh-agent-teams-fish": "link:<dsh-agent-teams-src 仓库路径>"
 }
 ```
 
@@ -110,7 +113,7 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 
 **② 手工声明时子包要写在 `devDependencies`**
 
-`dsh plugin` 每次执行都会对账，把 profile 的 `dependencies` 里任何声明了 `dsh.bundle` 的包**自动追加进 `dsh.profile.bundles`**。四个子包各自都声明了 `dsh.bundle`，而聚合包的 patch 已经把四行插行复述了一遍 ——
+`dsh plugin` 每次执行都会对账，把 profile 的 `dependencies` 里任何声明了 `dsh.bundle` 的包**自动追加进 `dsh.profile.bundles`**。五个包各自都声明了 `dsh.bundle`，而聚合包的 patch 已经把五行插行复述了一遍 ——
 
 > 子包一旦被提升为 bundle 层，插行就会**叠加成重复行**，而**重复挂载会让应用启动失败**。
 
@@ -118,7 +121,7 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 
 ## ⚙️ 子插件的运行期配置
 
-四个插件的参数**都不写在 `cordis.patch.yml` 里**，而是存在各自 `$DSH_HOME` 下的 `config.json` 中，在 **GUI 设置页**里修改：
+本仓库四个子插件的参数**都不写在 `cordis.patch.yml` 里**，而是存在各自 `$DSH_HOME` 下的 `config.json` 中，在 **GUI 设置页**里修改（外部补充版相反，它的配置写在插件行里，见上一节）：
 
 | 插件 | 设置入口 | 配置文件 |
 |------|---------|---------|
@@ -126,8 +129,22 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 | `session-title-refresh` | 设置 → 会话标题自动刷新 | `$DSH_HOME/dsh-session-title-refresh/config.json` |
 | `git-sync` | 设置 → Git 同步 | `$DSH_HOME/dsh-git-sync/config.json` |
 | `settings-nav-order` | 设置 → 设置导航顺序 | 无配置文件（浏览器 `localStorage`，键 `dsh-settings-nav-order/v1`） |
+| `dsh-agent-teams-fish` | 无设置页（配置写在聚合包 `cordis.patch.yml` 的插件行里） | 同上（`stateDir` / `memberProvider` / `artworkDir`） |
 
 **配置目录名是不带 scope 的短名**（`$DSH_HOME/dsh-git-sync/` 等），与 npm 包名解耦 —— 所以**改包名不会动到已有配置**。
+
+外部补充版 `dsh-agent-teams-fish` 是**例外**：它的参数写在聚合包 `cordis.patch.yml` 的插件行 `config` 里（`stateDir` / `memberProvider`），另有 `artworkDir` 用于指向**自定义美术目录**：
+
+```yaml
+- id: agent-teams
+  name: 'dsh-agent-teams-fish'
+  config:
+    stateDir: .agent-teams        # 团队状态目录（相对会话工作区）
+    memberProvider: spawn         # 成员派生方式：spawn 或 fork
+    # artworkDir: <绝对路径>      # 可选：自定义头像/商标目录（机器相关，默认用包内美术）
+```
+
+> `artworkDir` 是**机器相关**的绝对路径，所以没有写进聚合包（换机器不会指到别人的目录）；需要自定义美术时，在**自己 profile 的 patch 层**覆盖同一个 `id: agent-teams` 行即可。
 
 ### 关于 `settings-nav-order`
 
@@ -145,8 +162,8 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 
 ```text
 dsh-fish/                 # 仓库目录名（npm 包名是 @fish-under-sea/dsh-fish）
-├── package.json          # 聚合包清单（version 0.3.0，dsh.bundle.patch 指向 cordis.patch.yml）
-├── cordis.patch.yml      # bundle 层：停用内置标题插件 + 插入四个插件的插件行
+├── package.json          # 聚合包清单（version 0.4.0，dsh.bundle.patch 指向 cordis.patch.yml）
+├── cordis.patch.yml      # bundle 层：停用内置标题插件 + 插入五个插件的插件行
 ├── pnpm-workspace.yaml   # workspace 声明（仅本地开发用）
 ├── lib/                  # 聚合包自身的空实现（本包不注册任何东西）
 │   ├── index.js
@@ -158,7 +175,9 @@ dsh-fish/                 # 仓库目录名（npm 包名是 @fish-under-sea/dsh-
     └── dsh-settings-nav-order/
 ```
 
-> **为什么聚合包不把子包声明为自己的 `dependencies`**：那样 pnpm 会把 `file:packages/*` 解析成「相对于安装方目录」的路径，从 GitHub 安装时直接报 `ERR_PNPM_LINKED_PKG_DIR_NOT_FOUND` 失败。子包必须由**安装方的 profile 显式声明**（见上面三种安装方式）。
+> 外部补充版 `dsh-agent-teams-fish` **不在** `packages/` 下 —— 它的源码在[独立仓库](https://github.com/Fish-under-sea/dsh-agent-teams-src)，以 **npm 依赖**的形式随聚合包装到 profile 顶层。
+
+> **子包为什么不在聚合包的 `files` 里被打包进来**：聚合包只携带 `lib/` 与 `cordis.patch.yml`，四个子包与外部补充版都以 **npm 依赖**的形式被装到 profile 顶层（见方式一）。只有在「一个仓库同时提供多个包、从 GitHub 安装」时才需要在安装方 profile 里用 `#path:` 显式声明（见方式二）。
 
 ## 🔨 开发
 
@@ -189,12 +208,16 @@ node packages/dsh-settings-nav-order/test/client.test.mjs
 
 好消息：四个子包的客户端测试都断言了这一点，而且断言**读的是 `package.json` 的 `name`** 而不是硬编码字符串 —— 以后再改名漏改，**会被测试直接抓住**。
 
+**外部补充版同理**：`dsh-agent-teams-fish` 来自[独立仓库](https://github.com/Fish-under-sea/dsh-agent-teams-src)，改包名时同样要同步 `package.json` 的 `name` / `cordis.patch.yml` 的行 `name` / `lib/client.js` 的注册 `id` 三处 —— 它的美术路由链测试也断言「注册名 = `package.json` 的 `name`」，改名漏改同样会被抓住。
+
 ## 📄 许可证
 
 **MIT**（聚合包与四个子包一致）。
+
+外部补充版 `dsh-agent-teams-fish` 同样以 **MIT** 分发，其**著作权归上游原作者**（[NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的 程序员阿江 / Relakkes）—— 补充版的来源、署名与新增范围见它仓库里的 `NOTICE.md`。
 
 > 仓库根目录已放置 `LICENSE` 文件，与 `package.json` 中的 `license` 字段（MIT）及四个子包保持一致。
 
 ---
 
-<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.3.0 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
+<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.4.0 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
