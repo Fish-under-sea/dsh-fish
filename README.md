@@ -60,6 +60,23 @@ dsh plugin --profile <profile> add @fish-under-sea/dsh-fish
 
 **为什么不会插出重复行**：对账逻辑（`dsh-plugin-manager` 的 `reconcile`）只遍历 **profile 自己的 `dependencies`**，不递归看传递依赖，所以子包不会被提升为 bundle 层，插行不会叠加。
 
+> ⚠️ **如果安装报 `[NOT_FOUND]`**：本包与五个子包都已发布到 npm **官方源**。若你的机器把 registry 指向国内镜像（例如 `registry.npmmirror.com`），镜像**懒同步**可能还没收录其中某个子包，于是 `dsh plugin add` 会以
+> `404 Not Found … {"error":"[NOT_FOUND] @fish-under-sea/<子包> not found"}` 失败。
+> **这不是包不存在** —— 任选下面一条即可：
+>
+> - **触发镜像同步**（公开端点、幂等、无需登录，等十几秒即可装）：
+>   ```powershell
+>   curl.exe -X PUT https://registry.npmmirror.com/-/package/@fish-under-sea/dsh-approval-guide/syncs
+>   curl.exe -X PUT https://registry.npmmirror.com/-/package/@fish-under-sea/dsh-git-sync/syncs
+>   curl.exe -X PUT https://registry.npmmirror.com/-/package/@fish-under-sea/dsh-session-title-refresh/syncs
+>   curl.exe -X PUT https://registry.npmmirror.com/-/package/@fish-under-sea/dsh-settings-nav-order/syncs
+>   curl.exe -X PUT https://registry.npmmirror.com/-/package/dsh-agent-teams-fish/syncs
+>   ```
+>   返回 `{"ok":true,"state":"waiting"}` 即已受理；用
+>   `curl.exe https://registry.npmmirror.com/@fish-under-sea%2Fdsh-approval-guide` 复查，出现 `"latest"` 就同步好了。
+> - 或把该机器的 registry 换成官方源 `https://registry.npmjs.org/`。
+> - 或用[方式三](#方式三本地开发安装改源码即时生效)的 `link:` 本地路径安装。
+
 ### 方式二：从 GitHub 安装（不想用 npm registry 时）
 
 ```jsonc
