@@ -210,6 +210,25 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
+		 * 意外错误留在浏览器控制台（走 window.console，单测里可以塞一个收集器）。
+		 *
+		 * 只用于**不该发生**的错误：宿主不可达、返回 500、body 不是 JSON 都是预期
+		 * 路径（宿主还没重启就是这么表现的），一律不记 —— 否则每次打开页面都刷一行，
+		 * 真正该看的线索反而被埋掉。
+		 */
+		function warnUnexpected(error) {
+			try {
+				const target = typeof window === 'undefined' ? null : window;
+				target?.console?.warn?.(
+					'dsh-settings-nav-order: 启动对账出现意外错误（本地顺序不受影响，下次启动会重试）',
+					error,
+				);
+			} catch {
+				/* 记日志本身不该影响对账 */
+			}
+		}
+
+		/**
 		 * 启动对账：宿主的偏好文件是跨机复原的来源，但不能盖掉本地还没推上去的改动。
 		 * 四条规则逐条对应一次真实场景 ——
 		 *
@@ -228,6 +247,9 @@ window.__ModuleLoader__.load({
 			if (!request) return Promise.resolve(false);
 			return Promise.resolve(request)
 				.then((response) => (response && response.ok ? response.json() : null))
+				// 传输层 / 响应体失败是**预期**路径（宿主还没重启、断网、路由缺失），
+				// 静默按「这次不对账」处理 —— 偏好本身不依赖网络，不该刷控制台。
+				.catch(() => null)
 				.then((data) => {
 					if (!data || data.ok !== true) return false;
 					const remote = normalizeRemote(data.state);
@@ -240,7 +262,12 @@ window.__ModuleLoader__.load({
 					}
 					return pushState().then(() => false);
 				})
-				.catch(() => false);
+				// 能走到这里的异常已经不是「宿主不可达」了（响应都拿到了才往下走），
+				// 说明是代码缺陷：如实留痕，别再无声吞掉。
+				.catch((error) => {
+					warnUnexpected(error);
+					return false;
+				});
 		}
 
 		/** 把菜单项按名字分组，得到「同名第几个」——同名项的唯一区分手段。 */

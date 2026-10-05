@@ -1099,3 +1099,58 @@ test('有未保存的排序时点「启用」复选框：不能谎报已保存�
   assert.deepEqual(module.loadConfig().order.slice(0, 2).map((row) => row.name), ['模型', '通用设置']);
   assert.deepEqual(dom.labelsInVisualOrder().slice(0, 2), ['模型', '通用设置']);
 });
+
+test('意外错误留痕、预期失败不刷屏（对账的两类失败要分开）', async () => {
+  const local = remoteRaw({ enabled: true, order: [{ name: '账户', index: 0 }], hidden: [] });
+
+  // ① 预期失败：宿主不可达 —— 不记日志（宿主没重启就是这个样子，记了只会刷屏）
+  {
+    const { module, dom } = loadClientWithHost(SAMPLE, null);
+    const warnings = [];
+    dom.window.console = { warn: (...args) => warnings.push(args) };
+    dom.store.set(module.STORE_KEY, local);
+    dom.window.fetch = () => Promise.reject(new Error('offline'));
+    assert.equal(await module.reconcile(dom.document), false);
+    assert.equal(warnings.length, 0, '宿主不可达是预期路径，不该记日志');
+  }
+
+  // ② 预期失败：body 不是 JSON
+  {
+    const { module, dom } = loadClientWithHost(SAMPLE, null);
+    const warnings = [];
+    dom.window.console = { warn: (...args) => warnings.push(args) };
+    dom.store.set(module.STORE_KEY, local);
+    dom.window.fetch = () => Promise.resolve({ ok: true, json: async () => { throw new Error('bad json'); } });
+    assert.equal(await module.reconcile(dom.document), false);
+    assert.equal(warnings.length, 0, '响应体坏掉也是预期路径');
+  }
+
+  // ③ 意外错误：响应拿到了、形状检查却抛了（等价于代码缺陷）—— 必须留痕
+  {
+    const { module, dom } = loadClientWithHost(SAMPLE, null);
+    const warnings = [];
+    dom.window.console = { warn: (...args) => warnings.push(args) };
+    dom.store.set(module.STORE_KEY, local);
+    // 一个「读任何属性都抛」的对象：能通过 typeof/Array.isArray 检查，然后炸在属性访问上。
+    const hostile = new Proxy({}, {
+      get() {
+        throw new TypeError('boom');
+      },
+    });
+    dom.window.fetch = () => Promise.resolve(jsonResponse({ ok: true, state: hostile }));
+
+    assert.equal(await module.reconcile(dom.document), false, '意外错误不应把异常抛给调用方');
+    assert.equal(warnings.length, 1, `意外错误必须留痕：${JSON.stringify(warnings)}`);
+    assert.ok(String(warnings[0][0]).includes('意外错误'), warnings[0][0]);
+    assert.equal(dom.store.get(module.STORE_KEY), local, '本地偏好不受影响');
+  }
+
+  // ④ 没有 console（极老环境 / 单测不带）也不能因为记日志而崩
+  {
+    const { module, dom } = loadClientWithHost(SAMPLE, null);
+    dom.window.console = undefined;
+    dom.store.set(module.STORE_KEY, local);
+    dom.window.fetch = () => Promise.resolve(jsonResponse({ ok: true, state: new Proxy({}, { get() { throw new TypeError('boom'); } }) }));
+    assert.equal(await module.reconcile(dom.document), false);
+  }
+});
