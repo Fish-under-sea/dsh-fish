@@ -54,7 +54,9 @@
       name: '@fish-under-sea/dsh-git-sync'
 
     # 设置导航顺序自定义：把左侧设置菜单排成自己要的样子（纯浏览器插件，
-    # 顺序存在浏览器 localStorage，不改任何第三方插件的代码）。
+    # 不改任何第三方插件的代码）。顺序的主副本在浏览器 localStorage，宿主半区
+    # 另把它落成 $DSH_HOME/dsh-settings-nav-order/state.json —— 该文件在
+    # dsh-git-sync 的白名单里，于是这份显示偏好也跟着配置仓跨机复原。
     - id: settings-nav-order
       name: '@fish-under-sea/dsh-settings-nav-order'
 

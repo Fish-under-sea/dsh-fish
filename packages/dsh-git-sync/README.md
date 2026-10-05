@@ -95,6 +95,7 @@ dsh plugin --profile <profile> add "file:<仓库路径>/packages/dsh-git-sync"
 | `.agent-presets/` | agent 预设 |
 | `storages/workspace.json` | 工作区 ↔ 会话映射 |
 | `task-board/`、`dsh-session-archive/`、`dsh-usage/` | 看板账本、归档状态、用量账本 |
+| `dsh-settings-nav-order/state.json` | **设置导航顺序偏好**（顺序 / 隐藏项）——由 [`dsh-settings-nav-order`](https://github.com/Fish-under-sea/dsh-fish/tree/main/packages/dsh-settings-nav-order) 的宿主半区在用户保存时写入（同源路由）；浏览器真正的 localStorage 本插件够不着，所以跨机复原靠这一个文件 |
 | `pet.json`、`skin-center-active.json` | 桌宠、皮肤 |
 
 > **`<profile>` 按目录动态枚举**：本机 `profiles/` 下每个 profile 目录都会被覆盖，桌面版是 `desktop`、Web 版是 `web`。写死 profile 名会漏掉「装了什么插件 / 每个插件是否启用 / 精确版本」这最要紧的三样——0.2.0 桌面版踩过这个坑：profile 改名后白名单一条都命中不了，仓库里只剩 0.1.x 的 `profiles/web` 快照。
@@ -143,11 +144,15 @@ dsh plugin --profile <profile> add "file:<仓库路径>/packages/dsh-git-sync"
 - 宿主导出：`name` / `inject = ['webServer']` / `apply(ctx, config)`。
 - Web 半导出：`inject = ['slots']` / `apply(ctx)`，向 `settings.section` 注册一页。
 
-本包没有配置 `scripts.test`；测试入口为 `test/client.test.mjs`，使用 `node:test`：
+本包没有配置 `scripts.test`；测试入口为 `test/client.test.mjs`（`node:test`）与两个手写断言脚本：
 
 ```powershell
-node --test test/client.test.mjs
+node test/client.test.mjs        # Web 半边装载冒烟
+node test/test-sync-engine.mjs   # 同步引擎：白名单 / 采集 / 还原 / 差异 / 拒绝闸
+node test/test-client.mjs        # Web 半边渲染与文案断言
 ```
+
+> 直接 `node <测试文件>` 即可，**不要**用 `node --test test/`：测试运行器会派生子进程并捕获管道输出，在受限沙箱里会以 `EPERM` 失败。
 
 ## 与聚合包的关系
 

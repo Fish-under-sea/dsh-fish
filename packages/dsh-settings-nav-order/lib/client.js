@@ -11,9 +11,14 @@
  *      节点仍然留在 DOM 里，取消隐藏立刻回来，所以「隐藏」是可逆的显示偏好，
  *      不是卸载。
  *
- * 为什么用 localStorage 而不是宿主配置文件：这是「这台机器上这个浏览器」的显示
- * 偏好，跨设备同步没有意义；也因此宿主半边是空实现，不需要 API、不需要读盘。
- * 键：dsh-settings-nav-order/v1（加 hidden 字段时沿用同一个键，老数据照读）。
+ * 数据放两处，各有各的职责：
+ *   - **工作副本**是浏览器 localStorage（键 dsh-settings-nav-order/v1，加 hidden
+ *     字段时沿用同一个键，老数据照读）——它决定当次渲染，读写都不经网络；
+ *   - **镜像**落在宿主的 $DSH_HOME/dsh-settings-nav-order/state.json（宿主半边
+ *     lib/index.js 的通道）：保存时把快照推上去，启动时按 reconcile 的规则回填。
+ *     dsh-git-sync 的白名单收录那个文件，所以换成另一台机器也能复原。
+ * localStorage 里另有第二个键记着「上一次与宿主对齐过的那份原文」，用来区分
+ * 「本地没动过」与「本地有还没推上去的改动」。
  *
  * 识别方式：导航按钮没有 id 也没有 data 属性（见 dsh-client-ui-settings-general
  * 的 SettingsRoot 渲染），类名还是 CSS Modules 的哈希名，只能按「类名里含原名」
@@ -35,6 +40,19 @@ window.__ModuleLoader__.load({
 		/** localStorage 键：带版本号，将来结构变了可以另起键，老数据自然失效。 */
 		const STORE_KEY = 'dsh-settings-nav-order/v1';
 
+		/** 宿主偏好文件通道（由宿主半边 lib/index.js 注册的同源路由）。 */
+		const SYNC_API = '/dsh-settings-nav-order/api';
+
+		/**
+		 * 第二个 localStorage 键：上一次与宿主对齐成功的那份配置**原文**。
+		 *
+		 * 启动对账靠它区分两件表面上一样的事 ——「本地没动过」（可以采用宿主里更新的
+		 * 那份）与「本地有还没推上去的改动」（必须保留本地，否则一次失败的推送就会
+		 * 静默丢掉用户刚做的调整）。存原文而不是解析后的对象：逐字比较，不做语义等价
+		 * 的猜测；这个键本身丢了最坏也只是多重推一次。
+		 */
+		const SYNCED_KEY = 'dsh-settings-nav-order/v1.synced';
+
 		/** 本页自己的菜单名。它同时是「唯一能取消隐藏的入口」，所以永远不许被隐藏。 */
 		const PANEL_LABEL = '设置导航顺序';
 
@@ -45,6 +63,17 @@ window.__ModuleLoader__.load({
 		function defaultConfig() {
 			return { enabled: true, order: [], hidden: [] };
 		}
+
+		/**
+		 * 保存后宿主文件的三种回执文案。
+		 *
+		 * 为什么要有这个：推送是异步的，失败时如果什么都不显示，用户会以为「我保存了，
+		 * 所以仓库里也有了」—— 那正是 dsh-git-sync 修过的「静默空操作被报成成功」。
+		 * 三档如实对应三种真实状态：正在写、写进去了、没写进去（本地已生效）。
+		 */
+		const SYNC_PENDING = '宿主文件：正在写入…';
+		const SYNC_DONE = '宿主文件：已同步 —— Git 同步会带上这份偏好，换机可复原。';
+		const SYNC_FAILED = '宿主文件：未同步 —— 本地已生效；宿主通道恢复后，下次打开设置页会自动重推。';
 
 		/** 把配置里的一段 { name, index } 列表洗干净；坏形状一律丢成空数组。 */
 		function normalizeRows(value) {
@@ -81,6 +110,137 @@ window.__ModuleLoader__.load({
 			} catch {
 				/* 忽略：显示偏好丢了不影响正确性 */
 			}
+		}
+
+		// ── 宿主偏好文件通道：换机复原靠这一段 ──────────────────────────────
+
+		/**
+		 * 只走 window.fetch（不写裸 fetch）：单测里的假 window 没有它就等于「宿主
+		 * 不可达」，不会真的发网络请求；真实浏览器里 window.fetch 就是 fetch。
+		 */
+		function syncFetch(pathname, options) {
+			const target = typeof window === 'undefined' ? null : window;
+			if (!target || typeof target.fetch !== 'function') return null;
+			try {
+				return target.fetch(`${SYNC_API}${pathname}`, { credentials: 'same-origin', ...(options ?? {}) });
+			} catch {
+				return null;
+			}
+		}
+
+		/** 读配置原文；读不到（没配过、隐私模式）一律 null。 */
+		function readRaw() {
+			try {
+				return window.localStorage.getItem(STORE_KEY);
+			} catch {
+				return null;
+			}
+		}
+
+		/** 读「上次与宿主对齐过的原文」。 */
+		function readSynced() {
+			try {
+				return window.localStorage.getItem(SYNCED_KEY);
+			} catch {
+				return null;
+			}
+		}
+
+		/** 记下对齐过的原文；记不进去只影响下次对账的判断（最坏是多推一次）。 */
+		function writeSynced(raw) {
+			try {
+				window.localStorage.setItem(SYNCED_KEY, raw);
+			} catch {
+				/* 忽略 */
+			}
+		}
+
+		/**
+		 * 把宿主回给的那份快照规范化。形状不对（null、数组、字符串、坏行）一律当成
+		 * 「没有快照」——绝不用它覆盖本地。返回 `{ raw, config }`（raw 是规范化原文）。
+		 */
+		function normalizeRemote(value) {
+			if (value === null || value === undefined) return null;
+			if (typeof value !== 'object' || Array.isArray(value)) return null;
+			const config = {
+				enabled: value.enabled !== false,
+				order: normalizeRows(value.order),
+				hidden: normalizeRows(value.hidden),
+			};
+			return { raw: JSON.stringify(config), config };
+		}
+
+		/**
+		 * 把当前配置推给宿主（宿主落盘 → dsh-git-sync 采集 → 进配置仓）。
+		 *
+		 * 失败静默：宿主不可达（还没重启、进程刚起来、路由缺失）时本地偏好照常生效，
+		 * 并且**不记指纹** —— 下次启动对账会判定「本地有未同步改动」，自动重推一次。
+		 */
+		function pushState() {
+			const raw = readRaw();
+			if (raw === null) return Promise.resolve(false);
+			const request = syncFetch('/state', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: raw,
+			});
+			if (!request) return Promise.resolve(false);
+			return Promise.resolve(request)
+				.then((response) => (response && response.ok ? response.json() : null))
+				.then((data) => {
+					if (!data || data.ok !== true) return false;
+					// 记的是「刚推上去的那份原文」＝宿主现在持有的内容；此后本地再改，
+					// 原文与指纹不同，对账据此判定「本地有改动」。
+					writeSynced(raw);
+					return true;
+				})
+				.catch(() => false);
+		}
+
+		/** 采用宿主快照：写回 localStorage、记指纹、立刻重排导航。 */
+		function adoptRemote(remote, document) {
+			try {
+				window.localStorage.setItem(STORE_KEY, remote.raw);
+			} catch {
+				return false;
+			}
+			writeSynced(remote.raw);
+			applyToNav(document);
+			return true;
+		}
+
+		/**
+		 * 启动对账：宿主的偏好文件是跨机复原的来源，但不能盖掉本地还没推上去的改动。
+		 * 四条规则逐条对应一次真实场景 ——
+		 *
+		 *   1. 宿主没有快照（第一次同步、新机器、文件被清掉）→ 本地就是唯一来源，推上去。
+		 *      没有这条，「升级前就存在的顺序」永远进不了仓库，得先手动改一次。
+		 *   2. 本地没有配置（换机、清过站点数据）→ 直接采用宿主。**复原路径就是这一条。**
+		 *   3. 本地与指纹逐字相同（本地没动过）→ 采用宿主里更新的那份。
+		 *   4. 本地与指纹不同（有未同步的改动）→ 保留本地并推上去。宁可这次不动，也不
+		 *      静默丢掉用户刚做的调整。
+		 *
+		 * 任何一步出错（宿主没有这条路由、返回 500、body 不是 JSON）都只是「这次不对账」，
+		 * 本地顺序照旧，绝不影响已经生效的偏好。
+		 */
+		function reconcile(document) {
+			const request = syncFetch('/state');
+			if (!request) return Promise.resolve(false);
+			return Promise.resolve(request)
+				.then((response) => (response && response.ok ? response.json() : null))
+				.then((data) => {
+					if (!data || data.ok !== true) return false;
+					const remote = normalizeRemote(data.state);
+					const raw = readRaw();
+					if (remote === null) return pushState().then(() => false);
+					if (raw === null) return adoptRemote(remote, document);
+					if (raw === readSynced()) {
+						if (remote.raw === raw) return false;
+						return adoptRemote(remote, document);
+					}
+					return pushState().then(() => false);
+				})
+				.catch(() => false);
 		}
 
 		/** 把菜单项按名字分组，得到「同名第几个」——同名项的唯一区分手段。 */
@@ -425,6 +585,8 @@ window.__ModuleLoader__.load({
 			const [items, setItems] = react.useState(() => collectItems(typeof document === 'undefined' ? undefined : document));
 			const [draft, setDraft] = react.useState(() => editableList(items, config));
 			const [dirty, setDirty] = react.useState(false);
+			/** 保存后宿主文件的回执（空字符串＝本次还没保存过）。 */
+			const [syncNote, setSyncNote] = react.useState('');
 			const [dragFrom, setDragFrom] = react.useState(-1);
 			const [dropAt, setDropAt] = react.useState(-1);
 
@@ -450,11 +612,31 @@ window.__ModuleLoader__.load({
 				hidden: toSavedRows(rows.filter((row) => row.hidden)),
 			});
 
+			/**
+			 * 草稿与某份配置是否已经一致（只比顺序与隐藏 —— 草稿里没有 enabled）。
+			 *
+			 * 用途只有一个：决定 commit 之后 dirty 该是什么。**不能一律置 false**：
+			 * 「启用」复选框走的是 commit({...config, enabled})，提交的是**已保存**
+			 * 的顺序，草稿里的拖动/隐藏并没有进配置。这时如果谎报「已保存」，用户
+			 * 会以为刚排好的顺序已经存住了 —— 正是这个插件最不该有的那种假成功。
+			 */
+			const draftMatches = (rows, config) =>
+				JSON.stringify(toSavedRows(rows)) === JSON.stringify(config.order)
+				&& JSON.stringify(toSavedRows(rows.filter((row) => row.hidden))) === JSON.stringify(config.hidden);
+
+			/** 推给宿主并如实回报结果 —— 成功/失败都要看得见，不假装成功。 */
+			const syncToHost = () => {
+				setSyncNote(SYNC_PENDING);
+				return pushState().then((ok) => setSyncNote(ok ? SYNC_DONE : SYNC_FAILED));
+			};
+
 			const commit = (next) => {
 				setConfig(next);
 				saveConfig(next);
 				applyToNav(document);
-				setDirty(false);
+				setDirty(!draftMatches(draft, next));
+				// 落盘之后顺手推给宿主：dsh-git-sync 采集的是那个文件，不是 localStorage。
+				syncToHost();
 			};
 
 			const move = (from, to) => change(moveTo(draft, from, to));
@@ -510,7 +692,7 @@ window.__ModuleLoader__.load({
 				h(
 					'div',
 					{ className: 'sno-note' },
-					'按住每行左边的 ⋮⋮ 拖动就能排序（也可以点 ↑ / ↓）；不想看到某一项，点「隐藏」把它从左侧菜单收起来——插件本身照常工作，随时点「显示」找回来。保存后立即生效；这些偏好只存在这个浏览器里（localStorage），不动任何插件的代码，插件更新也不会丢。',
+					'按住每行左边的 ⋮⋮ 拖动就能排序（也可以点 ↑ / ↓）；不想看到某一项，点「隐藏」把它从左侧菜单收起来——插件本身照常工作，随时点「显示」找回来。保存后立即生效，不动任何插件的代码，插件更新也不会丢。偏好同时落在浏览器（localStorage，当场生效）与宿主文件（$DSH_HOME/dsh-settings-nav-order/state.json，供 Git 同步跨机复原）：换机装好本插件、把配置仓还原到本机之后，打开设置页即自动恢复，不必手工重排。',
 				),
 				h(
 					'label',
@@ -526,6 +708,9 @@ window.__ModuleLoader__.load({
 				dirty
 					? h('div', { className: 'sno-note warn' }, '未保存：下面的顺序/隐藏还没写进配置。')
 					: h('div', { className: 'sno-note' }, '当前顺序与已保存的一致。'),
+				syncNote
+					? h('div', { className: syncNote === SYNC_FAILED ? 'sno-note warn' : 'sno-note' }, syncNote)
+					: null,
 				h(
 					'div',
 					{ className: 'sno-list' },
@@ -578,6 +763,7 @@ window.__ModuleLoader__.load({
 								setDragFrom(-1);
 								setDropAt(-1);
 								applyToNav(document);
+								syncToHost();
 							},
 						},
 						'恢复默认',
@@ -629,9 +815,22 @@ window.__ModuleLoader__.load({
 					frame = 0;
 				};
 			}, 'dsh-settings-nav-order: nav order');
+
+			// 启动对账：把宿主文件里的偏好回填到 localStorage（换机复原路径），或反过来
+			// 把本地还没推上去的改动推给宿主。整段异步、失败静默 —— 顺序本身不依赖网络，
+			// 宿主半边不在（老版本、没起 webServer）时一切照旧。
+			ctx.effect(() => {
+				reconcile(typeof document === 'undefined' ? undefined : document);
+				return () => {};
+			}, 'dsh-settings-nav-order: 偏好文件对账');
 		}
 
 		exports.STORE_KEY = STORE_KEY;
+		exports.SYNCED_KEY = SYNCED_KEY;
+		exports.SYNC_API = SYNC_API;
+		exports.SYNC_PENDING = SYNC_PENDING;
+		exports.SYNC_DONE = SYNC_DONE;
+		exports.SYNC_FAILED = SYNC_FAILED;
 		exports.PANEL_LABEL = PANEL_LABEL;
 		exports.DEFAULT_CONFIG = DEFAULT_CONFIG;
 		exports.loadConfig = loadConfig;
@@ -646,6 +845,10 @@ window.__ModuleLoader__.load({
 		exports.dropIndex = dropIndex;
 		exports.adjustDrop = adjustDrop;
 		exports.applyToNav = applyToNav;
+		exports.normalizeRemote = normalizeRemote;
+		exports.pushState = pushState;
+		exports.reconcile = reconcile;
+		exports.readSynced = readSynced;
 		exports.SettingsNavPanel = SettingsNavPanel;
 		exports.apply = apply;
 		exports.inject = ['slots'];

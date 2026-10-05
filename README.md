@@ -1,4 +1,4 @@
-> **🟢 活跃维护** · 最近更新：2026-10-05
+> **🟢 活跃维护** · 最近更新：2026-10-06
 >
 > 插件仍在持续增加与迭代，欢迎提 Issue / PR。
 >
@@ -12,6 +12,8 @@
 > **🆕 0.5.6（2026-10-05）**：`dsh-agent-teams-fish` **0.1.28** —— 回滚客户端面板字典（它导致桌面端 renderer 启动失败），指令中文化改由 Host 侧描述符承担。
 > **🆕 0.5.7（2026-10-05）**：两个斜杠命令的说明改为`中文标签 · 说明`格式（gent-teams → 「智能体团队 · …」、/companion → 「视觉伴侣 · …」）。面板的**图标**与**中文标签前缀**由核心包 dsh-client-ui-commands 的写死表（HOST_FACES）提供，插件命令当前无扩展点，故用描述符文案逼近。
 > **🆕 0.5.6（2026-10-05）**：dsh-agent-teams-fish **0.1.28** —— 回滚客户端面板字典（它导致桌面端 renderer 启动失败），指令中文化改由 Host 侧描述符承担（面板以内置兜底显示中文）；角色词表规范化仍保留在 0.1.27+。
+>
+> **🆕 0.5.8（2026-10-06）**：给「设置导航顺序」补上**云同步桥** —— 偏好除浏览器 `localStorage` 外，另由 `@fish-under-sea/dsh-settings-nav-order` **0.1.2** 的宿主半区落成 `$DSH_HOME/dsh-settings-nav-order/state.json`（保存时写入、启动时回填；四情形对账规则，绝不静默丢弃本地未推送的改动；保存后如实回报宿主文件是否同步、写失败在宿主日志留痕），`@fish-under-sea/dsh-git-sync` **0.2.3** 的白名单收录该文件：**换机后设置菜单的顺序与隐藏项能随配置仓复原**。两个子包新增 46 个用例（settings-nav-order 客户端 36→52、宿主 17；git-sync 引擎 56→69）。
 
 <div align="center">
 
@@ -21,7 +23,7 @@
 
 Fish 自建 DSH（[DeepSeek Harness](https://github.com/Fish-under-sea/DSH)）插件聚合包
 
-![version](https://img.shields.io/badge/version-0.5.7-22d3ee?style=flat-square) ![license](https://img.shields.io/badge/license-MIT-green?style=flat-square) ![node](https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square) ![npm](https://img.shields.io/npm/v/@fish-under-sea/dsh-fish?style=flat-square&label=npm&color=cb3837) ![DSH](https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4b6ef6?style=flat-square) ![bundle](https://img.shields.io/badge/kind-bundle-6b7280?style=flat-square)
+![version](https://img.shields.io/badge/version-0.5.8-22d3ee?style=flat-square) ![license](https://img.shields.io/badge/license-MIT-green?style=flat-square) ![node](https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square) ![npm](https://img.shields.io/npm/v/@fish-under-sea/dsh-fish?style=flat-square&label=npm&color=cb3837) ![DSH](https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4b6ef6?style=flat-square) ![bundle](https://img.shields.io/badge/kind-bundle-6b7280?style=flat-square)
 
 </div>
 
@@ -41,8 +43,8 @@ Fish 自建 DSH（[DeepSeek Harness](https://github.com/Fish-under-sea/DSH)）�
 |------|:----:|------|
 | [`dsh-approval-guide`](packages/dsh-approval-guide) | 0.2.1 | 在审批弹窗里追加**中文说明**：这次审批会做什么、有什么风险、依据是什么 |
 | [`dsh-session-title-refresh`](packages/dsh-session-title-refresh) | 0.2.1 | **会话标题自动刷新**：第 N 轮起总结命名，此后每 M 轮刷新一次 |
-| [`dsh-git-sync`](packages/dsh-git-sync) | 0.2.2 | **一键 Git 同步**：把插件清单、启用状态、本地设置、Skills 与看板/用量账本同步到自己的私有仓库 |
-| [`dsh-settings-nav-order`](packages/dsh-settings-nav-order) | 0.1.1 | **设置导航重排**：把设置面板左侧菜单排成自己要的顺序、把不想看的项收起来 |
+| [`dsh-git-sync`](packages/dsh-git-sync) | 0.2.3 | **一键 Git 同步**：把插件清单、启用状态、本地设置、Skills、看板/用量账本与设置导航顺序偏好同步到自己的私有仓库 |
+| [`dsh-settings-nav-order`](packages/dsh-settings-nav-order) | 0.1.2 | **设置导航重排**：把设置面板左侧菜单排成自己要的顺序、把不想看的项收起来；偏好随 Git 同步插件**跨机复原** |
 | [`dsh-visual-companion`](packages/dsh-visual-companion) | 0.1.3 | **视觉伴侣唤醒**：网页上看原型 / 比布局，点选 + 备注后按「提交给助手」，会话自动收到一条用户消息并起一轮 —— 不必回终端复述；**点选过程静默，只有提交才唤醒一次** |
 | [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) | 0.1.29 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；本版新增**自定义美术目录**、九厂商 × 九岗位头像与厂商商标徽标，以及**中文岗位名**与**厂商通用大图兜底**（未命中岗位时显示该厂商大图并提示适配中） |
 | [`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/-dsh-better-reasoning-effort-fish) | 0.5.5 | **思考强度与输入模态**（上游 [HaoyueQin/dsh-better-reasoning-effort](https://github.com/HaoyueQin/dsh-better-reasoning-effort) 的**Fork**）：在官方「模型」页编辑卡里直接编辑每模型的 `reasoningEfforts` 与 `input` 声明，并支持一键自动适配；本 Fork 把 `settings.models.provider-card` 席位完整让给模型能力面板 |
@@ -164,7 +166,7 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 | `approval-guide` | 无配置项 | — |
 | `session-title-refresh` | 设置 → 会话标题自动刷新 | `$DSH_HOME/dsh-session-title-refresh/config.json` |
 | `git-sync` | 设置 → Git 同步 | `$DSH_HOME/dsh-git-sync/config.json` |
-| `settings-nav-order` | 设置 → 设置导航顺序 | 无配置文件（浏览器 `localStorage`，键 `dsh-settings-nav-order/v1`） |
+| `settings-nav-order` | 设置 → 设置导航顺序 | 无配置项；偏好存在浏览器 `localStorage`（键 `dsh-settings-nav-order/v1`）并镜像到 `$DSH_HOME/dsh-settings-nav-order/state.json`（供 `git-sync` 采集） |
 | `dsh-visual-companion` | 无设置页（配置写在自己 profile patch 的插件行里） | 同上（`watchDir`：视觉伴侣根目录，用于「加载即自动绑定」） |
 | `dsh-agent-teams-fish` | 无设置页（配置写在聚合包 `cordis.patch.yml` 的插件行里） | 同上（`stateDir` / `memberProvider` / `artworkDir`） |
 | `dsh-better-reasoning-effort-fish` | 无设置页（能力直接嵌进官方「模型」页编辑卡） | 同上（`autofill` / `modalityAutofill` / `probeTimeoutMs` / `bootRetryDelaysMs` / `defaultGuard`，写在插件行的 `config` 或 `settings.yaml` 的插件 `config` 块） |
@@ -191,7 +193,8 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 - **排序**：拖动 `⋮⋮` 把手，或点 `↑`/`↓`
 - **隐藏**：点「隐藏」收起不想看的项
 - **做法**：给导航按钮打 CSS `order`（容器是 flex column）、隐藏打 `display:none`（**节点不删，随时可逆**）—— 两者都不动 DOM 顺序、不改任何第三方插件代码，所以**插件升级不会冲掉这些偏好**
-- **数据**：存在浏览器 `localStorage`（键 `dsh-settings-nav-order/v1`），**不跟仓库同步**
+- **数据**：主副本在浏览器 `localStorage`（键 `dsh-settings-nav-order/v1`），另由宿主半区镜像到 `$DSH_HOME/dsh-settings-nav-order/state.json` —— **该文件在 `git-sync` 的白名单里**，所以顺序与隐藏项会跟着配置仓跨机复原（换机打开设置页即自动回填）。0.1.2 起如此；此前这些偏好只在浏览器里，不跟仓库走
+- **保存后如实回报**：面板会写明宿主文件是否已同步（写不进去就说「未同步、下次自动重推」，不假装成功）；有未保存的排序时点「启用」开关，也仍然显示「未保存」，不会谎报「已保存」
 - **退回原样**：关掉「启用手动排序与隐藏」，或点「恢复默认」
 - **防自锁**：「设置导航顺序」这一页**不能隐藏自己** —— 它是唯一能取消隐藏的入口
 - **识别方式**：真实类名是 CSS Modules 哈希名（`ZiQlkq_navList`），所以按 `[class*="navList"]` 子串匹配，**DSH 换哈希前缀也不受影响**
@@ -200,7 +203,7 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 
 ```text
 dsh-fish/                 # 仓库目录名（npm 包名是 @fish-under-sea/dsh-fish）
-├── package.json          # 聚合包清单（version 0.5.7，dsh.bundle.patch 指向 cordis.patch.yml）
+├── package.json          # 聚合包清单（version 0.5.8，dsh.bundle.patch 指向 cordis.patch.yml）
 ├── cordis.patch.yml      # bundle 层：停用内置标题插件 + 插入七个插件的插件行
 ├── pnpm-workspace.yaml   # workspace 声明（仅本地开发用）
 ├── lib/                  # 聚合包自身的空实现（本包不注册任何东西）
@@ -226,7 +229,9 @@ pnpm install                                                          # 装 work
 node packages/dsh-approval-guide/test/guide.test.mjs                  # 跑测试
 node packages/dsh-session-title-refresh/test/run-all.mjs
 node packages/dsh-git-sync/test/client.test.mjs
+node packages/dsh-git-sync/test/test-sync-engine.mjs
 node packages/dsh-settings-nav-order/test/client.test.mjs
+node packages/dsh-settings-nav-order/test/host.test.mjs
 node packages/dsh-visual-companion/test/visual-companion.test.mjs
 ```
 
@@ -265,4 +270,4 @@ node packages/dsh-visual-companion/test/visual-companion.test.mjs
 
 ---
 
-<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.5.7 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
+<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.5.8 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>

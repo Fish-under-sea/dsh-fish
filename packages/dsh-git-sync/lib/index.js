@@ -50,6 +50,13 @@ const WHITE_LIST = [
   'task-board/scheduler-v2.json',
   'dsh-session-archive',
   'dsh-usage',
+  // 设置导航顺序（dsh-settings-nav-order）的顺序 / 隐藏项。
+  //
+  // 这份偏好真正生效的地方是**浏览器 localStorage**（键 dsh-settings-nav-order/v1），
+  // 本插件在宿主进程里够不着它 —— 所以 dsh-settings-nav-order 的宿主半区把它落成这个
+  // 文件（用户每次保存时用自己那条同源路由写入），本插件只负责按相对路径搬运。
+  // 少了这一条，换机后设置菜单的顺序与隐藏项就复原不了（剩下的都能复原）。
+  'dsh-settings-nav-order/state.json',
   // `profiles/<profile>/` 下的配置面不在这里写死，见下方 PROFILE_FILES + activeList()。
   //
   // 曾经的写法是 'profiles/web/package.json' 这类字面量：0.2.0 桌面版把 profile

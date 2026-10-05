@@ -197,6 +197,58 @@ console.log('\n=== 7. profile 名不得写死：任意 profile（desktop 等）�
   check('diff：仓库里的旧 profile 残留记入 removed', d2.removed.includes('profiles/legacy/package.json'), JSON.stringify(d2.removed));
 }
 
+console.log('\n=== 8. 设置导航顺序偏好（浏览器 localStorage 的镜像）必须跟着走 ===');
+{
+  // 这份偏好真正生效的地方是浏览器 localStorage（键 dsh-settings-nav-order/v1），
+  // 宿主进程够不着；dsh-settings-nav-order 的宿主半区把它落成这个文件，本插件搬它。
+  const NAV = 'dsh-settings-nav-order/state.json';
+  check('白名单收录 dsh-settings-nav-order/state.json', WHITE_LIST.includes(NAV), JSON.stringify(WHITE_LIST));
+  check('★ 该路径不被任何一道拒绝闸拦下', testForbidden(NAV) === false);
+  check('★ 白名单里该目录只有这一条（精确文件，不是整目录）',
+    WHITE_LIST.filter((w) => w.startsWith('dsh-settings-nav-order')).length === 1,
+    JSON.stringify(WHITE_LIST.filter((w) => w.startsWith('dsh-settings-nav-order'))));
+
+  const h5 = path.join(TMP, 'home5');
+  const r5 = path.join(TMP, 'repo5');
+  mkdirSync(path.join(h5, 'dsh-settings-nav-order'), { recursive: true });
+  mkdirSync(r5, { recursive: true });
+  const stateText = JSON.stringify({ enabled: true, order: [{ name: '模型', index: 0 }], hidden: [{ name: '账户', index: 0 }] });
+  writeFileSync(path.join(h5, 'dsh-settings-nav-order', 'state.json'), stateText);
+  writeFileSync(path.join(h5, 'dsh-settings-nav-order', 'noise.json'), '{}\n');
+
+  const r5res = mod.copyToRepo(h5, { repoDir: r5 });
+  const copiedRel = r5res.copied.map((p) => p.split(path.sep).join('/'));
+  check('采集：state.json 进了仓库', existsSync(path.join(r5, 'dsh-settings-nav-order', 'state.json')));
+  check('采集：copied 里含该相对路径', copiedRel.includes(NAV), JSON.stringify(copiedRel));
+  check('采集：同目录的其它文件未被顺带搬运', !existsSync(path.join(r5, 'dsh-settings-nav-order', 'noise.json')));
+  check('采集：内容逐字一致（浏览器读的就是这份原文）',
+    readFileSync(path.join(r5, 'dsh-settings-nav-order', 'state.json'), 'utf8') === stateText);
+  check('diff：采集后两边一致，差异为 0', (() => {
+    const d = mod.diffHomeVsRepo(h5, { repoDir: r5 });
+    return d.added.length + d.changed.length + d.removed.length === 0;
+  })());
+
+  // 还原方向：仓库 → 本机（换机后浏览器半区回填读的就是还原回来的这一份）
+  const h6 = path.join(TMP, 'home6');
+  mkdirSync(h6, { recursive: true });
+  const back = mod.copyToHome(h6, { repoDir: r5 });
+  const backRel = (back.copied ?? []).map((p) => p.split(path.sep).join('/'));
+  check('还原：state.json 回到本机 home', existsSync(path.join(h6, 'dsh-settings-nav-order', 'state.json')));
+  check('还原：copied 里含该相对路径', backRel.includes(NAV), JSON.stringify(backRel));
+  check('还原：内容与仓库一致',
+    readFileSync(path.join(h6, 'dsh-settings-nav-order', 'state.json'), 'utf8') === stateText);
+
+  // 本机还没保存过偏好时：不该凭空造出目录 —— 否则「待同步」永远差一个文件。
+  const h7 = path.join(TMP, 'home7');
+  const r7 = path.join(TMP, 'repo7');
+  mkdirSync(h7, { recursive: true });
+  mkdirSync(r7, { recursive: true });
+  const r7res = mod.copyToRepo(h7, { repoDir: r7 });
+  check('本机没有该文件时：不造空目录、不写空文件', !existsSync(path.join(r7, 'dsh-settings-nav-order')));
+  check('本机没有该文件时：copied 里也不出现',
+    !r7res.copied.map((p) => p.split(path.sep).join('/')).includes(NAV), JSON.stringify(r7res.copied));
+}
+
 rmSync(TMP, { recursive: true, force: true });
 console.log(`\n────────────  通过 ${pass} / 失败 ${fail}  ───────────`);
 process.exit(fail ? 1 : 0);

@@ -718,3 +718,384 @@ test('「恢复默认」把顺序与隐藏一起清掉', async () => {
   await tick();
   assert.deepEqual(module.loadConfig(), { enabled: true, order: [], hidden: [] });
 });
+
+// ------------------------------------------------- 宿主偏好文件通道（跨机复原）
+
+/**
+ * 假响应：实现里只用到 ok 与 json()。
+ * @param payload - json() 回给调用方的对象
+ * @param ok - HTTP 是否成功
+ */
+function jsonResponse(payload, ok = true) {
+  return { ok, status: ok ? 200 : 500, json: async () => payload };
+}
+
+/**
+ * 假宿主：GET /state 回当前快照，POST /state 收下请求体当新快照，并把每次请求记进 calls。
+ * @param initial - 宿主当前持有的快照；null 表示还没有这个文件
+ */
+function makeFakeHost(initial = null) {
+  const host = {
+    state: initial,
+    calls: [],
+    fail: null,
+    fetch(url, options) {
+      const method = options?.method ?? 'GET';
+      host.calls.push({ url, method, body: options?.body });
+      if (host.fail) return Promise.resolve(host.fail);
+      if (method === 'POST') {
+        host.state = JSON.parse(options.body);
+        return Promise.resolve(jsonResponse({ ok: true }));
+      }
+      return Promise.resolve(jsonResponse({ ok: true, state: host.state, exists: host.state !== null }));
+    },
+  };
+  return host;
+}
+
+/** 装载客户端并给假 window 接上假宿主（放在 apply 之前，启动对账才会发请求）。 */
+function loadClientWithHost(initialEntries, hostState) {
+  const loaded = loadClient(initialEntries);
+  const host = makeFakeHost(hostState);
+  loaded.dom.window.fetch = host.fetch;
+  return { ...loaded, host };
+}
+
+/** 插件上下文：effect 立即执行，槽位注册立即生效（与既有用例同一套假 ctx）。 */
+function pluginContext() {
+  const registered = [];
+  return {
+    registered,
+    ctx: {
+      effect: (fn) => fn(),
+      slots: {
+        inject: (slot, register) => register(),
+        register: (definition, component) => registered.push({ definition, component }),
+      },
+    },
+  };
+}
+
+/** 宿主里的快照原文（与客户端写 localStorage 的规范化口径一致）。 */
+const remoteRaw = (config) => JSON.stringify(config);
+
+test('启动对账：本地没有配置时采用宿主快照，顺序立刻恢复（换机复原路径）', async () => {
+  const saved = { enabled: true, order: [{ name: '账户', index: 0 }, { name: '通用设置', index: 0 }], hidden: [] };
+  const { module, dom, host } = loadClientWithHost(SAMPLE, saved);
+  assert.equal(dom.store.get(module.STORE_KEY), undefined, '前置条件：本地一条偏好都没有');
+
+  const { ctx } = pluginContext();
+  module.apply(ctx);
+  await tick();
+
+  assert.deepEqual(module.loadConfig(), saved, '宿主的快照应被回填进 localStorage');
+  assert.deepEqual(dom.labelsInVisualOrder().slice(0, 2), ['账户', '通用设置'], '导航应立刻按恢复的顺序排列');
+  assert.equal(module.readSynced(), remoteRaw(saved), '回填后应记下指纹');
+  assert.equal(host.calls.filter((c) => c.method === 'POST').length, 0, '本地本来没东西，不该有写请求');
+});
+
+test('启动对账：宿主没有快照时把本地偏好推上去（升级前就存在的顺序第一次进仓库）', async () => {
+  const local = remoteRaw({ enabled: true, order: [{ name: '账户', index: 0 }], hidden: [] });
+  const { module, dom, host } = loadClientWithHost(SAMPLE, null);
+  dom.store.set(module.STORE_KEY, local);
+
+  module.apply(pluginContext().ctx);
+  await tick();
+
+  const posts = host.calls.filter((c) => c.method === 'POST');
+  assert.equal(posts.length, 1, '应正好推一次');
+  assert.equal(posts[0].body, local, '推上去的应是本地原文');
+  assert.deepEqual(host.state, JSON.parse(local), '宿主应因此持有该快照');
+  assert.equal(dom.store.get(module.STORE_KEY), local, '本地不该被改动');
+  assert.equal(module.readSynced(), local, '推送成功应记指纹');
+});
+
+test('启动对账：本地没动过而宿主更新时采用宿主（另一台机器改过）', async () => {
+  const older = remoteRaw({ enabled: true, order: [{ name: '账户', index: 0 }], hidden: [] });
+  const newer = { enabled: true, order: [{ name: '内置插件', index: 0 }], hidden: [] };
+  const { module, dom, host } = loadClientWithHost(SAMPLE, newer);
+  dom.store.set(module.STORE_KEY, older);
+  dom.store.set(module.SYNCED_KEY, older); // 与指纹逐字相同 = 本地没动过
+
+  module.apply(pluginContext().ctx);
+  await tick();
+
+  assert.deepEqual(module.loadConfig(), newer, '应采用宿主里更新的那份');
+  assert.equal(dom.labelsInVisualOrder()[0], '内置插件');
+  assert.equal(host.calls.filter((c) => c.method === 'POST').length, 0, '采用宿主即可，不必回写');
+});
+
+test('启动对账：本地有未同步改动时保留本地并推给宿主（绝不静默丢弃）', async () => {
+  const synced = remoteRaw({ enabled: true, order: [{ name: '账户', index: 0 }], hidden: [] });
+  const local = remoteRaw({ enabled: true, order: [{ name: '模型', index: 0 }], hidden: [] });
+  const { module, dom, host } = loadClientWithHost(SAMPLE, { enabled: true, order: [{ name: '内置插件', index: 0 }], hidden: [] });
+  dom.store.set(module.STORE_KEY, local);
+  dom.store.set(module.SYNCED_KEY, synced); // 本地改过、还没推上去
+
+  module.apply(pluginContext().ctx);
+  await tick();
+
+  assert.equal(dom.store.get(module.STORE_KEY), local, '本地改动不该被宿主覆盖');
+  assert.deepEqual(host.state, JSON.parse(local), '应把本地改动推上去让宿主对齐');
+  assert.equal(module.readSynced(), local);
+});
+
+test('推送失败不记指纹，且本地偏好不受影响（下次启动会重推）', async () => {
+  const local = remoteRaw({ enabled: true, order: [{ name: '账户', index: 0 }], hidden: [] });
+
+  // 宿主回 500
+  {
+    const { module, dom, host } = loadClientWithHost(SAMPLE, null);
+    host.fail = jsonResponse({ ok: false, error: '写盘失败' }, false);
+    dom.store.set(module.STORE_KEY, local);
+    assert.equal(await module.pushState(), false);
+    assert.equal(module.readSynced(), null, '失败就不该记指纹');
+    assert.equal(dom.store.get(module.STORE_KEY), local);
+  }
+
+  // fetch 直接抛（离线 / 被拦截）
+  {
+    const { module, dom } = loadClientWithHost(SAMPLE, null);
+    dom.window.fetch = () => {
+      throw new Error('offline');
+    };
+    dom.store.set(module.STORE_KEY, local);
+    assert.equal(await module.pushState(), false);
+    assert.equal(module.readSynced(), null);
+  }
+
+  // fetch 返回一个被拒的 promise
+  {
+    const { module, dom } = loadClientWithHost(SAMPLE, null);
+    dom.window.fetch = () => Promise.reject(new Error('offline'));
+    dom.store.set(module.STORE_KEY, local);
+    assert.equal(await module.pushState(), false);
+    assert.equal(module.readSynced(), null);
+  }
+
+  // 失败之后宿主恢复：同一份本地偏好会被重推
+  {
+    const { module, dom, host } = loadClientWithHost(SAMPLE, null);
+    host.fail = jsonResponse({ ok: false }, false);
+    dom.store.set(module.STORE_KEY, local);
+    await module.reconcile(dom.document);
+    assert.equal(host.state, null, '第一次推送失败，宿主仍没有快照');
+    host.fail = null;
+    await module.reconcile(dom.document);
+    assert.deepEqual(host.state, JSON.parse(local), '宿主恢复后应重推成功');
+  }
+});
+
+test('宿主读不通（离线 / 非 2xx / body 不是 JSON）时，本地偏好完全不动', async () => {
+  const local = remoteRaw({ enabled: true, order: [{ name: '账户', index: 0 }], hidden: [] });
+  const unreachable = [
+    ['fetch 抛异常', () => {
+      throw new Error('offline');
+    }],
+    ['fetch 被拒', () => Promise.reject(new Error('offline'))],
+    ['非 2xx', () => Promise.resolve(jsonResponse({ ok: false }, false))],
+    ['body 不是 JSON', () => Promise.resolve({ ok: true, json: async () => { throw new Error('bad json'); } })],
+    ['ok 不是 true', () => Promise.resolve(jsonResponse({ state: { order: [{ name: '账户' }] } }))],
+  ];
+
+  for (const [label, fetchImpl] of unreachable) {
+    const { module, dom, host } = loadClientWithHost(SAMPLE, null);
+    dom.store.set(module.STORE_KEY, local);
+    dom.window.fetch = fetchImpl;
+
+    module.apply(pluginContext().ctx);
+    await tick();
+
+    assert.equal(dom.store.get(module.STORE_KEY), local, `${label}：本地偏好不该被动`);
+    assert.equal(module.readSynced(), null, `${label}：读不通就不该假装对齐过`);
+    assert.ok(!host.calls.some((c) => c.method === 'POST'), `${label}：读不通时不该回写`);
+  }
+});
+
+test('宿主回的 state 形状不对时当作没有快照，用本地偏好自愈并推上去', async () => {
+  const local = remoteRaw({ enabled: true, order: [{ name: '账户', index: 0 }], hidden: [] });
+
+  for (const broken of ['nope', [1, 2], 12, true]) {
+    const { module, dom, host } = loadClientWithHost(SAMPLE, null);
+    dom.store.set(module.STORE_KEY, local);
+    // 只把 GET 的回答换掉 —— POST 照真宿主的样回 { ok: true }。
+    host.fetch = (url, options) => {
+      const method = options?.method ?? 'GET';
+      host.calls.push({ url, method, body: options?.body });
+      if (method === 'POST') {
+        host.state = JSON.parse(options.body);
+        return Promise.resolve(jsonResponse({ ok: true }));
+      }
+      return Promise.resolve(jsonResponse({ ok: true, state: broken, exists: true }));
+    };
+
+    module.apply(pluginContext().ctx);
+    await tick();
+
+    const label = `state=${JSON.stringify(broken)}`;
+    assert.equal(dom.store.get(module.STORE_KEY), local, `${label}：坏快照不该覆盖本地`);
+    const posts = host.calls.filter((c) => c.method === 'POST');
+    assert.equal(posts.length, 1, `${label}：应把本地偏好推上去自愈`);
+    assert.equal(posts[0].body, local);
+    assert.deepEqual(host.state, JSON.parse(local), `${label}：宿主应被本地偏好覆盖`);
+    assert.equal(module.readSynced(), local, `${label}：自愈成功即为对齐`);
+  }
+});
+
+test('window 没有 fetch（非浏览器环境）时一次请求都不发，本地照旧', async () => {
+  const local = remoteRaw({ enabled: true, order: [{ name: '账户', index: 0 }], hidden: [] });
+  const { module, dom } = loadClient(SAMPLE);
+  dom.window.fetch = undefined;
+  dom.store.set(module.STORE_KEY, local);
+
+  module.apply(pluginContext().ctx);
+  await tick();
+  assert.equal(await module.pushState(), false);
+  assert.equal(dom.store.get(module.STORE_KEY), local);
+  assert.equal(module.readSynced(), null);
+  assert.equal(module.reconcile(dom.document) instanceof Promise, true, 'reconcile 始终返回 promise，调用方不必判空');
+});
+
+test('宿主文件坏掉（state 读不出来）时，本地偏好会推上去覆盖它', async () => {
+  const local = remoteRaw({ enabled: true, order: [{ name: '账户', index: 0 }], hidden: [] });
+  const { module, dom, host } = loadClientWithHost(SAMPLE, null);
+  dom.store.set(module.STORE_KEY, local);
+  // 宿主半边对坏文件的答复：ok=true、state=null、exists=true、带 error。
+  host.fetch = (url, options) => {
+    const method = options?.method ?? 'GET';
+    host.calls.push({ url, method, body: options?.body });
+    if (method === 'POST') {
+      host.state = JSON.parse(options.body);
+      return Promise.resolve(jsonResponse({ ok: true }));
+    }
+    return Promise.resolve(jsonResponse({ ok: true, state: null, exists: true, error: '文件内容不是一份可用的偏好' }));
+  };
+
+  module.apply(pluginContext().ctx);
+  await tick();
+
+  assert.deepEqual(host.state, JSON.parse(local), '坏文件应被本地偏好覆盖掉（自愈）');
+  assert.deepEqual(module.loadConfig(), JSON.parse(local), '本地偏好原样保留');
+});
+
+test('设置页保存后把快照推给宿主（面板保存是日常唯一的写入路径）', async () => {
+  const { module, react, dom, host } = loadClientWithHost(SAMPLE, null);
+  react.render(module.SettingsNavPanel);
+  await tick();
+
+  // 把第二行「模型」上移，再点保存。
+  collectByClass(react.render(module.SettingsNavPanel), 'sno-up')[1].props.onClick();
+  await tick();
+  findByClass(react.render(module.SettingsNavPanel), 'sno-save').props.onClick();
+  await tick();
+
+  const posts = host.calls.filter((c) => c.method === 'POST');
+  assert.equal(posts.length, 1, '保存应推一次快照');
+  assert.equal(posts[0].body, dom.store.get(module.STORE_KEY), '推上去的就是刚落盘的那份配置');
+  assert.deepEqual(host.state, module.loadConfig());
+  assert.deepEqual(host.state.order.slice(0, 2).map((row) => row.name), ['模型', '通用设置']);
+});
+
+test('「恢复默认」也推给宿主（否则另一台机器会一直保留旧顺序）', async () => {
+  const { module, react, host } = loadClientWithHost(SAMPLE, { enabled: true, order: [{ name: '账户', index: 0 }], hidden: [] });
+  module.saveConfig({ enabled: true, order: [{ name: '账户', index: 0 }], hidden: [] });
+  react.render(module.SettingsNavPanel);
+  await tick();
+
+  findByClass(react.render(module.SettingsNavPanel), 'sno-reset').props.onClick();
+  await tick();
+
+  const posts = host.calls.filter((c) => c.method === 'POST');
+  assert.equal(posts.length, 1);
+  assert.deepEqual(host.state, { enabled: true, order: [], hidden: [] }, '宿主应收到「恢复默认」后的空配置');
+});
+
+test('normalizeRemote：形状不对一律当作没有快照', () => {
+  const { module } = loadClient();
+  assert.equal(module.normalizeRemote(null), null);
+  assert.equal(module.normalizeRemote(undefined), null);
+  assert.equal(module.normalizeRemote('x'), null);
+  assert.equal(module.normalizeRemote([1, 2]), null);
+  assert.equal(module.normalizeRemote(12), null);
+
+  const bad = module.normalizeRemote({ enabled: false, order: [{ name: '模型', index: 1 }, { name: 7 }, null], hidden: 'nope' });
+  assert.equal(bad.raw, remoteRaw({ enabled: false, order: [{ name: '模型', index: 1 }], hidden: [] }), '坏行丢弃、不是数组就当空');
+  assert.deepEqual(bad.config, { enabled: false, order: [{ name: '模型', index: 1 }], hidden: [] });
+  assert.equal(module.normalizeRemote({ enabled: 'yes' }).config.enabled, true, '只有显式 false 才算停用');
+});
+
+// ------------------------------------------- 保存后的宿主文件回执（不许假装成功）
+
+test('保存后显示「已同步」回执（面板把宿主文件的结果如实说出来）', async () => {
+  const { module, react, dom, host } = loadClientWithHost(SAMPLE, null);
+  react.render(module.SettingsNavPanel);
+  await tick();
+  assert.ok(!renderText(react.render(module.SettingsNavPanel)).includes(module.SYNC_PENDING.slice(0, 5)), '没保存过就不该有回执');
+
+  collectByClass(react.render(module.SettingsNavPanel), 'sno-up')[1].props.onClick();
+  await tick();
+  findByClass(react.render(module.SettingsNavPanel), 'sno-save').props.onClick();
+  await tick();
+
+  const text = renderText(react.render(module.SettingsNavPanel));
+  assert.ok(text.includes(module.SYNC_DONE), `应显示已同步：${text.slice(-120)}`);
+  assert.ok(!text.includes(module.SYNC_FAILED));
+  assert.deepEqual(host.state, module.loadConfig());
+});
+
+test('宿主写不进去时如实回报「未同步」，绝不假装成功', async () => {
+  const { module, react, dom } = loadClientWithHost(SAMPLE, null);
+  dom.window.fetch = () => Promise.reject(new Error('offline')); // 宿主通道不可用
+  react.render(module.SettingsNavPanel);
+  await tick();
+
+  collectByClass(react.render(module.SettingsNavPanel), 'sno-up')[1].props.onClick();
+  await tick();
+  findByClass(react.render(module.SettingsNavPanel), 'sno-save').props.onClick();
+  await tick();
+
+  const text = renderText(react.render(module.SettingsNavPanel));
+  assert.ok(text.includes(module.SYNC_FAILED), `应如实回报未同步：${text.slice(-160)}`);
+  assert.ok(!text.includes(module.SYNC_DONE), '失败时不许显示已同步');
+  assert.ok(module.loadConfig().order.length > 0, '本地偏好仍然保存成功（只是没进宿主文件）');
+  assert.equal(module.readSynced(), null, '失败不记指纹，下次启动会重推');
+});
+
+test('「恢复默认」的回执同样如实：宿主文件里也变成空配置', async () => {
+  const { module, react, host } = loadClientWithHost(SAMPLE, { enabled: true, order: [{ name: '账户', index: 0 }], hidden: [] });
+  react.render(module.SettingsNavPanel);
+  await tick();
+  findByClass(react.render(module.SettingsNavPanel), 'sno-reset').props.onClick();
+  await tick();
+
+  assert.deepEqual(host.state, { enabled: true, order: [], hidden: [] });
+  assert.ok(renderText(react.render(module.SettingsNavPanel)).includes(module.SYNC_DONE));
+});
+
+test('有未保存的排序时点「启用」复选框：不能谎报已保存（草稿还没进配置）', async () => {
+  const { module, react, dom } = loadClientWithHost(SAMPLE, null);
+  react.render(module.SettingsNavPanel);
+  await tick();
+
+  // 先把「模型」上移（只改草稿，没点保存）
+  collectByClass(react.render(module.SettingsNavPanel), 'sno-up')[1].props.onClick();
+  await tick();
+  assert.ok(renderText(react.render(module.SettingsNavPanel)).includes('未保存'), '前置条件：草稿未保存');
+
+  // 再点「启用」复选框：它提交的是「已保存」的顺序，草稿并没有跟着进配置
+  findByClass(react.render(module.SettingsNavPanel), 'sno-toggle').props.onChange({ target: { checked: true } });
+  await tick();
+
+  const text = renderText(react.render(module.SettingsNavPanel));
+  assert.ok(text.includes('未保存'), `草稿还没进配置，必须继续显示未保存：${text.slice(-160)}`);
+  assert.ok(!text.includes('当前顺序与已保存的一致'), '不许谎报已保存');
+  assert.ok(renderText(react.render(module.SettingsNavPanel)).includes('模型'), '草稿行还在，没被丢掉');
+
+  // 点保存之后草稿才真的进配置，此时才该显示「一致」
+  findByClass(react.render(module.SettingsNavPanel), 'sno-save').props.onClick();
+  await tick();
+  const after = renderText(react.render(module.SettingsNavPanel));
+  assert.ok(after.includes('当前顺序与已保存的一致'), `保存后才显示一致：${after.slice(-160)}`);
+  assert.deepEqual(module.loadConfig().order.slice(0, 2).map((row) => row.name), ['模型', '通用设置']);
+  assert.deepEqual(dom.labelsInVisualOrder().slice(0, 2), ['模型', '通用设置']);
+});

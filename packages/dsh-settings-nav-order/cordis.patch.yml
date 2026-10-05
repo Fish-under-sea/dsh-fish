@@ -4,8 +4,10 @@
 # @deepseek-ai/dsh-client-modules 的扫描器只遍历 loader entries，从声明了
 # `dsh.client` 的包里取浏览器半区；没有宿主行，设置页与重排逻辑都不会被装载。
 #
-# 顺序数据存在浏览器 localStorage（键 dsh-settings-nav-order/v1），是「这台
-# 机器上这个浏览器」的显示偏好，不写进任何配置文件，因此不跟着本包同步。
+# 顺序数据的主副本存在浏览器 localStorage（键 dsh-settings-nav-order/v1），由浏览器
+# 半区读写；宿主半区另外把它落成 $DSH_HOME/dsh-settings-nav-order/state.json（同源
+# 路由，保存时写入、启动时回填），dsh-git-sync 的白名单收录那个文件 —— 于是这份显示
+# 偏好跟着配置仓跨机复原。插件行本身不需要任何 config，路径是固定的。
 - insert:
     - id: settings-nav-order
       name: '@fish-under-sea/dsh-settings-nav-order'
