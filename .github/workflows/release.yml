@@ -1,0 +1,45 @@
+# 推一个 v* tag 就是发布决定：本 workflow 只把它变成 GitHub Release 页面
+# —— 正文 + `npm pack` 出来的 tarball 附件（`dsh plugin add <tarball URL>` 可直接装），
+# 这样 tag 不会再出现「有 tag 没 Release / Release 没附件」的情况。
+#
+# 本仓库**没有任何构建步骤**：聚合包的 lib/ 与 cordis.patch.yml 都是提交进仓库的，
+# 所以这里不装依赖，直接 pack。
+#
+# 正文优先取 .github/releases/<tag>.md（可选，属本地草稿：.gitignore 排除
+# .github/releases/，不要 git add -f 强加进来）；没有就用 GitHub 生成的发布说明。
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Pack the aggregate
+        run: npm pack
+      - name: Create the GitHub release for the pushed tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BODY=".github/releases/$GITHUB_REF_NAME.md"
+          # 幂等：tag 可能已带着 release 一起产生（用 API 建 tag 时就会这样），
+          # 此时保留已有正文，不覆盖。
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "release $GITHUB_REF_NAME 已存在：保留其正文"
+          elif [ -f "$BODY" ]; then
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file "$BODY"
+          else
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
+          fi
+          # `npm pack` 打印的就是这个名字，README 里的 URL 模板据此成立。
+          gh release upload "$GITHUB_REF_NAME" fish-under-sea-dsh-fish-*.tgz --clobber
