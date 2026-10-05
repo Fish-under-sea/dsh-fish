@@ -8,7 +8,7 @@
 ![license](https://img.shields.io/badge/license-MIT-green?style=flat-square)
 ![node](https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square)
 ![DSH](https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4b6ef6?style=flat-square)
-![client-only](https://img.shields.io/badge/plugin-client--only-6b7280?style=flat-square)
+![client+host](https://img.shields.io/badge/plugin-client%20%2B%20host-6b7280?style=flat-square)
 
 </div>
 

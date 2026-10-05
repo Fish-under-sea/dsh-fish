@@ -9,10 +9,8 @@
 > **🆕 0.5.4（2026-10-05）**：纳入第七个成员 [`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/-dsh-better-reasoning-effort-fish) —— 「模型」页编辑卡里直接编辑每模型的思考强度与输入模态声明 + 一键自动适配（上游 `dsh-better-reasoning-effort` 的 Fork）；依赖范围 `^0.5.5`。
 >
 > **🆕 0.5.5（2026-10-05）**：`dsh-agent-teams-fish` **0.1.27** —— 角色词表规范化（新增 `audio` / `video` 岗位桶，补 `author` / `写手` / `作者` 等漏词，并在工具描述里公布可选用词表，避免自造角色掉厂商兜底头像）；`@fish-under-sea/dsh-visual-companion` **0.1.2** —— 新增斜杠命令 **`/companion`**。
-> **🆕 0.5.6（2026-10-05）**：`dsh-agent-teams-fish` **0.1.28** —— 回滚客户端面板字典（它导致桌面端 renderer 启动失败），指令中文化改由 Host 侧描述符承担。
-> **🆕 0.5.7（2026-10-05）**：两个斜杠命令的说明改为`中文标签 · 说明`格式（gent-teams → 「智能体团队 · …」、/companion → 「视觉伴侣 · …」）。面板的**图标**与**中文标签前缀**由核心包 dsh-client-ui-commands 的写死表（HOST_FACES）提供，插件命令当前无扩展点，故用描述符文案逼近。
-> **🆕 0.5.6（2026-10-05）**：dsh-agent-teams-fish **0.1.28** —— 回滚客户端面板字典（它导致桌面端 renderer 启动失败），指令中文化改由 Host 侧描述符承担（面板以内置兜底显示中文）；角色词表规范化仍保留在 0.1.27+。
->
+> **🆕 0.5.6（2026-10-05）**：`dsh-agent-teams-fish` **0.1.28** —— 回滚客户端面板字典（它导致桌面端 renderer 启动失败），指令中文化改由 Host 侧描述符承担（面板以内置兜底显示中文）；角色词表规范化仍保留在 0.1.27+。
+> **🆕 0.5.7（2026-10-05）**：两个斜杠命令的说明改为 `中文标签 · 说明` 格式（`/agent-teams` → 「智能体团队 · …」、`/companion` → 「视觉伴侣 · …」）。面板的**图标**与**中文标签前缀**由核心包 dsh-client-ui-commands 的写死表（HOST_FACES）提供，插件命令当前无扩展点，故用描述符文案逼近。
 > **🆕 0.5.8（2026-10-06）**：给「设置导航顺序」补上**云同步桥** —— 偏好除浏览器 `localStorage` 外，另由 `@fish-under-sea/dsh-settings-nav-order` **0.1.2** 的宿主半区落成 `$DSH_HOME/dsh-settings-nav-order/state.json`（保存时写入、启动时回填；四情形对账规则，绝不静默丢弃本地未推送的改动；保存后如实回报宿主文件是否同步、写失败在宿主日志留痕），`@fish-under-sea/dsh-git-sync` **0.2.3** 的白名单收录该文件：**换机后设置菜单的顺序与隐藏项能随配置仓复原**。两个子包新增 46 个用例（settings-nav-order 客户端 36→52、宿主 17；git-sync 引擎 56→69）。
 >
 > **🆕 0.5.9（2026-10-06）**：`@fish-under-sea/dsh-settings-nav-order` **0.1.3**（依赖范围提到 `^0.1.3`）—— 审查后收尾：宿主写盘/读盘的失败与意外错误一律在日志里留痕（宿主侧 `ctx.logger.warn`、浏览器侧只在「响应拿到之后才抛」时记，宿主不可达这类预期失败不刷屏）；只读目标的原子写回退改为「先清只读位再改名」，**不再先删原文件**（消除理论上的丢失窗口）；`readBody` 补上中断（关标签页/断线）结算，避免 handler 悬挂。用例 47 个（客户端 53、宿主 17、git-sync 引擎 69）。
@@ -24,6 +22,8 @@
 > **🆕 0.6.0（2026-10-06）**：`@fish-under-sea/dsh-git-sync` **0.2.5**（依赖范围提到 `^0.2.5`）—— **同步范围撤下三条**：`agent 预设（.agent-presets/）`、`桌宠存档（pet.json）`、`工作区映射（storages/workspace.json）`。前两者本机不用（桌宠插件未启用），后者含**机器相关绝对路径**、换机后本就该由那台机器自己生成——同步它只会制造「换机后工作区指向不存在的位置」的噪声。采集与还原双向都不再碰这三条（**已提交的旧文件仍留在仓库历史里**，想恢复同步把 `WHITE_LIST` 对应行加回即可）。同步引擎用例 69→83。**本版按 minor 号发布**：0.5.12 与它是同一批改动，为清晰起见合成 0.6.0。
 >
 > **🆕 0.6.1（2026-10-06）**：`dsh-agent-teams-fish` **0.3.0**（依赖范围 `^0.1.29` → **`^0.3.0`**）—— 该包版本号从 `0.1.x` 收束到 `0.3.0`，把 `0.1.25`–`0.1.29` 的迭代（角色词表规范化与整队掉兜底头像修复、回滚客户端面板字典修桌面端 renderer 启动失败、斜杠命令说明统一为`中文标签 · 说明`、README 重排）与配套发布说明、GitHub tag 一并补齐。**本包唯一的改动就是依赖范围**：`^0.1.29` 属 `0.1.x` 区间，**解析不到 0.3.0**，因此必须发新版才能让聚合包带出 0.3.0。
+>
+> **🆕 0.6.2（2026-10-06）**：**文档修正版**（无代码改动）—— `@fish-under-sea/dsh-settings-nav-order` **0.1.4** 把 README 顶部的半边徽章从 `client-only` 改成 **`client + host`**（它从 0.1.2 起就有宿主半区：云同步桥就是宿主写的）；本 README 修掉一处**重复的 0.5.6 条目**与一处**混入正文的 0x07 控制字符**（早期脚本里 `\a` 转义被当字面量写进文件，导致那行显示成「gent-teams」）。npm 的 README 是发布时冻结的，所以这类修正必须发版才能在包页面上生效。
 
 <div align="center">
 
@@ -33,7 +33,7 @@
 
 Fish 自建 DSH（[DeepSeek Harness](https://github.com/Fish-under-sea/DSH)）插件聚合包
 
-![version](https://img.shields.io/badge/version-0.6.1-22d3ee?style=flat-square) ![license](https://img.shields.io/badge/license-MIT-green?style=flat-square) ![node](https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square) ![npm](https://img.shields.io/npm/v/@fish-under-sea/dsh-fish?style=flat-square&label=npm&color=cb3837) ![DSH](https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4b6ef6?style=flat-square) ![bundle](https://img.shields.io/badge/kind-bundle-6b7280?style=flat-square)
+![version](https://img.shields.io/badge/version-0.6.2-22d3ee?style=flat-square) ![license](https://img.shields.io/badge/license-MIT-green?style=flat-square) ![node](https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square) ![npm](https://img.shields.io/npm/v/@fish-under-sea/dsh-fish?style=flat-square&label=npm&color=cb3837) ![DSH](https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4b6ef6?style=flat-square) ![bundle](https://img.shields.io/badge/kind-bundle-6b7280?style=flat-square)
 
 </div>
 
@@ -54,7 +54,7 @@ Fish 自建 DSH（[DeepSeek Harness](https://github.com/Fish-under-sea/DSH)）�
 | [`dsh-approval-guide`](packages/dsh-approval-guide) | 0.2.1 | 在审批弹窗里追加**中文说明**：这次审批会做什么、有什么风险、依据是什么 |
 | [`dsh-session-title-refresh`](packages/dsh-session-title-refresh) | 0.2.1 | **会话标题自动刷新**：第 N 轮起总结命名，此后每 M 轮刷新一次 |
 | [`dsh-git-sync`](packages/dsh-git-sync) | 0.2.5 | **一键 Git 同步**：把插件清单、启用状态、本地设置、Skills、看板/用量账本与设置导航顺序偏好同步到自己的私有仓库 |
-| [`dsh-settings-nav-order`](packages/dsh-settings-nav-order) | 0.1.3 | **设置导航重排**：把设置面板左侧菜单排成自己要的顺序、把不想看的项收起来；偏好随 Git 同步插件**跨机复原** |
+| [`dsh-settings-nav-order`](packages/dsh-settings-nav-order) | 0.1.4 | **设置导航重排**：把设置面板左侧菜单排成自己要的顺序、把不想看的项收起来；偏好随 Git 同步插件**跨机复原** |
 | [`dsh-visual-companion`](packages/dsh-visual-companion) | 0.1.4 | **视觉伴侣唤醒**：网页上看原型 / 比布局，点选 + 备注后按「提交给助手」，会话自动收到一条用户消息并起一轮 —— 不必回终端复述；**点选过程静默，只有提交才唤醒一次** |
 | [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) | 0.3.0 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；本版新增**自定义美术目录**、九厂商 × 十岗位头像与厂商商标徽标，以及**中文岗位名**与**厂商通用大图兜底**（未命中岗位时显示该厂商大图并提示适配中） |
 | [`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/-dsh-better-reasoning-effort-fish) | 0.5.5 | **思考强度与输入模态**（上游 [HaoyueQin/dsh-better-reasoning-effort](https://github.com/HaoyueQin/dsh-better-reasoning-effort) 的**Fork**）：在官方「模型」页编辑卡里直接编辑每模型的 `reasoningEfforts` 与 `input` 声明，并支持一键自动适配；本 Fork 把 `settings.models.provider-card` 席位完整让给模型能力面板 |
@@ -213,7 +213,7 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 
 ```text
 dsh-fish/                 # 仓库目录名（npm 包名是 @fish-under-sea/dsh-fish）
-├── package.json          # 聚合包清单（version 0.6.1，dsh.bundle.patch 指向 cordis.patch.yml）
+├── package.json          # 聚合包清单（version 0.6.2，dsh.bundle.patch 指向 cordis.patch.yml）
 ├── cordis.patch.yml      # bundle 层：停用内置标题插件 + 插入七个插件的插件行
 ├── pnpm-workspace.yaml   # workspace 声明（仅本地开发用）
 ├── lib/                  # 聚合包自身的空实现（本包不注册任何东西）
@@ -281,4 +281,4 @@ node packages/dsh-visual-companion/test/visual-companion.test.mjs
 
 ---
 
-<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.6.1 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
+<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.6.2 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
