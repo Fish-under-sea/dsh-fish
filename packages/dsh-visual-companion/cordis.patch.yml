@@ -1,0 +1,19 @@
+# dsh-visual-companion bundle layer —— 把插件行插入 profile 的 roster。
+#
+# 唯一一行：host-only 插件（没有浏览器半区）。它向共享 `tools` 注册
+# `visual_companion` 工具，并在配置了 `watchDir` 时观察
+# `<watchDir>/state/pending.json`：用户按下页面上的「提交给助手」，
+# 就给目标会话投一条用户消息并起一轮。
+#
+# 安装（在任意目录执行，profile 名按需替换）：
+#   dsh plugin --profile <profile> add @fish-under-sea/dsh-visual-companion
+#
+# 机器相关的绝对路径（`watchDir`）**不写在这里**：需要「加载即自动绑定」时，
+# 在自己的 profile patch 层用同一个 id 覆盖该行的 config 即可，例如：
+#   - id: visual-companion
+#     name: '@fish-under-sea/dsh-visual-companion'
+#     config:
+#       watchDir: D:/some/workspace/.dsh-visual
+- insert:
+    - id: visual-companion
+      name: '@fish-under-sea/dsh-visual-companion'

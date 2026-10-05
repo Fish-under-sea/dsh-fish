@@ -1,0 +1,70 @@
+{
+  "name": "@fish-under-sea/dsh-visual-companion",
+  "version": "0.1.0",
+  "description": "把「视觉伴侣页面上的提交」变成一条用户消息：用户在网页上点选、写备注、按提交，DSH 会话自动起一轮继续工作，不必回终端复述。",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-llm": ">=0.2.0-rc.2",
+    "@deepseek-ai/dsh-tools": ">=0.2.0-rc.2",
+    "@deepseek-ai/schemastery": "^3.18.2"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    },
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "visual",
+    "brainstorming",
+    "wake",
+    "fish"
+  ],
+  "scripts": {
+    "test": "node --test test/visual-companion.test.mjs"
+  },
+  "bin": {
+    "dsh-visual-companion": "./bin/visual-companion.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Fish-under-sea/dsh-fish.git",
+    "directory": "packages/dsh-visual-companion"
+  },
+  "dsh": {
+    "engines": {
+      "dsh": ">=0.2.0-rc.2"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

@@ -68,3 +68,11 @@
       config:
         stateDir: .agent-teams
         memberProvider: spawn
+
+    # 视觉伴侣唤醒 —— 本仓库子包：用户在网页上看原型 / 比布局，按下「提交给助手」
+    # 即把整组选择（含备注）投成一条用户消息，会话自动起一轮继续，不必回终端复述；
+    # 点选过程静默，只有提交才唤醒一次。行名 = 它的 npm 包名。
+    # watchDir（视觉伴侣根目录）是机器相关绝对路径，故意不写在这里：
+    # 需要「加载即自动绑定」时，在自己 profile 的 patch 层覆盖同一个 id 行即可。
+    - id: visual-companion
+      name: '@fish-under-sea/dsh-visual-companion'
