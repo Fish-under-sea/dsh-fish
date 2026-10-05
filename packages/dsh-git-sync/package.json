@@ -1,6 +1,6 @@
 {
   "name": "@fish-under-sea/dsh-git-sync",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "DeepSeek Harness 一键 GitHub 同步：把插件清单、插件启用状态、插件配置、本地设置、Skills 与看板/用量账本采集进你自己的私有 git 仓库并推送，换机可一键还原；采集前自动 fetch 远端并合并，密钥永不搬运。仓库目录在「设置 → Git 同步」里改。",
   "type": "module",
   "main": "./lib/index.js",

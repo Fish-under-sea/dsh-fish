@@ -1,15 +1,26 @@
+<div align="center">
+
 # @fish-under-sea/dsh-session-title-refresh
 
-给 DeepSeek Harness Web GUI 的**会话标题自动刷新**插件。跟一个会话聊到第 N 轮，就让它
-总结这次对话的方向、自动命名；之后每隔 M 轮再刷新一次。N 和 M 在
-**设置 → 会话标题自动刷新**里调，还带推荐档位和可调的极限阈值。
+**长会话的标题会随着对话轮次自动更新，不再停在第一句话上。**
 
-> 解决的问题：DSH 自带的标题机制只在**第一条消息**之后生成一次标题，之后永不重算。
-> 于是长会话的标题长期停留在最初那句话上，看着不认识了只能人工改名。
+[![npm](https://img.shields.io/npm/v/@fish-under-sea/dsh-session-title-refresh?style=flat-square&label=npm&color=cb3837)](https://www.npmjs.com/package/@fish-under-sea/dsh-session-title-refresh)
+![license](https://img.shields.io/badge/license-MIT-green?style=flat-square)
+![node](https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square)
+![DSH](https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4b6ef6?style=flat-square)
+![client+host](https://img.shields.io/badge/plugin-client%20%2B%20host-6b7280?style=flat-square)
 
----
+</div>
 
-## 它怎么工作
+> **注意：本插件会停用 DSH 内置的会话标题提供方（`session-title-llm`），由本插件完全接管标题生成。** 通过 `cordis.patch.yml` 在安装时自动生效。
+
+## 解决什么问题
+
+DSH 自带的会话标题机制只在**第一条消息**之后生成一次标题，之后永不重算。长会话的标题长期停留在最初那句话上，看着不认识了只能人工改名。
+
+本插件停用内置标题提供方，作为**唯一提供方**负责所有标题生成（保留首条消息命名 + 新增定期刷新）：聊到第 N 轮时自动总结对话方向并命名，之后每隔 M 轮再刷新一次。N、M 与上下限都在「设置 → 会话标题自动刷新」里调，带推荐档位与可调极限阈值。
+
+## 效果
 
 | 机制 | 说明 |
 | --- | --- |
@@ -23,12 +34,9 @@
 
 三条硬规矩：
 
-1. **尊重人工命名** —— 你手动改过名的会话默认停止自动刷新（可开关覆盖）。
+1. **尊重人工命名** —— 手动改过名的会话默认停止自动刷新（可开关覆盖）。
 2. **不碰子代理会话** —— 子代理对话不会被自动命名。
-3. **不补跑历史** —— 触发点对齐绝对网格（第 N、N+M、N+2M… 轮）。插件热加载、
-   恢复旧会话、改参数之后都不会突然发出一串历史命名调用，额度不会被反复烧。
-
----
+3. **不补跑历史** —— 触发点对齐绝对网格（第 N、N+M、N+2M… 轮）。插件热加载、恢复旧会话、改参数之后都不会突然发出一串历史命名调用，额度不会被反复烧。
 
 ## 安装
 
@@ -38,33 +46,34 @@
 dsh plugin --profile <profile> add @fish-under-sea/dsh-session-title-refresh
 ```
 
-装完**重启 DSH**（插件行与设置页都是下次启动生效），然后打开
-**设置 → 会话标题自动刷新**。
+装完**重启 DSH**（插件行与设置页都是下次启动生效），然后打开「设置 → 会话标题自动刷新」。
 
-要改源码时才用 `link:` 指向本机 clone（仓库源码即安装源，改完重启 DSH 即生效）：
-它会把手写路径写进 `profiles/<profile>/package.json`，换机器前记得先 `remove`。
+要改源码时才用 `link:` 指向本机 clone（仓库源码即安装源，改完重启 DSH 即生效）：它会把 `link:` 路径写进 `profiles/<profile>/package.json`，换机器前记得先 `remove`。
 
 ### 卸载 / 回退
 
 ```powershell
-dsh plugin --profile web remove @fish-under-sea/dsh-session-title-refresh
+dsh plugin --profile <profile> remove @fish-under-sea/dsh-session-title-refresh
 ```
 
-移除后，`cordis.patch.yml` 里那条「停用内置首条消息提供方」的 patch 会随之失效，
-DSH 自动回到**出厂时的单次首条命名**行为。不需要手工改任何文件。
+移除后，`cordis.patch.yml` 里那条「停用内置首条消息提供方」的 patch 会随之失效，DSH 自动回到**出厂时的单次首条命名**行为。不需要手工改任何文件。
 
----
-
-## 设置页
+## 使用
 
 | 区块 | 内容 |
 | --- | --- |
 | **推荐档位** | 保守 / 均衡（推荐）/ 积极。点一下就把参数填成该档位，再点「保存设置」生效 |
-| **滑块** | 首次总结轮次、刷新间隔——滑块上限就是你在「高级」里设的可调上限 |
+| **滑块** | 首次总结轮次、刷新间隔——滑块上限就是「高级」里设的可调上限 |
 | **开关** | 启用自动刷新；「我手动改过名字后仍继续刷新」 |
 | **高级** | 首轮轮次可调上限、刷新间隔可调上限、取样条数、输入字节预算、输出 token 上限、超时、目标词数/字数、固定 provider/model |
 | **活动会话** | 每个会话的当前轮次、下次触发轮次、已刷新次数、当前标题，以及逐会话「立即刷新」 |
 | **最近自动命名** | 最近 20 条记录（成功给标题，失败给原因） |
+
+调参提示：本插件这条额外调用按会话轮次计费。均衡档一个长会话（30 轮）大约触发 6 次辅助调用；积极档约 10 次；保守档约 3 次。嫌费额度就往保守档推。
+
+## 配置
+
+配置文件路径：`$DSH_HOME/dsh-session-title-refresh/config.json`，不进任何同步仓库，每台机器各调各的。
 
 ### 默认参数（均衡档）
 
@@ -79,34 +88,20 @@ DSH 自动回到**出厂时的单次首条命名**行为。不需要手工改任
 | 目标长度 | 5 词 / 10 个汉字 | 1 – 20 词 / 2 – 40 字 |
 | 路由 | 跟随会话当前模型 | 也可固定 provider + model |
 
-参数存在 `$DSH_HOME/dsh-session-title-refresh/config.json`，不进任何同步仓库，
-所以每台机器各调各的。
+## 兼容与边界
 
-> 调参提示：本插件这条额外调用按会话轮次计费。均衡档一个长会话（30 轮）大约触发
-> 6 次辅助调用；积极档约 10 次；保守档约 3 次。嫌费额度就往保守档推。
-
----
-
-## 已知限制
-
-- **DSH 每个进程只允许一个标题提供方。** 本插件的 `cordis.patch.yml` 会停用内置的
-  `@deepseek-ai/dsh-session-title-first-prompt-llm`（行 id `session-title-llm`），
-  由本插件接管；行为不变——本插件同样以 `first-prompt` 节奏注册，第 1 轮照样出标题。
-  若你同时装了别的标题提供方插件，两者会互相抢位，需要停用其一。
+- **DSH 每个进程只允许一个标题提供方。** 本插件的 `cordis.patch.yml` 会停用内置的 `@deepseek-ai/dsh-session-title-first-prompt-llm`（行 id `session-title-llm`），由本插件接管。行为不变——本插件同样以 `first-prompt` 节奏注册，第 1 轮照样出标题。若同时装了别的标题提供方插件，两者会互相抢位，需要停用其一。
 - **标题生成失败时会保留旧标题**，不会清空、也不会退回第一条消息。
 - **`enabled: false` 只停自动刷新**，第 1 轮的标题仍由本插件的提供方生成。
-- 活动会话列表来自**当前进程**：DSH 重启后恢复的旧会话要等它再发一次言才会重新出现
-  （标题本身是持久的，一直在会话日志里）。
-- 第一轮生成标题需要会话已记录过主请求路由；极少数"刚建会话立刻刷新标题"的场景会
-  因为拿不到路由而失败——此时在设置里固定 provider/model 即可。
+- 活动会话列表来自**当前进程**：DSH 重启后恢复的旧会话要等它再发一次言才会重新出现（标题本身是持久的，一直在会话日志里）。
+- 第一轮生成标题需要会话已记录过主请求路由；极少数「刚建会话立刻刷新标题」的场景会因为拿不到路由而失败——此时在设置里固定 provider/model 即可。
+- **`FinishReason` 是对象不是字符串**（`{ kind: 'stop' }`）。装配层按 `kind` 解析，`error` / `aborted` 会把 `failure.message` 与 `failure.code` 带进报错文本。测试替身也必须喂对象——0.1.0 的替身喂的是字符串 `'stop'`，正好掩盖了这个缺陷，导致真实会话的自动命名全部报「结束原因异常（[object Object]）」（0.1.1 已修）。
 
----
-
-## 开发
+## 开发与测试
 
 ```powershell
-# 跑全部测试（29 项：纯逻辑 12 + 宿主集成 12 + 客户端冒烟 5）
-& "C:\Program Files\DeepSeek Harness\resources\runtime\node\node.exe" test/run-all.mjs
+# 跑全部测试
+node test/run-all.mjs
 ```
 
 | 文件 | 职责 |
@@ -115,52 +110,19 @@ DSH 自动回到**出厂时的单次首条命名**行为。不需要手工改任
 | `lib/index.js` | 宿主半边：注册标题提供方、监听会话事件、同源 HTTP API |
 | `lib/client.js` | Web 半边：设置页（不用 JSX，只 `require('react')`） |
 | `cordis.patch.yml` | bundle 层：停用内置提供方 + 插入本插件行 |
-| `test/*.test.mjs` | 三套测试，零依赖（只用 `node:test` 与内置模块） |
+| `test/*.test.mjs` | 测试套件，零依赖（只用 `node:test` 与内置模块） |
 
 设计要点：
 
-- **零 npm 依赖**——宿主 loader 在插件未导出 `Config` schema 时把 `config` 原样透传，
-  所以这里不引入 schemastery；HTTP 请求体解析也是手写的。
-- **轮次从会话日志推出**（`session.ownEvents()`，排除分叉继承的前缀），
-  所以重启、恢复、热加载后计数都准确。
+- **零 npm 依赖**——宿主 loader 在插件未导出 `Config` schema 时把 `config` 原样透传，所以这里不引入 schemastery；HTTP 请求体解析也是手写的。
+- **轮次从会话日志推出**（`session.ownEvents()`，排除分叉继承的前缀），所以重启、恢复、热加载后计数都准确。
 - **触发点对齐绝对网格**，中途接管不补跑。
 - 改变规则（保存设置）时会把所有活动会话的触发点按新规则重排，同样不补跑历史。
-- **`FinishReason` 是对象不是字符串**（`{ kind: 'stop' }`）。装配层按 `kind` 解析，
-  `error` / `aborted` 会把 `failure.message` 与 `failure.code` 带进报错文本。
-  测试替身也必须喂对象——0.1.0 的替身喂的是字符串 `'stop'`，正好掩盖了这个缺陷，
-  导致真实会话的自动命名全部报「结束原因异常（[object Object]）」（0.1.1 已修）。
 
----
+## 与聚合包的关系
 
-## 更新记录
-
-### 0.1.2
-
-可观测性补强——0.1.1 修好缺陷后，界面上仍看不出"跑的是哪一版、这批记录是修复前还是修复后"。
-
-- **命名记录落盘**（`$DSH_HOME/dsh-session-title-refresh/history.json`，最多 50 条）：
-  DSH 重启后旧记录不再消失，排查时能看到跨重启的完整轨迹。
-- **每条记录标记版本**（`[v0.1.1]`），并**在面板标题与页脚显示当前插件版本**，
-  「哪一版产生了这条记录」一眼可辨。
-- **手动刷新的失败记录带真实轮次**：此前恒为「第 0 轮」，没有任何信息量。
-- **区分「跳过」与「成功但没标题」**：会话还没有人类发言时，`refresh()` 会解析为
-  `undefined`，现在记为「· 跳过：该会话还没有人类消息，已跳过」，不再显示成含糊的 `(无标题)`。
-- 新增 5 项测试（共 34 项）。
-
-### 0.1.1
-
-- **修复：自动命名全部失败**。DSH 的 `FinishReason` 是对象（`{ kind: 'stop' }`），
-  0.1.0 把它当字符串用，报错信息退化成 `[object Object]`，所有会话的自动命名都没成功。
-  现在按 `kind` 解析，并把 `error` / `aborted` 的具体失败原因与失败码带进报错。
-- 测试替身改为复刻真实适配器（`dsh-llm-deepseek` 的 `mapFinishReason`）的产出形状，
-  新增回归测试（共 31 项）。
-
-### 0.1.0
-
-- 首个版本：第 N 轮首次总结、每 M 轮刷新、推荐档位、可调极限阈值、活动会话表。
-
----
+> 本包是 [`@fish-under-sea/dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) 聚合包的成员之一；单独安装只影响这一项。
 
 ## 许可
 
-MIT。
+MIT © Fish-under-sea
