@@ -129,11 +129,11 @@ node "$env:DSH_HOME\profiles\<profile>\node_modules\@fish-under-sea\dsh-visual-c
 ## 开发与测试
 
 ```sh
-node packages/dsh-visual-companion/test/visual-companion.test.mjs   # 语料渲染 + 清单契约（7 用例）
+node packages/dsh-visual-companion/test/visual-companion.test.mjs   # 语料渲染 + 清单契约（8 用例）
 pnpm pack                                                          # 产物检查：files 覆盖 bin / lib / patch / README
 ```
 
-`lib/message.js` 是**零依赖纯函数**（语料渲染），所以测试与调用方不装 `@deepseek-ai/*` 也能验证文案；`lib/index.js` 才依赖宿主提供的 `@deepseek-ai/dsh-llm`、`dsh-tools`、`schemastery`（已声明为可选 peer）。
+`lib/message.js` 是**零依赖纯函数**（语料渲染），所以测试与调用方不装 `@deepseek-ai/*` 也能验证文案；`lib/index.js` 才依赖宿主提供的 `@deepseek-ai/dsh-llm`、`dsh-tools`、`schemastery`（**运行时**是可选 peer，由 DSH 提供；**测试时**同一组包另以 `devDependencies` 声明，所以全新 clone 直接 `pnpm install` 就能跑测试，不必手工往 `node_modules` 里塞）。
 
 ## 与聚合包的关系
 
