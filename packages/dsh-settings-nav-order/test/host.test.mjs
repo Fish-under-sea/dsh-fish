@@ -202,14 +202,37 @@ test('坏请求体一律拒收，且不把文件写坏', async () => {
   fs.rmSync(home, { recursive: true, force: true });
 });
 
-test('请求体超过 64 KB 时回 413，不写文件', async () => {
+test('请求体超过 64 KB 时回 413，不写文件（整块与分片两种推法）', async () => {
   const home = makeHome();
   const { route } = loadHost(home);
-
   const huge = `{"enabled":true,"order":[],"hidden":[],"padding":"${'x'.repeat(host.MAX_BODY_BYTES + 1024)}"}`;
-  const res = await call(route, { method: 'POST', raw: true, body: huge });
-  assert.equal(res.statusCode, 413);
+
+  // ① 一次性推整块
+  const once = await call(route, { method: 'POST', raw: true, body: huge });
+  assert.equal(once.statusCode, 413);
   assert.ok(!fs.existsSync(host.statePath(home)));
+
+  /** 按固定大小分片推一个请求体（真实网络就是分片到达的）。 */
+  const callChunked = async (text, chunkSize) => {
+    const res = makeRes();
+    const req = makeReq({ method: 'POST' });
+    const pending = route.handler(req, res);
+    const buf = Buffer.from(text, 'utf8');
+    for (let i = 0; i < buf.length; i += chunkSize) req.emit('data', buf.subarray(i, i + chunkSize));
+    req.emit('end');
+    await pending;
+    return res;
+  };
+
+  // ② 分多块推：超限判定必须在最后一块之后仍然成立
+  const split = await callChunked(huge, 8192);
+  assert.equal(split.statusCode, 413, `分片推送也应 413：${split.body().slice(0, 120)}`);
+  assert.ok(!fs.existsSync(host.statePath(home)), '超限的分片请求同样不该落盘');
+
+  // ③ 分片但没超限：内容必须被完整拼起来（别把分片丢掉）
+  const ok = await callChunked(JSON.stringify(SAMPLE_STATE), 7);
+  assert.equal(ok.statusCode, 200, `分片但不超限应正常写入：${ok.body().slice(0, 120)}`);
+  assert.deepEqual(JSON.parse(fs.readFileSync(host.statePath(home), 'utf8')), SAMPLE_STATE);
   fs.rmSync(home, { recursive: true, force: true });
 });
 
