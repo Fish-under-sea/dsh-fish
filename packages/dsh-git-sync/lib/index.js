@@ -341,10 +341,84 @@ async function gitTry(repoDir, args, opts) {
 }
 
 /** 提交：add → 复查暂存区 → commit。发现密钥类文件立即回滚暂存。 */
-async function commitAll(repoDir, message) {
-  await git(repoDir, ['add', '-A']);
-  const staged = (await git(repoDir, ['diff', '--cached', '--name-only']))
-    .split('\n').map((s) => s.trim()).filter(Boolean);
+/**
+ * 从远端 URL 里取 GitHub 主人名（只认 github.com）。
+ *
+ * 用途：本机没有 git 身份时，给提交编一个**说得通**的作者 —— 换机后第一次同步
+ * 的用户名，最好就是这份配置仓的主人，而不是某台机器的登录名。
+ * 拿不到（不是 GitHub / 没配 origin）就返回 null，由调用方退回机器名。
+ *
+ * 注意：只解析出主人名，**绝不把 URL 本身写进日志**（URL 里可能带 token）。
+ */
+export function githubOwner(url) {
+  const text = String(url ?? '').trim();
+  if (!text) return null;
+  const https = /^https?:\/\/(?:[^@/]+@)?github\.com\/([^/]+)\//i.exec(text);
+  if (https) return https[1];
+  const ssh = /^(?:ssh:\/\/)?git@github\.com[:/]([^/]+)\//i.exec(text);
+  if (ssh) return ssh[1];
+  return null;
+}
+
+/**
+ * 本机没有 git 身份时，编一个可用的作者身份。
+ *
+ * 为什么必须有这一步：user.name / user.email 都没有时 `git commit` 直接失败
+ * （实测原话是 `Author identity unknown … unable to auto-detect email address`），
+ * 而**全新的机器本来就不会有身份** —— 那恰恰是「换机复原」最需要同步成功的时刻。
+ * 原实现把这句报错笼统报成「推送失败」，用户只会看到推送不行。
+ *
+ * 优先级：origin 的 GitHub 主人（配成 `<主人>@users.noreply.github.com`，与仓库
+ * 既有提交一致）→ 本机登录名 @ 主机名。只在确实没有身份时使用。
+ */
+async function fallbackIdentity(repoDir) {
+  const remote = await gitTry(repoDir, ['remote', 'get-url', 'origin']);
+  const owner = remote.ok ? githubOwner(remote.out.split('\n')[0]) : null;
+  if (owner) return { name: owner, email: `${owner}@users.noreply.github.com`, source: 'origin' };
+  let user = 'dsh';
+  try { user = os.userInfo().username || user; } catch { /* 取不到就用兜底名 */ }
+  return { name: user, email: `${user}@${os.hostname()}`, source: 'machine' };
+}
+
+/**
+ * 本次提交该用什么身份：本机已经有（仓库级 / 全局 / 环境变量）就返回 null 表示
+ * 「照原样」，没有才返回兜底身份。
+ *
+ * 探针用 `git var GIT_AUTHOR_IDENT` —— 它和 `git commit` 走同一套解析，比逐个查
+ * config 键更准（同时覆盖 GIT_AUTHOR_* 环境变量与 include 文件）。
+ */
+export async function resolveCommitIdentity(repoDir) {
+  const probe = await gitTry(repoDir, ['var', 'GIT_AUTHOR_IDENT']);
+  if (probe.ok) return null;
+  return fallbackIdentity(repoDir);
+}
+
+/** git 报错只取第一行非空内容：面板日志一行一条，塞整段 stderr 反而看不出重点。 */
+function firstLine(text) {
+  const line = String(text ?? '').split(/\r?\n/).find((row) => row.trim());
+  return line ? line.trim() : '（git 没有给出原因）';
+}
+
+/**
+ * 提交：暂存 → 复查暂存区 → commit。发现密钥类文件立即回滚暂存。
+ *
+ * 每一步都走 gitTry：**任何一步失败都变成一行可读日志**，而不是抛出去被路由兜成
+ * 一个把整段 git stderr 塞进 error 字段的 500 —— 用户实测撞过，面板只显示
+ * 「推送不行」，实际是提交被 git 拒绝，看不出真正原因。
+ *
+ * 本机没有 git 身份时改用兜底身份提交，并回报用了什么、从哪来。
+ *
+ * @param io 测试注入点，`{ say }` 收提交过程的说明行。
+ */
+export async function commitAll(repoDir, message, io = {}) {
+  const say = io.say ?? (() => {});
+
+  const added = await gitTry(repoDir, ['add', '-A']);
+  if (!added.ok) return { ok: false, staged: [], error: `暂存失败：${firstLine(added.out)}` };
+
+  const listed = await gitTry(repoDir, ['diff', '--cached', '--name-only']);
+  if (!listed.ok) return { ok: false, staged: [], error: `读取暂存区失败：${firstLine(listed.out)}` };
+  const staged = listed.out.split('\n').map((s) => s.trim()).filter(Boolean);
 
   // 必须与 testForbidden / 白名单 共用同一份例外（isBakAllowed），
   // 否则会出现「前几层放行、这一层拦下」的僵局。
@@ -355,8 +429,20 @@ async function commitAll(repoDir, message) {
   }
   if (!staged.length) return { ok: true, staged, committed: false };
 
-  await git(repoDir, ['commit', '-m', message]);
-  return { ok: true, staged, committed: true };
+  const identity = await resolveCommitIdentity(repoDir);
+  const args = identity
+    ? ['-c', `user.name=${identity.name}`, '-c', `user.email=${identity.email}`, 'commit', '-m', message]
+    : ['commit', '-m', message];
+  const committed = await gitTry(repoDir, args);
+  if (!committed.ok) {
+    return { ok: false, staged, error: `提交失败：${firstLine(committed.out)}` };
+  }
+  if (identity) {
+    const where = identity.source === 'origin' ? '取自 origin 的 GitHub 主人名' : '取自本机登录名';
+    say(`[i] 本机没有 git 身份，本次提交临时用 ${identity.name} <${identity.email}>（${where}）。`);
+    say('    想固定下来：在仓库里执行 git config user.name / user.email（仓库级即可）。');
+  }
+  return { ok: true, staged, committed: true, identity: identity ?? undefined };
 }
 
 // ── 密钥体检 ──────────────────────────────────────────────────────────
@@ -622,7 +708,7 @@ async function runAction(home, settings, action, options) {
       return { ok: true, log, copied: copied.length };
     }
     if (options.commit !== false) {
-      const c = await commitAll(settings.repoDir, `dsh-sync: pull ${stamp} (${os.hostname()})`);
+      const c = await commitAll(settings.repoDir, `dsh-sync: pull ${stamp} (${os.hostname()})`, { say });
       if (!c.ok) { say(`[x] ${c.error}`); return { ok: false, log }; }
       say(c.committed ? `已提交 ${c.staged.length} 个变更` : '没有变更，无需提交');
     }
@@ -768,4 +854,6 @@ export function apply(ctx, config) {
   );
 }
 
+// commitAll / resolveCommitIdentity / githubOwner 都已在各自的定义处导出
+// （它们是「本机没有 git 身份」这条真实故障路径的测试接缝）。
 export { resolveHome, WHITE_LIST, PROFILE_FILES, activeList, NEVER_COPY, testForbidden };

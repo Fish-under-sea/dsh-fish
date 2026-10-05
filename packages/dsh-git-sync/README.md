@@ -127,11 +127,14 @@ dsh plugin --profile <profile> add "file:<仓库路径>/packages/dsh-git-sync"
 - **仓库只增不减**：会话是追加型数据，删本地不会缩小仓库。
 - **装完插件后需要重启 DSH** 才能在设置页看到它。
 - 依赖 `git` 在 PATH 中。若你的机器用 HTTPS 拦截式加速器（如 Watt Toolkit / SteamTools），git 可能报 TLS 错误——解决办法见仓库的 `AGENT-GUIDE.md` §9.1。
+- **本机没有 git 身份也能同步**：提交前会探一次 `user.name` / `user.email`，没有就临时用 origin 的 GitHub 主人名提交（详见下方「三个已修的坑」）。想固定成你自己的身份，在仓库里执行 `git config user.name` / `user.email` 即可。
 - 主机半边的 `ctx.webServer` 路由是 **loopback + 同源**保护，没有额外的鉴权层。
 - **只覆盖用户级 Skill**（`~/.dsh/skills`）。项目级 `.dsh/skills`、`.agents/skills` 与 `~/.agents/skills` 不在同步范围内。
 - 刻意不同步：`skin-center/`（只有可再生的壁纸令牌缓存）、`*.bak*`、`*.lock`。
 
-### 两个已修的坑
+### 三个已修的坑
+
+**本机没有 git 身份会让整次同步失败。** 全新机器上 `user.name` / `user.email` 都没有时，`git commit` 直接拒绝（`Author identity unknown … unable to auto-detect email address`）—— 而全新机器恰恰是「换机复原」最需要同步成功的一刻。0.2.3 及以前把这句报错笼统报成「推送失败」，面板上只显示「推送不行」，完全看不出真正原因。现在：提交前先探一次身份（`git var GIT_AUTHOR_IDENT`，与 `git commit` 同一套解析），没有就按 **origin 的 GitHub 主人名**提交（配成 `<主人>@users.noreply.github.com`，与仓库既有提交一致），拿不到 origin 就退到「本机登录名 @ 主机名」，并在面板日志里写明用了谁、怎么固定下来。**配了身份的机器完全不受影响**（连 `-c` 都不注入，作者就是你配置里的那个）。
 
 **Windows 只读目标会让覆盖失败。** `copyFileSync` 会把源文件的**只读属性带到目标**，而 Windows 的 `CopyFileW` 在目标已存在且带 `ReadOnly` 时直接返回 `ERROR_ACCESS_DENIED`。两者叠加的结果是「第一次采集成功，之后每次都失败」。处理：拷前清掉目标只读位；仍失败则删掉目标重来；拷后保持可写。（实测：修复前仓库里有 108 个只读文件，修复后为 0，采集 0 跳过。）
 
@@ -144,15 +147,19 @@ dsh plugin --profile <profile> add "file:<仓库路径>/packages/dsh-git-sync"
 - 宿主导出：`name` / `inject = ['webServer']` / `apply(ctx, config)`。
 - Web 半导出：`inject = ['slots']` / `apply(ctx)`，向 `settings.section` 注册一页。
 
-本包没有配置 `scripts.test`；测试入口为 `test/client.test.mjs`（`node:test`）与两个手写断言脚本：
+本包没有配置 `scripts.test`；测试入口为一个 `node:test` 文件、两个手写断言脚本，以及一个**必须用真实 git** 的身份回退测试：
 
 ```powershell
-node test/client.test.mjs        # Web 半边装载冒烟
-node test/test-sync-engine.mjs   # 同步引擎：白名单 / 采集 / 还原 / 差异 / 拒绝闸
-node test/test-client.mjs        # Web 半边渲染与文案断言
+node test/client.test.mjs           # Web 半边装载冒烟（node:test）
+node test/test-sync-engine.mjs      # 同步引擎：白名单 / 采集 / 还原 / 差异 / 拒绝闸
+node test/test-client.mjs           # Web 半边渲染与文案断言
+node test/commit-identity.test.mjs  # 没有 git 身份时的提交回退（真实临时仓库 + 真实提交）
+node test/test-push-retry.mjs       # 补推语义（真实远端）
+node test/test-remote-merge.mjs     # 远端分叉时的快进 / rebase（真实远端）
 ```
 
 > 直接 `node <测试文件>` 即可，**不要**用 `node --test test/`：测试运行器会派生子进程并捕获管道输出，在受限沙箱里会以 `EPERM` 失败。
+> 后三个用例要起子进程跑 `git`，而 `git()` 走的是管道 —— 在受限沙箱里同样会 `spawn EPERM`（这是沙箱边界，不是代码问题）；请在普通终端或放宽沙箱的环境里跑它们。
 
 ## 与聚合包的关系
 
