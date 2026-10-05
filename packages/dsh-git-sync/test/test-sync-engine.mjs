@@ -249,6 +249,51 @@ console.log('\n=== 8. 设置导航顺序偏好（浏览器 localStorage 的镜�
     !r7res.copied.map((p) => p.split(path.sep).join('/')).includes(NAV), JSON.stringify(r7res.copied));
 }
 
+console.log('\n=== 9. 0.2.5 撤下三条：agent 预设 / 桌宠存档 / 工作区映射 ===');
+{
+  for (const gone of ['.agent-presets', 'pet.json', 'storages/workspace.json']) {
+    check(`白名单不含 ${gone}`, !WHITE_LIST.includes(gone), JSON.stringify(WHITE_LIST));
+    check(`activeList 也不含 ${gone}`, !mod.activeList(TMP).includes(gone));
+  }
+
+  // 本机即使有这三样，也不该被采集（免得只改了清单、采集侧还照搬）
+  const h8 = path.join(TMP, 'home8');
+  const r8 = path.join(TMP, 'repo8');
+  mkdirSync(path.join(h8, '.agent-presets', 'liangshen'), { recursive: true });
+  mkdirSync(path.join(h8, 'storages'), { recursive: true });
+  mkdirSync(path.join(h8, 'skills'), { recursive: true });
+  mkdirSync(r8, { recursive: true });
+  writeFileSync(path.join(h8, '.agent-presets', 'liangshen', 'preset.yml'), 'name: 不该被同步\n');
+  writeFileSync(path.join(h8, 'pet.json'), '{"petId":"whale-girl"}\n');
+  writeFileSync(path.join(h8, 'storages', 'workspace.json'), '{"workspaces":[]}\n');
+  writeFileSync(path.join(h8, 'settings.yaml'), 'theme: dark\n');
+  writeFileSync(path.join(h8, 'skills', 'core-rules.md'), '# rules\n');
+
+  const r8res = mod.copyToRepo(h8, { repoDir: r8 });
+  const copied8 = r8res.copied.map((p) => p.split(path.sep).join('/'));
+  check('预设未被采集', !existsSync(path.join(r8, '.agent-presets')));
+  check('pet.json 未被采集', !existsSync(path.join(r8, 'pet.json')));
+  check('workspace.json 未被采集（连 storages 目录都不建）', !existsSync(path.join(r8, 'storages')));
+  check('copied 里也不含这三条',
+    !copied8.some((p) => p.startsWith('.agent-presets') || p === 'pet.json' || p.startsWith('storages')),
+    JSON.stringify(copied8));
+  check('其余配置面照常采集（settings.yaml / skills）',
+    existsSync(path.join(r8, 'settings.yaml')) && existsSync(path.join(r8, 'skills', 'core-rules.md')));
+
+  // 还原方向同理：仓库里就算留着旧文件，也不该写回本机
+  const h9 = path.join(TMP, 'home9');
+  mkdirSync(h9, { recursive: true });
+  mkdirSync(path.join(r8, '.agent-presets', 'liangshen'), { recursive: true });
+  writeFileSync(path.join(r8, '.agent-presets', 'liangshen', 'preset.yml'), 'name: 仓库里的旧预设\n');
+  writeFileSync(path.join(r8, 'pet.json'), '{}\n');
+  const back9 = mod.copyToHome(h9, { repoDir: r8 });
+  check('还原不会把仓库里的旧预设写回本机', !existsSync(path.join(h9, '.agent-presets')));
+  check('还原不会把 pet.json 写回本机', !existsSync(path.join(h9, 'pet.json')));
+  check('还原 copied 里不含这两条',
+    !back9.copied.map((p) => p.split(path.sep).join('/')).some((p) => p.startsWith('.agent-presets') || p === 'pet.json'),
+    JSON.stringify(back9.copied));
+}
+
 rmSync(TMP, { recursive: true, force: true });
 console.log(`\n────────────  通过 ${pass} / 失败 ${fail}  ───────────`);
 process.exit(fail ? 1 : 0);

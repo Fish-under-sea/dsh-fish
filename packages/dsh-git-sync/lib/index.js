@@ -37,13 +37,18 @@ function resolveHome() {
 /**
  * 白名单：相对 DSH home 的路径。换机后需要复原的就在这里面。
  * 与 sync-kit/dsh-sync.ps1 的清单保持一致。
+ *
+ * 0.2.5 起**不再收录**这三条（本机决定，理由各自独立）：
+ *   - `.agent-presets`  —— 不用自定义 agent 预设；
+ *   - `pet.json`        —— 桌宠插件没启用，纯死文件；
+ *   - `storages/workspace.json` —— 里面是**机器相关的绝对路径**，搬到另一台机器
+ *     本来也要手工改，同步它只会带来「换机后工作区指向不存在的位置」的噪声。
+ * 想恢复同步，把对应那行加回来即可 —— 顺便看一眼 `git log -- <路径>`，
+ * 被撤下的内容仍留在本仓历史里。
  */
 const WHITE_LIST = [
-  'settings.yaml',                    // 全局设置：主题/模型/provider/皮肤/桌宠
-  'pet.json',
+  'settings.yaml',                    // 全局设置：主题/模型/provider/皮肤
   'skin-center-active.json',
-  'storages/workspace.json',          // 工作区 ↔ 会话映射（内含绝对路径）
-  '.agent-presets',                   // agent 预设
   'skills',                           // Skill 目录（~/.dsh/skills）
   'AGENTS.md',                        // 用户级全局指令：Skill 加载优先级总表
   'task-board/ledger-v2.json',
@@ -766,7 +771,9 @@ async function runAction(home, settings, action, options) {
     say('');
     say('还需要你手工做两件事：');
     say('  1) dsh plugin --profile web install   （按 package.json 重装插件依赖）');
-    say('  2) 检查 storages/workspace.json 里的绝对路径是否匹配本机，然后重启 DSH。');
+    say('  2) 重启 DSH。');
+    say('（0.2.5 起不再同步 storages/workspace.json —— 那份工作区映射含机器相关绝对路径，');
+    say('  换机后本来就该让本机自己生成，所以还原不再覆盖它。）');
     return { ok: true, log, copied: copied.length };
   }
 

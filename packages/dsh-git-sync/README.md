@@ -92,17 +92,23 @@ dsh plugin --profile <profile> add "file:<仓库路径>/packages/dsh-git-sync"
 | `profiles/<profile>/pnpm-lock.yaml` / `pnpm-workspace.yaml` | 精确版本与 pnpm 配置 |
 | `settings.yaml` | 0.1.x 口径的全局设置；0.2.0 起 home 下的它已被 patch layer 改名 `settings.yaml.imported`，实际设置落在 `profiles/<profile>/cordis.patch.yml` |
 | `skills/` | **Skill 目录**（`~/.dsh/skills`） |
-| `.agent-presets/` | agent 预设 |
-| `storages/workspace.json` | 工作区 ↔ 会话映射 |
 | `task-board/`、`dsh-session-archive/`、`dsh-usage/` | 看板账本、归档状态、用量账本 |
 | `dsh-settings-nav-order/state.json` | **设置导航顺序偏好**（顺序 / 隐藏项）——由 [`dsh-settings-nav-order`](https://github.com/Fish-under-sea/dsh-fish/tree/main/packages/dsh-settings-nav-order) 的宿主半区在用户保存时写入（同源路由）；浏览器真正的 localStorage 本插件够不着，所以跨机复原靠这一个文件 |
-| `pet.json`、`skin-center-active.json` | 桌宠、皮肤 |
+| `skin-center-active.json` | 皮肤 |
 
 > **`<profile>` 按目录动态枚举**：本机 `profiles/` 下每个 profile 目录都会被覆盖，桌面版是 `desktop`、Web 版是 `web`。写死 profile 名会漏掉「装了什么插件 / 每个插件是否启用 / 精确版本」这最要紧的三样——0.2.0 桌面版踩过这个坑：profile 改名后白名单一条都命中不了，仓库里只剩 0.1.x 的 `profiles/web` 快照。
 
 > **Skill 位置很关键。** DSH 会从多个根目录读 Skill：`<项目根>/.dsh/skills`、`<项目根>/.agents/skills`、`<DSH_HOME>/skills`、`~/.agents/skills`。本插件只覆盖 **`<DSH_HOME>/skills`**（即 `~/.dsh/skills`）——所以 Skill 必须放在用户级目录才会被同步。放在项目级 `.dsh/skills` 的不在同步范围内。
 
-> **不在范围内**：`sessions/`、`attachments/`（0.2.0 起永久排除）、`node_modules`、`.credentials.yaml` 等密钥文件、派生物（`cordis.yml`、`storages/session_projcache`）、本机状态（`.anonymous-user-id` 等）。
+> **不在范围内**：`sessions/`、`attachments/`（0.2.0 起永久排除）、**`.agent-presets/`、`pet.json`、`storages/workspace.json`（0.2.5 起撤下）**、`node_modules`、`.credentials.yaml` 等密钥文件、派生物（`cordis.yml`、`storages/session_projcache`）、本机状态（`.anonymous-user-id` 等）。
+
+**0.2.5 撤下三条，理由各自独立**：
+
+- `.agent-presets/` —— 不用自定义 agent 预设；
+- `pet.json` —— 桌宠插件没启用，纯死文件；
+- `storages/workspace.json` —— 里面是**机器相关的绝对路径**，搬到另一台机器本来也要手工改（见下方「兼容与边界」），同步它只会带来「换机后工作区指向不存在的位置」的噪声。
+
+撤下的内容**仍留在本仓历史里**（`git log -- <路径>` 可取回）；想恢复同步，把对应的行加回 `WHITE_LIST` 即可。
 
 **同步范围 0.2.0 起收缩为「配置面」**：会话记录与附件**不再上传**。`sessions/` 是 zstd 二进制，只增不减、git 无法 diff 也无法行级合并，两台机器同时改必然冲突；`attachments/` 同理且属本机隐私数据。配置面换机后靠这一份清单 + 各自的会话副本复原即可。**已提交到仓库的旧会话文件不会被删除**（只停新增），历史保留可查。
 
@@ -122,7 +128,7 @@ dsh plugin --profile <profile> add "file:<仓库路径>/packages/dsh-git-sync"
 
 ## 兼容与边界
 
-- **`workspace.json` 里是绝对路径**（如 `D:\Fish-code\DSH`）。换机后必须手工改，否则工作区指向不存在的位置。
+- **工作区映射不再同步**（0.2.5 起）：`storages/workspace.json` 里是绝对路径（如 `D:\Fish-code\DSH`），换机后本来就该由那台机器自己生成；本插件既不采集它、也不在还原时覆盖它。
 - **会话是 zstd 压缩二进制**，git 无法 diff / 行级合并。两台机器同时改同一会话会二进制冲突，本插件不做内容级合并。
 - **仓库只增不减**：会话是追加型数据，删本地不会缩小仓库。
 - **装完插件后需要重启 DSH** 才能在设置页看到它。

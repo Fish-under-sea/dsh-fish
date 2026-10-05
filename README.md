@@ -20,6 +20,8 @@
 > **🆕 0.5.10（2026-10-06）**：`@fish-under-sea/dsh-git-sync` **0.2.4**（依赖范围提到 `^0.2.4`）—— 修掉实机撞到的「换机后第一次同步必失败」：全新机器没有 `user.name` / `user.email` 时 `git commit` 被 git 直接拒绝（`Author identity unknown`），旧版却把它笼统报成「推送失败」；现在提交前探一次身份，缺失就按 **origin 的 GitHub 主人名**提交（`<主人>@users.noreply.github.com`，与仓库既有提交一致），拿不到 origin 就用「登录名 @ 主机名」，并在面板日志里写明用了谁；**配了身份的机器完全不受影响**。提交链路每一步失败都改回单行可读日志（不再把整段 git stderr 塞进 500 的 error 字段）。新增 7 个真实仓库用例（`test/commit-identity.test.mjs`）。
 >
 > **🆕 0.5.11（2026-10-06）**：`@fish-under-sea/dsh-visual-companion` **0.1.4**（依赖范围提到 `^0.1.4`）—— **仅开发依赖**：把该包测试真正需要的 3 个 DSH 包（`@deepseek-ai/dsh-llm` / `dsh-tools` / `schemastery`）另以 `devDependencies` 声明。它们此前只是**可选 peer**（运行时由 DSH 提供），测试却依赖手工塞进 `node_modules` 的那一份，全新 clone 直接 `pnpm install` 跑测试会 `ERR_MODULE_NOT_FOUND`；现在可复现。**运行时零变化**（`lib/` 与 `cordis.patch.yml` 未动），也顺手把该包 README 的用例数从 7 修正为 8。
+>
+> **🆕 0.6.0（2026-10-06）**：`@fish-under-sea/dsh-git-sync` **0.2.5**（依赖范围提到 `^0.2.5`）—— **同步范围撤下三条**：`agent 预设（.agent-presets/）`、`桌宠存档（pet.json）`、`工作区映射（storages/workspace.json）`。前两者本机不用（桌宠插件未启用），后者含**机器相关绝对路径**、换机后本就该由那台机器自己生成——同步它只会制造「换机后工作区指向不存在的位置」的噪声。采集与还原双向都不再碰这三条（**已提交的旧文件仍留在仓库历史里**，想恢复同步把 `WHITE_LIST` 对应行加回即可）。同步引擎用例 69→83。**本版按 minor 号发布**：0.5.12 与它是同一批改动，为清晰起见合成 0.6.0。
 
 <div align="center">
 
@@ -29,7 +31,7 @@
 
 Fish 自建 DSH（[DeepSeek Harness](https://github.com/Fish-under-sea/DSH)）插件聚合包
 
-![version](https://img.shields.io/badge/version-0.5.11-22d3ee?style=flat-square) ![license](https://img.shields.io/badge/license-MIT-green?style=flat-square) ![node](https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square) ![npm](https://img.shields.io/npm/v/@fish-under-sea/dsh-fish?style=flat-square&label=npm&color=cb3837) ![DSH](https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4b6ef6?style=flat-square) ![bundle](https://img.shields.io/badge/kind-bundle-6b7280?style=flat-square)
+![version](https://img.shields.io/badge/version-0.6.0-22d3ee?style=flat-square) ![license](https://img.shields.io/badge/license-MIT-green?style=flat-square) ![node](https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square) ![npm](https://img.shields.io/npm/v/@fish-under-sea/dsh-fish?style=flat-square&label=npm&color=cb3837) ![DSH](https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4b6ef6?style=flat-square) ![bundle](https://img.shields.io/badge/kind-bundle-6b7280?style=flat-square)
 
 </div>
 
@@ -49,7 +51,7 @@ Fish 自建 DSH（[DeepSeek Harness](https://github.com/Fish-under-sea/DSH)）�
 |------|:----:|------|
 | [`dsh-approval-guide`](packages/dsh-approval-guide) | 0.2.1 | 在审批弹窗里追加**中文说明**：这次审批会做什么、有什么风险、依据是什么 |
 | [`dsh-session-title-refresh`](packages/dsh-session-title-refresh) | 0.2.1 | **会话标题自动刷新**：第 N 轮起总结命名，此后每 M 轮刷新一次 |
-| [`dsh-git-sync`](packages/dsh-git-sync) | 0.2.4 | **一键 Git 同步**：把插件清单、启用状态、本地设置、Skills、看板/用量账本与设置导航顺序偏好同步到自己的私有仓库 |
+| [`dsh-git-sync`](packages/dsh-git-sync) | 0.2.5 | **一键 Git 同步**：把插件清单、启用状态、本地设置、Skills、看板/用量账本与设置导航顺序偏好同步到自己的私有仓库 |
 | [`dsh-settings-nav-order`](packages/dsh-settings-nav-order) | 0.1.3 | **设置导航重排**：把设置面板左侧菜单排成自己要的顺序、把不想看的项收起来；偏好随 Git 同步插件**跨机复原** |
 | [`dsh-visual-companion`](packages/dsh-visual-companion) | 0.1.4 | **视觉伴侣唤醒**：网页上看原型 / 比布局，点选 + 备注后按「提交给助手」，会话自动收到一条用户消息并起一轮 —— 不必回终端复述；**点选过程静默，只有提交才唤醒一次** |
 | [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) | 0.1.29 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；本版新增**自定义美术目录**、九厂商 × 九岗位头像与厂商商标徽标，以及**中文岗位名**与**厂商通用大图兜底**（未命中岗位时显示该厂商大图并提示适配中） |
@@ -209,7 +211,7 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 
 ```text
 dsh-fish/                 # 仓库目录名（npm 包名是 @fish-under-sea/dsh-fish）
-├── package.json          # 聚合包清单（version 0.5.11，dsh.bundle.patch 指向 cordis.patch.yml）
+├── package.json          # 聚合包清单（version 0.6.0，dsh.bundle.patch 指向 cordis.patch.yml）
 ├── cordis.patch.yml      # bundle 层：停用内置标题插件 + 插入七个插件的插件行
 ├── pnpm-workspace.yaml   # workspace 声明（仅本地开发用）
 ├── lib/                  # 聚合包自身的空实现（本包不注册任何东西）
@@ -277,4 +279,4 @@ node packages/dsh-visual-companion/test/visual-companion.test.mjs
 
 ---
 
-<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.5.11 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
+<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.6.0 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
