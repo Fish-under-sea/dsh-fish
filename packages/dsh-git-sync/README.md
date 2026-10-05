@@ -92,7 +92,7 @@ dsh plugin --profile <profile> add "file:<仓库路径>/packages/dsh-git-sync"
 | `profiles/<profile>/pnpm-lock.yaml` / `pnpm-workspace.yaml` | 精确版本与 pnpm 配置 |
 | `settings.yaml` | 0.1.x 口径的全局设置；0.2.0 起 home 下的它已被 patch layer 改名 `settings.yaml.imported`，实际设置落在 `profiles/<profile>/cordis.patch.yml` |
 | `skills/` | **Skill 目录**（`~/.dsh/skills`） |
-| `task-board/`、`dsh-session-archive/`、`dsh-usage/` | 看板账本、归档状态、用量账本 |
+| `task-board/`、`dsh-usage/` | 看板账本、用量账本 |
 | `dsh-settings-nav-order/state.json` | **设置导航顺序偏好**（顺序 / 隐藏项）——由 [`dsh-settings-nav-order`](https://github.com/Fish-under-sea/dsh-fish/tree/main/packages/dsh-settings-nav-order) 的宿主半区在用户保存时写入（同源路由）；浏览器真正的 localStorage 本插件够不着，所以跨机复原靠这一个文件 |
 | `skin-center-active.json` | 皮肤 |
 
@@ -100,7 +100,7 @@ dsh plugin --profile <profile> add "file:<仓库路径>/packages/dsh-git-sync"
 
 > **Skill 位置很关键。** DSH 会从多个根目录读 Skill：`<项目根>/.dsh/skills`、`<项目根>/.agents/skills`、`<DSH_HOME>/skills`、`~/.agents/skills`。本插件只覆盖 **`<DSH_HOME>/skills`**（即 `~/.dsh/skills`）——所以 Skill 必须放在用户级目录才会被同步。放在项目级 `.dsh/skills` 的不在同步范围内。
 
-> **不在范围内**：`sessions/`、`attachments/`（0.2.0 起永久排除）、**`.agent-presets/`、`pet.json`、`storages/workspace.json`（0.2.5 起撤下）**、`node_modules`、`.credentials.yaml` 等密钥文件、派生物（`cordis.yml`、`storages/session_projcache`）、本机状态（`.anonymous-user-id` 等）。
+> **不在范围内**：`sessions/`、`attachments/`（0.2.0 起永久排除）、**`.agent-presets/`、`pet.json`、`storages/workspace.json`（0.2.5 起撤下）**、**`dsh-session-archive/`（0.2.6 起撤下）**、`node_modules`、`.credentials.yaml` 等密钥文件、派生物（`cordis.yml`、`storages/session_projcache`）、本机状态（`.anonymous-user-id` 等）。
 
 **0.2.5 撤下三条，理由各自独立**：
 
@@ -108,7 +108,13 @@ dsh plugin --profile <profile> add "file:<仓库路径>/packages/dsh-git-sync"
 - `pet.json` —— 桌宠插件没启用，纯死文件；
 - `storages/workspace.json` —— 里面是**机器相关的绝对路径**，搬到另一台机器本来也要手工改（见下方「兼容与边界」），同步它只会带来「换机后工作区指向不存在的位置」的噪声。
 
+**0.2.6 再撤一条**：
+
+- `dsh-session-archive/` —— [`@linxin666/dsh-session-archive`](https://www.npmjs.com/package/@linxin666/dsh-session-archive) 的**归档台账与运行状态**（`archive-ledger.json` + `state.json`）。它是**纯本机状态**：记「哪些会话何时被归档」，而会话本身永久不跨机同步（`sessions/`、`attachments/` 已排除），台账换机后没有意义；自动归档的**策略**在 `profiles/<profile>/cordis.patch.yml` 里、那份是同步的，新机器会自己重新记账。此前它还制造了一个假象：配置仓的 `.gitignore` 恰好也排除了它，于是「复制进仓库却永远不提交」，而面板显示待同步 0。
+
 撤下的内容**仍留在本仓历史里**（`git log -- <路径>` 可取回）；想恢复同步，把对应的行加回 `WHITE_LIST` 即可。
+
+> 侧记（2026-10-06 实测的一次教训）：白名单里**任何**被配置仓 `.gitignore` 排除的条目，都会变成「本地复制、永不提交、面板却显示已同步」的假象。改动白名单时顺手核对一遍仓库的 `.gitignore` 是值得的。
 
 **同步范围 0.2.0 起收缩为「配置面」**：会话记录与附件**不再上传**。`sessions/` 是 zstd 二进制，只增不减、git 无法 diff 也无法行级合并，两台机器同时改必然冲突；`attachments/` 同理且属本机隐私数据。配置面换机后靠这一份清单 + 各自的会话副本复原即可。**已提交到仓库的旧会话文件不会被删除**（只停新增），历史保留可查。
 

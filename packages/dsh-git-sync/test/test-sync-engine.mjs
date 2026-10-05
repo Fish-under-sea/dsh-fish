@@ -249,23 +249,26 @@ console.log('\n=== 8. 设置导航顺序偏好（浏览器 localStorage 的镜�
     !r7res.copied.map((p) => p.split(path.sep).join('/')).includes(NAV), JSON.stringify(r7res.copied));
 }
 
-console.log('\n=== 9. 0.2.5 撤下三条：agent 预设 / 桌宠存档 / 工作区映射 ===');
+console.log('\n=== 9. 0.2.5 撤下三条 + 0.2.6 再撤一条：预设 / 桌宠存档 / 工作区映射 / 归档台账 ===');
 {
-  for (const gone of ['.agent-presets', 'pet.json', 'storages/workspace.json']) {
+  for (const gone of ['.agent-presets', 'pet.json', 'storages/workspace.json', 'dsh-session-archive']) {
     check(`白名单不含 ${gone}`, !WHITE_LIST.includes(gone), JSON.stringify(WHITE_LIST));
     check(`activeList 也不含 ${gone}`, !mod.activeList(TMP).includes(gone));
   }
 
-  // 本机即使有这三样，也不该被采集（免得只改了清单、采集侧还照搬）
+  // 本机即使有这几样，也不该被采集（免得只改了清单、采集侧还照搬）
   const h8 = path.join(TMP, 'home8');
   const r8 = path.join(TMP, 'repo8');
   mkdirSync(path.join(h8, '.agent-presets', 'liangshen'), { recursive: true });
   mkdirSync(path.join(h8, 'storages'), { recursive: true });
+  mkdirSync(path.join(h8, 'dsh-session-archive'), { recursive: true });
   mkdirSync(path.join(h8, 'skills'), { recursive: true });
   mkdirSync(r8, { recursive: true });
   writeFileSync(path.join(h8, '.agent-presets', 'liangshen', 'preset.yml'), 'name: 不该被同步\n');
   writeFileSync(path.join(h8, 'pet.json'), '{"petId":"whale-girl"}\n');
   writeFileSync(path.join(h8, 'storages', 'workspace.json'), '{"workspaces":[]}\n');
+  writeFileSync(path.join(h8, 'dsh-session-archive', 'archive-ledger.json'), '{"version":1,"entries":{}}\n');
+  writeFileSync(path.join(h8, 'dsh-session-archive', 'state.json'), '{"version":1}\n');
   writeFileSync(path.join(h8, 'settings.yaml'), 'theme: dark\n');
   writeFileSync(path.join(h8, 'skills', 'core-rules.md'), '# rules\n');
 
@@ -274,8 +277,10 @@ console.log('\n=== 9. 0.2.5 撤下三条：agent 预设 / 桌宠存档 / 工作�
   check('预设未被采集', !existsSync(path.join(r8, '.agent-presets')));
   check('pet.json 未被采集', !existsSync(path.join(r8, 'pet.json')));
   check('workspace.json 未被采集（连 storages 目录都不建）', !existsSync(path.join(r8, 'storages')));
-  check('copied 里也不含这三条',
-    !copied8.some((p) => p.startsWith('.agent-presets') || p === 'pet.json' || p.startsWith('storages')),
+  check('归档台账未被采集', !existsSync(path.join(r8, 'dsh-session-archive')));
+  check('copied 里也不含这几条',
+    !copied8.some((p) => p.startsWith('.agent-presets') || p === 'pet.json' || p.startsWith('storages')
+      || p.startsWith('dsh-session-archive')),
     JSON.stringify(copied8));
   check('其余配置面照常采集（settings.yaml / skills）',
     existsSync(path.join(r8, 'settings.yaml')) && existsSync(path.join(r8, 'skills', 'core-rules.md')));

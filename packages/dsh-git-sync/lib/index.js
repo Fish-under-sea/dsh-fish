@@ -43,6 +43,14 @@ function resolveHome() {
  *   - `pet.json`        —— 桌宠插件没启用，纯死文件；
  *   - `storages/workspace.json` —— 里面是**机器相关的绝对路径**，搬到另一台机器
  *     本来也要手工改，同步它只会带来「换机后工作区指向不存在的位置」的噪声。
+ *
+ * 0.2.6 起**再撤一条** `dsh-session-archive`（`@linxin666/dsh-session-archive` 的
+ * 归档台账与运行状态）：它是**纯本机状态**——记「哪些会话何时被归档」，而会话本身
+ * 永久不跨机同步（`sessions/`、`attachments/` 已排除），台账换机后没有意义；
+ * 自动归档的**策略**在 `profiles/<profile>/cordis.patch.yml` 里、那份是同步的，
+ * 新机器会自己重新记账。此前它还制造了一个假象：它被同步进配置仓，而那份仓库的
+ * `.gitignore` 恰好排除了它 —— 于是「复制了却永远不提交」，面板却显示待同步 0。
+ *
  * 想恢复同步，把对应那行加回来即可 —— 顺便看一眼 `git log -- <路径>`，
  * 被撤下的内容仍留在本仓历史里。
  */
@@ -53,7 +61,6 @@ const WHITE_LIST = [
   'AGENTS.md',                        // 用户级全局指令：Skill 加载优先级总表
   'task-board/ledger-v2.json',
   'task-board/scheduler-v2.json',
-  'dsh-session-archive',
   'dsh-usage',
   // 设置导航顺序（dsh-settings-nav-order）的顺序 / 隐藏项。
   //

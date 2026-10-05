@@ -165,7 +165,7 @@ window.__ModuleLoader__.load({
 
 				h('div', { className: 'dgs-note' },
 					'采集走白名单：插件清单、插件启用状态、插件配置、本地设置、',
-					'Skill（skills/）、任务看板账本、归档与用量账本、',
+					'Skill（skills/）、任务看板账本、用量账本、',
 					'设置导航顺序偏好（dsh-settings-nav-order/state.json）。',
 					h('br'),
 					'自 0.2.0 起**不再同步会话记录与附件**（sessions/、attachments/）：它们是只增不减的 zstd 二进制，无法 diff、无法合并，且属于本机隐私数据。',
