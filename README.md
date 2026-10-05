@@ -5,6 +5,8 @@
 > **🆕 0.5.2（2026-10-05）**：新增第六个成员 [`dsh-visual-companion`](packages/dsh-visual-companion) —— 在网页上看原型 / 比布局，点选 + 备注后按「提交给助手」，会话自动收到一条用户消息并起一轮，点选过程静默；六个 README 统一美化；五个子包升补丁版。
 >
 > **🆕 0.5.3（2026-10-05）**：跟随 `dsh-agent-teams-fish` **0.1.25**（README 统一美化与更新），依赖范围提到 `^0.1.25`。
+>
+> **🆕 0.5.4（2026-10-05）**：纳入第七个成员 [`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/-dsh-better-reasoning-effort-fish) —— 「模型」页编辑卡里直接编辑每模型的思考强度与输入模态声明 + 一键自动适配（上游 `dsh-better-reasoning-effort` 的 Fork）；依赖范围 `^0.5.5`。
 
 <div align="center">
 
@@ -14,7 +16,7 @@
 
 Fish 自建 DSH（[DeepSeek Harness](https://github.com/Fish-under-sea/DSH)）插件聚合包
 
-![version](https://img.shields.io/badge/version-0.5.3-22d3ee?style=flat-square) ![license](https://img.shields.io/badge/license-MIT-green?style=flat-square) ![node](https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square) ![npm](https://img.shields.io/npm/v/@fish-under-sea/dsh-fish?style=flat-square&label=npm&color=cb3837) ![DSH](https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4b6ef6?style=flat-square) ![bundle](https://img.shields.io/badge/kind-bundle-6b7280?style=flat-square)
+![version](https://img.shields.io/badge/version-0.5.4-22d3ee?style=flat-square) ![license](https://img.shields.io/badge/license-MIT-green?style=flat-square) ![node](https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square) ![npm](https://img.shields.io/npm/v/@fish-under-sea/dsh-fish?style=flat-square&label=npm&color=cb3837) ![DSH](https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4b6ef6?style=flat-square) ![bundle](https://img.shields.io/badge/kind-bundle-6b7280?style=flat-square)
 
 </div>
 
@@ -22,9 +24,9 @@ Fish 自建 DSH（[DeepSeek Harness](https://github.com/Fish-under-sea/DSH)）�
 
 ## 这是什么
 
-根目录是**聚合包**，子插件源码在 `packages/` 下。聚合包靠自己的 bundle 层（`cordis.patch.yml`）把六个插件的插件行**一次性插入** profile 的 roster —— 其中五个是本仓库 `packages/` 下的自建插件，第六个是**外部补充版** `dsh-agent-teams-fish`（独立仓库，非本仓库子包）。
+根目录是**聚合包**，子插件源码在 `packages/` 下。聚合包靠自己的 bundle 层（`cordis.patch.yml`）把七个插件的插件行**一次性插入** profile 的 roster —— 其中五个是本仓库 `packages/` 下的自建插件，另外两个是**外部补充版**：`dsh-agent-teams-fish` 与 `dsh-better-reasoning-effort-fish`（各自独立仓库，非本仓库子包）。
 
-> **装一次 `@fish-under-sea/dsh-fish` ＝ 装齐六个插件。**
+> **装一次 `@fish-under-sea/dsh-fish` ＝ 装齐七个插件。**
 
 **命名差异（容易踩）**：npm 包名 `@fish-under-sea/*` 带 scope，但仓库目录名（`dsh-fish/`）与 GitHub 仓库名（`Fish-under-sea/dsh-fish`）**不带**。
 
@@ -38,6 +40,7 @@ Fish 自建 DSH（[DeepSeek Harness](https://github.com/Fish-under-sea/DSH)）�
 | [`dsh-settings-nav-order`](packages/dsh-settings-nav-order) | 0.1.1 | **设置导航重排**：把设置面板左侧菜单排成自己要的顺序、把不想看的项收起来 |
 | [`dsh-visual-companion`](packages/dsh-visual-companion) | 0.1.1 | **视觉伴侣唤醒**：网页上看原型 / 比布局，点选 + 备注后按「提交给助手」，会话自动收到一条用户消息并起一轮 —— 不必回终端复述；**点选过程静默，只有提交才唤醒一次** |
 | [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) | 0.1.25 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；本版新增**自定义美术目录**、九厂商 × 九岗位头像与厂商商标徽标，以及**中文岗位名**与**厂商通用大图兜底**（未命中岗位时显示该厂商大图并提示适配中） |
+| [`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/-dsh-better-reasoning-effort-fish) | 0.5.5 | **思考强度与输入模态**（上游 [HaoyueQin/dsh-better-reasoning-effort](https://github.com/HaoyueQin/dsh-better-reasoning-effort) 的**Fork**）：在官方「模型」页编辑卡里直接编辑每模型的 `reasoningEfforts` 与 `input` 声明，并支持一键自动适配；本 Fork 把 `settings.models.provider-card` 席位完整让给模型能力面板 |
 
 ## 本包会停用一个 DSH 内置插件
 
@@ -61,11 +64,11 @@ Fish 自建 DSH（[DeepSeek Harness](https://github.com/Fish-under-sea/DSH)）�
 dsh plugin --profile <profile> add @fish-under-sea/dsh-fish
 ```
 
-聚合包已声明六个插件依赖，它们作为传递依赖被 pnpm 装到 profile 顶层（本 profile 用 `nodeLinker: hoisted`），插件行按包名解析即可得到。
+聚合包已声明七个插件依赖，它们作为传递依赖被 pnpm 装到 profile 顶层（本 profile 用 `nodeLinker: hoisted`），插件行按包名解析即可得到。
 
 **为什么不会插出重复行**：对账逻辑（`dsh-plugin-manager` 的 `reconcile`）只遍历 **profile 自己的 `dependencies`**，不递归看传递依赖，所以子包不会被提升为 bundle 层，插行不会叠加。
 
-> ⚠️ **如果安装报 `[NOT_FOUND]`**：本包与六个子包都已发布到 npm **官方源**。若你的机器把 registry 指向国内镜像（例如 `registry.npmmirror.com`），镜像**懒同步**可能还没收录其中某个子包，于是 `dsh plugin add` 会以
+> ⚠️ **如果安装报 `[NOT_FOUND]`**：本包与七个成员包都已发布到 npm **官方源**。若你的机器把 registry 指向国内镜像（例如 `registry.npmmirror.com`），镜像**懒同步**可能还没收录其中某个子包，于是 `dsh plugin add` 会以
 > `404 Not Found … {"error":"[NOT_FOUND] @fish-under-sea/<子包> not found"}` 失败。
 > **这不是包不存在** —— 任选下面一条即可：
 >
@@ -77,6 +80,7 @@ dsh plugin --profile <profile> add @fish-under-sea/dsh-fish
 >   curl.exe -X PUT https://registry.npmmirror.com/-/package/@fish-under-sea/dsh-settings-nav-order/syncs
 >   curl.exe -X PUT https://registry.npmmirror.com/-/package/@fish-under-sea/dsh-visual-companion/syncs
 >   curl.exe -X PUT https://registry.npmmirror.com/-/package/dsh-agent-teams-fish/syncs
+>   curl.exe -X PUT https://registry.npmmirror.com/-/package/dsh-better-reasoning-effort-fish/syncs
 >   ```
 >   返回 `{"ok":true,"state":"waiting"}` 即已受理；用
 >   `curl.exe https://registry.npmmirror.com/@fish-under-sea%2Fdsh-approval-guide` 复查，出现 `"latest"` 就同步好了。
@@ -96,11 +100,12 @@ dsh plugin --profile <profile> add @fish-under-sea/dsh-fish
   "@fish-under-sea/dsh-session-title-refresh": "github:Fish-under-sea/dsh-fish#path:packages/dsh-session-title-refresh",
   "@fish-under-sea/dsh-settings-nav-order": "github:Fish-under-sea/dsh-fish#path:packages/dsh-settings-nav-order",
   "@fish-under-sea/dsh-visual-companion": "github:Fish-under-sea/dsh-fish#path:packages/dsh-visual-companion",
-  "dsh-agent-teams-fish": "github:Fish-under-sea/dsh-agent-teams-fish"
+  "dsh-agent-teams-fish": "github:Fish-under-sea/dsh-agent-teams-fish",
+  "dsh-better-reasoning-effort-fish": "github:Fish-under-sea/-dsh-better-reasoning-effort-fish"
 }
 ```
 
-`#path:` 是 pnpm 的子目录语法，让一个仓库同时提供多个包 —— 五个子包指向本仓库，外部补充版指向[它自己的仓库](https://github.com/Fish-under-sea/dsh-agent-teams-fish)；换机 `pnpm install` 后直接从仓库下载，**不依赖任何本机绝对路径**。`bundles` 里只需列 `"@fish-under-sea/dsh-fish"`（它的 patch 负责插入六行）。
+`#path:` 是 pnpm 的子目录语法，让一个仓库同时提供多个包 —— 五个子包指向本仓库；两个外部补充版指向各自仓库：[`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) 与 [`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/-dsh-better-reasoning-effort-fish)（后者包在该仓库根目录，无需 `#path:`）；换机 `pnpm install` 后直接从仓库下载，**不依赖任何本机绝对路径**。`bundles` 里只需列 `"@fish-under-sea/dsh-fish"`（它的 patch 负责插入七行）。
 
 ### 方式三：本地开发安装（改源码即时生效）
 
@@ -115,7 +120,8 @@ dsh plugin --profile <profile> add @fish-under-sea/dsh-fish
   "@fish-under-sea/dsh-session-title-refresh": "link:<本仓库路径>/packages/dsh-session-title-refresh",
   "@fish-under-sea/dsh-settings-nav-order": "link:<本仓库路径>/packages/dsh-settings-nav-order",
   "@fish-under-sea/dsh-visual-companion": "link:<本仓库路径>/packages/dsh-visual-companion",
-  "dsh-agent-teams-fish": "link:<dsh-agent-teams-fish 仓库路径>"
+  "dsh-agent-teams-fish": "link:<dsh-agent-teams-fish 仓库路径>",
+  "dsh-better-reasoning-effort-fish": "link:<dsh-better-reasoning-effort 仓库路径>"
 }
 ```
 
@@ -138,7 +144,7 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 
 **② 手工声明时子包要写在 `devDependencies`**
 
-`dsh plugin` 每次执行都会对账，把 profile 的 `dependencies` 里任何声明了 `dsh.bundle` 的包**自动追加进 `dsh.profile.bundles`**。六个包各自都声明了 `dsh.bundle`，而聚合包的 patch 已经把六行插行复述了一遍 ——
+`dsh plugin` 每次执行都会对账，把 profile 的 `dependencies` 里任何声明了 `dsh.bundle` 的包**自动追加进 `dsh.profile.bundles`**。七个包各自都声明了 `dsh.bundle`，而聚合包的 patch 已经把七行插行复述了一遍 ——
 
 > 子包一旦被提升为 bundle 层，插行就会**叠加成重复行**，而**重复挂载会让应用启动失败**。
 
@@ -156,6 +162,7 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 | `settings-nav-order` | 设置 → 设置导航顺序 | 无配置文件（浏览器 `localStorage`，键 `dsh-settings-nav-order/v1`） |
 | `dsh-visual-companion` | 无设置页（配置写在自己 profile patch 的插件行里） | 同上（`watchDir`：视觉伴侣根目录，用于「加载即自动绑定」） |
 | `dsh-agent-teams-fish` | 无设置页（配置写在聚合包 `cordis.patch.yml` 的插件行里） | 同上（`stateDir` / `memberProvider` / `artworkDir`） |
+| `dsh-better-reasoning-effort-fish` | 无设置页（能力直接嵌进官方「模型」页编辑卡） | 同上（`autofill` / `modalityAutofill` / `probeTimeoutMs` / `bootRetryDelaysMs` / `defaultGuard`，写在插件行的 `config` 或 `settings.yaml` 的插件 `config` 块） |
 
 **配置目录名是不带 scope 的短名**（`$DSH_HOME/dsh-git-sync/` 等），与 npm 包名解耦 —— 所以**改包名不会动到已有配置**。
 
@@ -188,8 +195,8 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 
 ```text
 dsh-fish/                 # 仓库目录名（npm 包名是 @fish-under-sea/dsh-fish）
-├── package.json          # 聚合包清单（version 0.5.3，dsh.bundle.patch 指向 cordis.patch.yml）
-├── cordis.patch.yml      # bundle 层：停用内置标题插件 + 插入六个插件的插件行
+├── package.json          # 聚合包清单（version 0.5.4，dsh.bundle.patch 指向 cordis.patch.yml）
+├── cordis.patch.yml      # bundle 层：停用内置标题插件 + 插入七个插件的插件行
 ├── pnpm-workspace.yaml   # workspace 声明（仅本地开发用）
 ├── lib/                  # 聚合包自身的空实现（本包不注册任何东西）
 │   ├── index.js
@@ -202,9 +209,9 @@ dsh-fish/                 # 仓库目录名（npm 包名是 @fish-under-sea/dsh-
     └── dsh-visual-companion/
 ```
 
-> 外部补充版 `dsh-agent-teams-fish` **不在** `packages/` 下 —— 它的源码在[独立仓库](https://github.com/Fish-under-sea/dsh-agent-teams-fish)，以 **npm 依赖**的形式随聚合包装到 profile 顶层。
+> 两个外部补充版 **不在** `packages/` 下 —— `dsh-agent-teams-fish` 的源码在[它自己的仓库](https://github.com/Fish-under-sea/dsh-agent-teams-fish)，`dsh-better-reasoning-effort-fish` 在[另一个仓库](https://github.com/Fish-under-sea/-dsh-better-reasoning-effort-fish)（名字带前导横线，是为了与上游 npm 包区分）；两者都以 **npm 依赖**的形式随聚合包装到 profile 顶层。
 
-> **子包为什么不在聚合包的 `files` 里被打包进来**：聚合包只携带 `lib/` 与 `cordis.patch.yml`，五个子包与外部补充版都以 **npm 依赖**的形式被装到 profile 顶层（见方式一）。只有在「一个仓库同时提供多个包、从 GitHub 安装」时才需要在安装方 profile 里用 `#path:` 显式声明（见方式二）。
+> **子包为什么不在聚合包的 `files` 里被打包进来**：聚合包只携带 `lib/` 与 `cordis.patch.yml`，五个子包与两个外部补充版都以 **npm 依赖**的形式被装到 profile 顶层（见方式一）。只有在「一个仓库同时提供多个包、从 GitHub 安装」时才需要在安装方 profile 里用 `#path:` 显式声明（见方式二）。
 
 ## 开发
 
@@ -228,7 +235,7 @@ node packages/dsh-visual-companion/test/visual-companion.test.mjs
 |:-:|------|-----------|
 | 1 | 六个 `package.json` 的 `name` | 安装方的依赖键对不上 |
 | 2 | 聚合包与五个子包 `cordis.patch.yml` 里的行 `name` | 行解析不到包，插件整条不加载 |
-| 3 | ⚠️ **带浏览器半区的子包（现有四个）`lib/client.js` 里 `__ModuleLoader__.load({ id })` 的 `id`** | **浏览器侧报 `loaded without registering "<包名>"`，插件加载失败** |
+| 3 | ⚠️ **带浏览器半区的包（本仓库四个子包 + 两个外部补充版）`lib/client.js` 里 `__ModuleLoader__.load({ id })` 的 `id`** | **浏览器侧报 `loaded without registering "<包名>"`，插件加载失败** |
 | 4 | 安装方 profile 的依赖键与 `bundles` | 依赖装不上、bundle 层不展开 |
 | 5 | 子包在 profile 里的归属 | 必须放 `devDependencies`（见「两条坑」第 ② 条） |
 
@@ -236,16 +243,21 @@ node packages/dsh-visual-companion/test/visual-companion.test.mjs
 
 好消息：四个带浏览器半区的子包的客户端测试都断言了这一点，而且断言**读的是 `package.json` 的 `name`** 而不是硬编码字符串 —— 以后再改名漏改，**会被测试直接抓住**。
 
-**外部补充版同理**：`dsh-agent-teams-fish` 来自[独立仓库](https://github.com/Fish-under-sea/dsh-agent-teams-fish)，改包名时同样要同步 `package.json` 的 `name` / `cordis.patch.yml` 的行 `name` / `lib/client.js` 的注册 `id` 三处 —— 它的美术路由链测试也断言「注册名 = `package.json` 的 `name`」，改名漏改同样会被抓住。
+**外部补充版同理**：`dsh-agent-teams-fish`（[仓库](https://github.com/Fish-under-sea/dsh-agent-teams-fish)）与 `dsh-better-reasoning-effort-fish`（[仓库](https://github.com/Fish-under-sea/-dsh-better-reasoning-effort-fish)）都来自独立仓库，改包名时同样要同步 `package.json` 的 `name` / `cordis.patch.yml` 的行 `name` / `lib/client.js` 的注册 `id` 三处 —— 前者的美术路由链测试断言「注册名 = `package.json` 的 `name`」，后者的常量 `PLUGIN_ID` 也等于包名（`src/constants.ts`），改名漏改同样会被抓住。
 
 ## 许可
 
 **MIT**（聚合包与五个子包一致）。
 
-外部补充版 `dsh-agent-teams-fish` 同样以 **MIT** 分发，其**著作权归上游原作者**（[NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的 程序员阿江 / Relakkes）—— 补充版的来源、署名与新增范围见它仓库里的 `NOTICE.md`。
+两个外部补充版同样以 **MIT** 分发，**著作权各归其上游原作者**：
+
+- `dsh-agent-teams-fish` → [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams)（程序员阿江 / Relakkes）
+- `dsh-better-reasoning-effort-fish` → [HaoyueQin/dsh-better-reasoning-effort](https://github.com/HaoyueQin/dsh-better-reasoning-effort)（**HaoyueQin**）
+
+补充版的来源、署名与改动范围见各自仓库里的 `NOTICE.md`。
 
 > 仓库根目录已放置 `LICENSE` 文件，与 `package.json` 中的 `license` 字段（MIT）及五个子包保持一致。
 
 ---
 
-<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.5.3 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
+<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.5.4 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>

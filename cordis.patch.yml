@@ -76,3 +76,12 @@
     # 需要「加载即自动绑定」时，在自己 profile 的 patch 层覆盖同一个 id 行即可。
     - id: visual-companion
       name: '@fish-under-sea/dsh-visual-companion'
+
+    # 推理强度编辑与自动适配（Fork）—— **外部补充版，不是本仓库子包**。
+    # 上游 HaoyueQin/dsh-better-reasoning-effort 的 Fork：在官方「模型」页编辑卡里
+    # 直接编辑每模型的 reasoningEfforts 与 input 声明，并支持一键自动适配；
+    # 本 Fork 把 settings.models.provider-card 席位完整让给模型能力面板。
+    # 行名 = 它的 npm 包名（无 scope，不涉及子路径两段式限制）。
+    # 运行期参数写在插件行的 config 或 settings.yaml 的插件 config 块里。
+    - id: dsh-better-reasoning-effort-fish
+      name: dsh-better-reasoning-effort-fish
