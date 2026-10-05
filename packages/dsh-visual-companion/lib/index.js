@@ -282,7 +282,7 @@ function withKey(info) {
 function registerCommand(ctx, config) {
   ctx.commands.register({
     name: COMPANION_COMMAND,
-    description: '启动视觉伴侣（本地零依赖服务）并把原型页开在右侧栏 —— 你点选 + 写备注后按「提交给助手」，会话自动继续，不必回终端复述',
+    description: '视觉伴侣 · 启动本地零依赖服务并把原型页开在右侧栏 —— 你点选 + 写备注后按「提交给助手」，会话自动继续',
     input: { hint: '[<想看的主题>]' },
     async handler(invocation) {
       const dir = companionDir(config)
