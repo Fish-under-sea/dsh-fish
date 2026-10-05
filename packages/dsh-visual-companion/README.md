@@ -82,6 +82,18 @@ node "$env:DSH_HOME\profiles\<profile>\node_modules\@fish-under-sea\dsh-visual-c
 | `events.jsonl` | 逐条追加：`click` 是点选过程（不唤醒），`submit` 是完整提交（唤醒一次） |
 | `server-info` / `server-stopped` | 服务启动信息与退出原因 |
 
+### 斜杠命令 `/companion`
+
+在会话里直接输入：
+
+```text
+/companion [想看的主题]
+```
+
+插件会：**①** 若本地服务没在跑就后台拉起它（零依赖、自动分配端口）；**②** 把带会话密钥的完整 URL 交给当前会话的助手，让它用 `sidebar_open` 开在右侧栏；**③** 让助手绑好观察器并把第一屏原型写进 `screen/`。之后你只管点选 + 写备注 + 按「提交给助手」。
+
+> 命令只负责「起服务 + 交接」，页面上该显示什么仍由助手写 HTML 片段决定 —— 所以它比手敲 `bin/visual-companion.mjs` 省事，但不会替你决定看什么。
+
 ## 配置
 
 | 键 | 默认 | 说明 |

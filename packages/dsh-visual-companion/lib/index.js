@@ -20,9 +20,11 @@
  *
  * @module @fish-under-sea/dsh-visual-companion
  */
+import { spawn } from 'node:child_process'
 import { watch } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -33,7 +35,7 @@ import { companionMessage } from './message.js'
 export { companionMessage }
 
 export const name = 'visual-companion'
-export const inject = ['tools']
+export const inject = ['tools', 'commands']
 
 /** 与 AgentTeams `harness-compat` 相同的进程稳定符号（宿主内部子代理投递协议）。 */
 const hostPromptQueue = Symbol.for('dsh.subagent.queuePrompt')
@@ -218,12 +220,105 @@ function registerTool(ctx) {
   }))
 }
 
+/** 斜杠命令名：`/companion`。 */
+const COMPANION_COMMAND = 'companion'
+
+/** 被本插件拉起的服务进程（卸载时收尸；复用已有服务时保持 null）。 */
+let spawnedService = null
+
+/** 本地伴侣服务脚本（随本包发布）。 */
+function companionBin() {
+  return fileURLToPath(new URL('../bin/visual-companion.mjs', import.meta.url))
+}
+
+/** 伴侣根目录：配置了 watchDir 就用它，否则退回工作区下的 .dsh-visual。 */
+function companionDir(config) {
+  const configured = clean(config?.watchDir)
+  return configured === '' ? join(process.cwd(), '.dsh-visual') : configured
+}
+
+async function readServerInfo(dir) {
+  try {
+    const parsed = JSON.parse(await readFile(join(dir, 'state', 'server-info'), 'utf8'))
+    return parsed !== null && typeof parsed === 'object' ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** 服务没在跑就后台拉起（零依赖、detached、丢弃 stdio），并等它写出 server-info。 */
+async function ensureService(ctx, dir, sessionId) {
+  const existing = await readServerInfo(dir)
+  if (existing?.url !== undefined) return existing
+  await mkdir(join(dir, 'screen'), { recursive: true })
+  await mkdir(join(dir, 'state'), { recursive: true })
+  const args = [companionBin(), '--dir', dir, '--port', '0']
+  if (sessionId !== '') args.push('--session', sessionId)
+  const child = spawn(process.execPath, args, { detached: true, stdio: 'ignore' })
+  child.unref()
+  spawnedService = child
+  ctx.logger?.info?.(`visual-companion: 已拉起伴侣服务（pid=${child.pid ?? '?'}，dir=${dir}）`)
+  for (let i = 0; i < 24; i += 1) {
+    const info = await readServerInfo(dir)
+    if (info?.url !== undefined) return info
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  return undefined
+}
+
+/** 把服务打印的 url 与 key 拼成可直接打开的完整地址。 */
+function withKey(info) {
+  const url = String(info?.url ?? '')
+  const key = String(info?.key ?? '')
+  if (url === '' || key === '' || url.includes('key=')) return url
+  return `${url}${url.includes('?') ? '&' : '?'}key=${encodeURIComponent(key)}`
+}
+
+/**
+ * 注册 `/companion`：起服务并让当前会话的助手接手。
+ * 服务只负责写文件；「绑观察器」与「开右侧栏」交给会话里的助手（它有 sidebar_open 与
+ * visual_companion 工具，且能从自己的 $env:DSH_SESSION_ID 拿到本会话 id）。
+ */
+function registerCommand(ctx, config) {
+  ctx.commands.register({
+    name: COMPANION_COMMAND,
+    description: '启动视觉伴侣（本地零依赖服务）并把原型页开在右侧栏 —— 你点选 + 写备注后按「提交给助手」，会话自动继续，不必回终端复述',
+    input: { hint: '[<想看的主题>]' },
+    async handler(invocation) {
+      const dir = companionDir(config)
+      const sessionId = clean(invocation?.agent?.sessionId ?? invocation?.agent?.id ?? '')
+      let info
+      try {
+        info = await ensureService(ctx, dir, sessionId)
+      } catch (error) {
+        return { kind: 'error', text: `视觉伴侣启动失败：${String(error?.message ?? error)}` }
+      }
+      if (info === undefined) {
+        return { kind: 'error', text: `伴侣服务未就绪（没有写出 ${join(dir, 'state', 'server-info')}）；可手动运行 bin/visual-companion.mjs 后重试` }
+      }
+      const url = withKey(info)
+      if (state.dir !== dir || state.watcher === null) arm(ctx, dir, sessionId === '' ? null : sessionId)
+      const topic = clean(invocation?.rawInput)
+      invocation?.agent?.followup?.(userMessage([
+        `【视觉伴侣】本地服务已就绪：${url}`,
+        `请接着做三件事：① 用 sidebar_open 把这个 URL 开在右侧栏；② 用 visual_companion({action:"arm", dir:"${dir}", session_id:"<本会话 id>"}) 绑上观察器（本会话 id 读 $env:DSH_SESSION_ID；若这个服务绑的是别的会话，重启它并带 --session）；③ 把${topic === '' ? '要看的原型' : `「${topic}」的原型`}写成 HTML 片段放进 ${join(dir, 'screen')} 目录。`,
+        '用户点选并按「提交给助手」后，你会自动收到消息，不必让他回终端复述。',
+      ].join('\n')))
+      return { kind: 'success', text: `视觉伴侣已就绪：${url}（已让助手打开右侧栏并准备第一屏）` }
+    },
+  })
+}
 export function apply(ctx, config) {
   registerTool(ctx)
-  // 长生命周期资源归当前 fiber：插件卸载时关闭 watcher。
-  ctx.effect(() => () => disarm())
+  registerCommand(ctx, config)
+  // 长生命周期资源归当前 fiber：插件卸载时关闭 watcher 与本插件拉起的服务。
+  ctx.effect(() => () => {
+    spawnedService?.kill?.()
+    spawnedService = null
+    disarm()
+  })
   const watchDir = clean(config?.watchDir)
   // 目标会话不在这里钉死：由 pending.json 自带（伴侣服务用 --session 写入）。
   if (watchDir !== '') arm(ctx, watchDir, null)
-  ctx.logger?.info?.(`visual-companion: 已加载（v0.1.0）${watchDir === '' ? '，未自动绑定' : `，自动绑定 ${watchDir}`}`)
+  ctx.logger?.info?.(`visual-companion: 已加载（v0.1.2）${watchDir === '' ? '，未自动绑定' : `，自动绑定 ${watchDir}`}`)
 }
