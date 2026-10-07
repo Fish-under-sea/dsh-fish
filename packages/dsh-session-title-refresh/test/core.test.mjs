@@ -6,6 +6,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+// 用命名空间导入：这样「函数还没实现」表现为**断言失败**，而不是整个文件 import 报错
+// ——红灯阶段要能看清每一条用例为什么不过。
+import * as coreNs from '../lib/core.js';
+
 import {
   DEFAULTS,
   PRESETS,
@@ -22,6 +26,14 @@ import {
   normalizeConfig,
   selectTitleMessages,
 } from '../lib/core.js';
+
+/** 未实现时以断言失败收场，而不是 TypeError。 */
+const normalizeModelCatalog = (...args) => {
+  if (typeof coreNs.normalizeModelCatalog !== 'function') {
+    assert.fail('core 应导出 normalizeModelCatalog（尚未实现）');
+  }
+  return coreNs.normalizeModelCatalog(...args);
+};
 
 /** 造一个合格的人类 user/message 事件。 */
 function humanMessage(seq, text) {
@@ -224,4 +236,64 @@ test('describeSchedule：给出人话的触发规则', () => {
   assert.equal(describeSchedule({ firstRound: 3, interval: 5, enabled: true }), '第 3 轮首次总结，之后每 5 轮刷新一次');
   assert.equal(describeSchedule({ firstRound: 1, interval: 1, enabled: true }), '第 1 轮首次总结，之后每轮刷新一次');
   assert.match(describeSchedule({ firstRound: 3, interval: 5, enabled: false }), /已停用/);
+});
+
+test('normalizeModelCatalog：保留目录顺序，name 缺失时用 id 兜底', () => {
+  const catalog = normalizeModelCatalog([
+    {
+      provider: { id: 'bailian', name: '百炼 Token Plan（bailian）' },
+      models: [
+        { id: 'deepseek-v4.1-flash', name: 'deepseek-v4.1-flash' },
+        { id: 'glm-5.3', name: 'GLM-5.3', description: '复杂编程' },
+      ],
+    },
+    { provider: { id: 'bailian-he' }, models: [{ id: 'qwen3.7-plus' }] },
+  ]);
+  assert.deepEqual(catalog.providers.map((p) => p.id), ['bailian', 'bailian-he']);
+  assert.equal(catalog.providers[0].name, '百炼 Token Plan（bailian）');
+  assert.deepEqual(catalog.providers[0].models, [
+    { id: 'deepseek-v4.1-flash', name: 'deepseek-v4.1-flash' },
+    { id: 'glm-5.3', name: 'GLM-5.3', description: '复杂编程' },
+  ]);
+  // provider 没给 name → 用 id
+  assert.equal(catalog.providers[1].name, 'bailian-he');
+  // model 没给 name → 用 id，且不该凭空造出 description 字段
+  assert.deepEqual(catalog.providers[1].models, [{ id: 'qwen3.7-plus', name: 'qwen3.7-plus' }]);
+  assert.equal('description' in catalog.providers[1].models[0], false);
+});
+
+test('normalizeModelCatalog：丢掉畸形条目，不抛错', () => {
+  for (const bad of [null, undefined, 'x', 42, {}, [], [null], [{ provider: null }], [{ provider: { id: '  ' } }]]) {
+    const catalog = normalizeModelCatalog(bad);
+    assert.deepEqual(catalog.providers, [], `输入 ${JSON.stringify(bad)} 应当产出空目录`);
+    assert.deepEqual(catalog.skipped, []);
+  }
+});
+
+test('normalizeModelCatalog：去重、丢空 id、丢没有模型的 provider', () => {
+  const catalog = normalizeModelCatalog([
+    { provider: { id: 'a', name: 'A' }, models: [{ id: 'm1' }, { id: 'm1' }, { id: '  ' }, null, { id: 'm2' }] },
+    { provider: { id: 'empty', name: '空' }, models: [] },
+    { provider: { id: 'dup', name: 'D' }, models: [{ id: ' m3 ' }] },
+    { provider: { id: 'a', name: 'A again' }, models: [{ id: 'm4' }] },
+  ]);
+  assert.deepEqual(catalog.providers.map((p) => p.id), ['a', 'dup', 'a']);
+  assert.deepEqual(catalog.providers[0].models.map((m) => m.id), ['m1', 'm2']);
+  assert.deepEqual(catalog.providers[1].models.map((m) => m.id), ['m3'], 'model id 要去掉首尾空白');
+});
+
+test('normalizeModelCatalog：单个 provider 读不到模型时记入 skipped，其余照常', () => {
+  const catalog = normalizeModelCatalog([
+    { provider: { id: 'ok', name: 'OK' }, models: [{ id: 'm' }] },
+    { provider: { id: 'broken', name: '坏了' }, models: undefined },
+  ]);
+  assert.deepEqual(catalog.providers.map((p) => p.id), ['ok']);
+  assert.deepEqual(catalog.skipped, ['broken']);
+});
+
+test('normalizeModelCatalog：只做清洗、不做限制（目录外组合不得被这里判死）', () => {
+  // DSH 允许调用未列出的 model id；目录是建议。这个函数不该产出任何「拒绝」信息。
+  const catalog = normalizeModelCatalog([{ provider: { id: 'p', name: 'P' }, models: [{ id: 'listed' }] }]);
+  assert.deepEqual(Object.keys(catalog).sort(), ['providers', 'skipped']);
+  assert.equal(JSON.stringify(catalog).includes('unlisted-model'), false);
 });

@@ -4,7 +4,9 @@
  * 在「设置」分区注入一页「会话标题自动刷新」：
  *   · 顶上一个推荐档位按钮，点一下就跳到推荐参数；
  *   · 首轮总结轮次 / 刷新间隔两个滑块；
- *   · 高级折叠区里调两者的极限上限、取样窗口、输入与超时预算、固定路由；
+ *   · 「标题模型（可选）」：下拉选一个固定路由（与「模型」页同源的目录），
+ *     或切到「自定义…」手填 provider / model —— 留空即跟随会话当前模型；
+ *   · 高级折叠区里调两者的极限上限、取样窗口、输入与超时预算；
  *   · 下方列出活动会话（当前轮次、下次触发轮次）并能立即刷新某一会话；
  *   · 最近自动命名记录。
  *
@@ -25,6 +27,11 @@ window.__ModuleLoader__.load({
 		const h = react.createElement;
 
 		const API = '/dsh-session-title-refresh/api';
+
+		/** 下拉里选项值用的分隔符：provider 与 model 的 id 都不含它。 */
+		const MODEL_SEP = '\u0000';
+		/** 「自定义…」选项的值（不是合法的 provider/model，所以不会与目录项撞车）。 */
+		const CUSTOM_VALUE = '__custom__';
 
 		const styles = `
 .str-page{display:flex;flex-direction:column;gap:13px;max-width:820px;color:var(--dsw-alias-label-primary);font-size:13px;line-height:1.55}
@@ -60,6 +67,7 @@ window.__ModuleLoader__.load({
 .str-chk{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--dsw-alias-label-secondary)}
 .str-num{width:88px;padding:5px 8px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-family:ui-monospace,Consolas,monospace;font-size:12px}
 .str-txt{flex:1;min-width:170px;padding:5px 8px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.str-sel{min-width:300px;padding:5px 8px;border:1px solid var(--dsw-alias-border-l2);border-radius:7px;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font-size:12px}
 .str-table{width:100%;border-collapse:collapse;font-size:12px}
 .str-table th,.str-table td{padding:5px 7px;border-bottom:1px solid var(--dsw-alias-border-l2);text-align:left;vertical-align:top}
 .str-table th{color:var(--dsw-alias-label-tertiary);font-weight:600}
@@ -144,6 +152,19 @@ window.__ModuleLoader__.load({
 			const [log, setLog] = react.useState([]);
 			const [busy, setBusy] = react.useState(false);
 			const [dirty, setDirty] = react.useState(false);
+			// 下面两个 hook 必须追加在末尾：hooks 按下标对齐，插在中间会把上面几个错位。
+			const [catalog, setCatalog] = react.useState(null);
+			const [manualMode, setManualMode] = react.useState(false);
+
+			// 模型目录（与「模型」页同源）只读一次；失败也只影响这一块，不影响设置页其余部分。
+			react.useEffect(() => {
+				fetch(`${API}/models`, { credentials: 'same-origin' })
+					.then(async (response) => {
+						const data = await response.json();
+						setCatalog(data && typeof data === 'object' ? data : { ok: false, error: '模型目录响应异常' });
+					})
+					.catch((cause) => setCatalog({ ok: false, error: String(cause.message || cause) }));
+			}, []);
 
 			const applyStatus = (data) => {
 				setStatus(data);
@@ -230,6 +251,31 @@ window.__ModuleLoader__.load({
 
 			const isPresetActive = (preset) => form.firstRound === preset.firstRound && form.interval === preset.interval;
 
+			// ── 标题模型：目录只作建议，目录外的组合一律落到「自定义…」手填 ──
+			const groups = Array.isArray(catalog?.providers) ? catalog.providers : [];
+			const catalogReady = catalog !== null && catalog.ok === true;
+			const catalogError = catalog !== null && catalog.ok !== true
+				? String(catalog.error ?? catalog.reason ?? '无法读取模型目录')
+				: null;
+			const providerId = String(form.provider ?? '');
+			const modelId = String(form.model ?? '');
+			const hasPair = providerId !== '' && modelId !== '';
+			const inCatalog = hasPair && groups.some((group) => group.id === providerId
+				&& (group.models ?? []).some((item) => item.id === modelId));
+			// 目录外的组合也算「自定义」：DSH 允许调用未列出的 model id，界面只能提示、不能拦。
+			const manual = manualMode || (hasPair && !inCatalog);
+			const selection = manual ? CUSTOM_VALUE : (inCatalog ? `${providerId}${MODEL_SEP}${modelId}` : '');
+			// 目录读不到时保留手填通路，绝不让「指定模型」这件事整个不可用。
+			const showManual = manual || !catalogReady;
+
+			const onSelectModel = (value) => {
+				if (value === CUSTOM_VALUE) { setManualMode(true); return; }
+				setManualMode(false);
+				if (value === '') { patch({ provider: '', model: '' }); return; }
+				const [nextProvider, nextModel] = value.split(MODEL_SEP);
+				patch({ provider: nextProvider ?? '', model: nextModel ?? '' });
+			};
+
 			return h('div', { className: 'str-page' },
 				h('style', null, styles),
 				h('h3', null, `会话标题自动刷新${status.version ? ` v${status.version}` : ''}`),
@@ -304,6 +350,62 @@ window.__ModuleLoader__.load({
 					),
 				),
 
+				h('div', { className: 'str-card' },
+					h('h4', null, '标题模型（可选）'),
+					h('div', { className: 'str-row' },
+						h('select', {
+							className: 'str-sel',
+							value: selection,
+							disabled: busy,
+							onChange: (event) => onSelectModel(event.target.value),
+						},
+							h('option', { value: '' }, '跟随会话当前模型（默认）'),
+							...groups.map((group) =>
+								h('optgroup', { key: group.id, label: group.name },
+									...(group.models ?? []).map((item) =>
+										h('option', {
+											key: `${group.id}${MODEL_SEP}${item.id}`,
+											value: `${group.id}${MODEL_SEP}${item.id}`,
+											title: item.description ?? '',
+										}, item.name === item.id ? item.id : `${item.name} · ${item.id}`),
+									),
+								),
+							),
+							h('option', { value: CUSTOM_VALUE }, '自定义…（手动填写 provider / model）'),
+						),
+					),
+					showManual
+						? h('div', { className: 'str-row' },
+							h('span', { className: 'str-chk' }, 'provider'),
+							h('input', {
+								className: 'str-txt',
+								type: 'text',
+								value: providerId,
+								disabled: busy,
+								placeholder: '留空 = 跟随会话当前模型',
+								onChange: (event) => patch({ provider: event.target.value }),
+							}),
+							h('span', { className: 'str-chk' }, 'model'),
+							h('input', {
+								className: 'str-txt',
+								type: 'text',
+								value: modelId,
+								disabled: busy,
+								placeholder: '留空 = 跟随会话当前模型',
+								onChange: (event) => patch({ model: event.target.value }),
+							}),
+						)
+						: null,
+					catalogError ? h('div', { className: 'str-note warn' }, `⚠ ${catalogError}`) : null,
+					h('small', { style: { color: 'var(--dsw-alias-label-tertiary)' } },
+						'留空 = 跟随会话当前模型。选了就固定用它生成标题，与主对话走哪个模型无关；',
+						'目录外的组合（DSH 本身允许调用未列出的 model id）用「自定义…」手填即可，不会被拦。'),
+					catalogReady && (catalog.skipped ?? []).length
+						? h('small', { style: { color: 'var(--dsw-alias-label-tertiary)' } },
+							`这些 provider 的模型目录读不到，仍可用「自定义…」手填：${(catalog.skipped ?? []).join('、')}`)
+						: null,
+				),
+
 				h('details', { className: 'str-details str-card' },
 					h('summary', null, '高级：极限阈值与生成预算'),
 					h('div', { className: 'str-row' },
@@ -322,14 +424,9 @@ window.__ModuleLoader__.load({
 						h(NumberRow, { label: '非中文目标词数', value: form.targetWords, min: 1, max: 20, disabled: busy, onChange: (value) => patch({ targetWords: value }) }),
 						h(NumberRow, { label: '中文目标字数', value: form.targetCjkCharacters, min: 2, max: 40, disabled: busy, onChange: (value) => patch({ targetCjkCharacters: value }) }),
 					),
-					h('div', { className: 'str-row' },
-						h('span', { className: 'str-chk' }, '固定路由 provider'),
-						h('input', { className: 'str-txt', type: 'text', value: form.provider ?? '', disabled: busy, placeholder: '留空 = 跟随会话当前模型', onChange: (event) => patch({ provider: event.target.value }) }),
-						h('span', { className: 'str-chk' }, 'model'),
-						h('input', { className: 'str-txt', type: 'text', value: form.model ?? '', disabled: busy, placeholder: '留空 = 跟随会话当前模型', onChange: (event) => patch({ model: event.target.value }) }),
-					),
 					h('small', { style: { color: 'var(--dsw-alias-label-tertiary)' } },
-						'取样条数 = 送进标题模型的发言条数（首条 + 最近若干条）。输入字节预算会自动丢弃中段、截断长文，绝不丢首条与最新一条。'),
+						'取样条数 = 送进标题模型的发言条数（首条 + 最近若干条）。输入字节预算会自动丢弃中段、截断长文，绝不丢首条与最新一条。',
+						'标题模型（含手填 provider / model）已挪到上面的「标题模型（可选）」卡片。'),
 				),
 
 				h('div', { className: 'str-row' },

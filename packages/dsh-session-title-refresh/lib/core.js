@@ -460,3 +460,47 @@ export function describeSchedule(config) {
   const body = `第 ${config.firstRound} 轮首次总结，${every}`;
   return config.enabled ? body : `已停用 · ${body}`;
 }
+
+/**
+ * 把宿主从 `ctx.llm` 读到的 provider / 模型目录归一化成界面能直接渲染的形状。
+ *
+ * **目录是建议，不是约束** —— DSH 本身就允许调用未列出的 model id（适配器的
+ * `listModels` 只描述目录，不限制路由）。所以这里只做清洗：丢空 id、同一 provider 内
+ * 去重、丢掉一个模型都没有的 provider、`name` 缺失时用 `id` 兜底。它不产出任何
+ * 「拒绝」信息，界面对目录外的组合只能提示、不能拦。
+ * @param entries - `[{ provider: { id, name }, models: [{ id, name, description }] }]`；
+ *                  某个 provider 的 `models` 为 `undefined` 表示它的目录读取失败，
+ *                  只记进 `skipped`，不影响其余 provider。
+ * @returns `{ providers, skipped }`。
+ */
+export function normalizeModelCatalog(entries) {
+  const providers = [];
+  const skipped = [];
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    if (entry === null || typeof entry !== 'object') continue;
+    const info = entry.provider;
+    if (info === null || typeof info !== 'object') continue;
+    const id = typeof info.id === 'string' ? info.id.trim() : '';
+    if (id === '') continue;
+    if (entry.models === undefined) {
+      skipped.push(id);
+      continue;
+    }
+    const seen = new Set();
+    const models = [];
+    for (const model of Array.isArray(entry.models) ? entry.models : []) {
+      if (model === null || typeof model !== 'object') continue;
+      const modelId = typeof model.id === 'string' ? model.id.trim() : '';
+      if (modelId === '' || seen.has(modelId)) continue;
+      seen.add(modelId);
+      const name = typeof model.name === 'string' && model.name.trim() ? model.name.trim() : modelId;
+      const out = { id: modelId, name };
+      if (typeof model.description === 'string' && model.description.trim()) out.description = model.description.trim();
+      models.push(out);
+    }
+    if (models.length === 0) continue;
+    const name = typeof info.name === 'string' && info.name.trim() ? info.name.trim() : id;
+    providers.push({ id, name, models });
+  }
+  return { providers, skipped };
+}

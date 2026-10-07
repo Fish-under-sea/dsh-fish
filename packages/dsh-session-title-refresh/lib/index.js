@@ -39,6 +39,7 @@ import {
   isSubagentSession,
   nextDueAfter,
   normalizeConfig,
+  normalizeModelCatalog,
   selectTitleMessages,
 } from './core.js';
 
@@ -319,6 +320,45 @@ function resolveRoute(config, request) {
   throw new Error('dsh-session-title-refresh: 没有可用路由——请在设置里指定 provider/model，或先让会话发出一次主请求');
 }
 
+/**
+ * 读 DSH 的模型目录 —— 与「模型」页**同源**：`ctx.llm.listProviders()` 加上每个
+ * provider 的 `ctx.llm.listModels()`。设置页那个「标题模型」下拉就吃这一份。
+ *
+ * 写法与 `@deepseek-ai/dsh-api-session-controller` 里的 `buildModelCatalog`（以及
+ * `@deepseek-ai/dsh-acp`、`@deepseek-ai/dsh-tool-subagent`）**逐句一致**：DSH 的模型
+ * 注册表就是这两个方法，没有别的入口。本插件自带一份而不是复用平台那个，是因为它
+ * 只允许依赖 DSH 的服务（`ctx.llm`），不该去 import 别的插件/包的内部函数。
+ * 平台版会额外调 `resolveModelInfo` 附上思考挡位；标题调用用不到，故不取（YAGNI）。
+ *
+ * 目录是**建议**而不是约束：DSH 允许调用未列出的 model id，所以这里永远只回报
+ * 「有哪些」，不回报「哪些不许用」。单个 provider 的目录读失败只记进 `skipped`，
+ * 整条链路失败就回 `ok:false` —— 两种情况界面都退回手填，绝不让设置页打不开。
+ * @param ctx - DSH 上下文（需要 llm）。
+ * @returns `{ ok, providers, skipped, reason? }`。
+ */
+export async function buildModelCatalog(ctx) {
+  let listed;
+  try {
+    listed = await ctx.llm.listProviders();
+  } catch (error) {
+    return { ok: false, reason: String(error?.message ?? error), providers: [], skipped: [] };
+  }
+  const entries = [];
+  for (const provider of Array.isArray(listed) ? listed : []) {
+    if (provider === null || typeof provider !== 'object') continue;
+    const id = typeof provider.id === 'string' ? provider.id : '';
+    if (id === '') continue;
+    try {
+      entries.push({ provider, models: await ctx.llm.listModels(id) });
+    } catch {
+      // 单个 provider 目录不可用：记进 skipped，其余照常（它仍然可以被手填指定）。
+      entries.push({ provider, models: undefined });
+    }
+  }
+  const { providers, skipped } = normalizeModelCatalog(entries);
+  return { ok: true, providers, skipped };
+}
+
 /** 组合调用方信号与超时，给辅助调用一个明确的截止时间。 */
 export function createDeadline(signal, timeoutMs) {
   const controller = new AbortController();
@@ -483,6 +523,11 @@ export function apply(ctx, config) {
               }
               list.sort((a, b) => b.rounds - a.rounds);
               sendJson(res, 200, { ok: true, sessionList: list });
+              return;
+            }
+
+            if (method === 'GET' && route === '/models') {
+              sendJson(res, 200, await buildModelCatalog(ctx));
               return;
             }
 

@@ -89,13 +89,35 @@ function statusPayload() {
   };
 }
 
+/** 宿主 API 的假响应：模型目录（与「模型」页同源）。 */
+function modelsPayload() {
+  return {
+    ok: true,
+    skipped: ['claude'],
+    providers: [
+      {
+        id: 'bailian',
+        name: '百炼 Token Plan（bailian）',
+        models: [
+          { id: 'deepseek-v4.1-flash', name: 'deepseek-v4.1-flash' },
+          { id: 'glm-5.3', name: 'GLM-5.3' },
+        ],
+      },
+      { id: 'bailian-he', name: '百炼 Coding（bailian-he）', models: [{ id: 'qwen3.7-plus', name: 'qwen3.7-plus' }] },
+    ],
+  };
+}
+
 /** 造一个假的浏览器环境并装载客户端模块。 */
-function loadClient() {
+function loadClient(options = {}) {
+  const models = options.models ?? modelsPayload();
   const react = makeFakeReact();
   const calls = [];
-  globalThis.fetch = async (url, options) => {
-    calls.push({ url, options });
-    return { json: async () => (String(url).endsWith('/status') ? statusPayload() : { ok: true, ...statusPayload() }) };
+  globalThis.fetch = async (url, requestOptions) => {
+    calls.push({ url, options: requestOptions });
+    const target = String(url);
+    if (target.endsWith('/models')) return { json: async () => models };
+    return { json: async () => (target.endsWith('/status') ? statusPayload() : { ok: true, ...statusPayload() }) };
   };
 
   const window = { __ModuleLoader__: { load: (definition) => { window.__loaded = definition; } } };
@@ -109,6 +131,40 @@ function loadClient() {
   const module = window.__loaded.factory(requireImpl);
   return { module, react, calls };
 }
+
+/** 在元素树里按 type 找第一个节点（用来拿 select / option 的 props）。 */
+function findByType(node, type) {
+  if (node === null || node === undefined || typeof node !== 'object') return undefined;
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const hit = findByType(child, type);
+      if (hit !== undefined) return hit;
+    }
+    return undefined;
+  }
+  if (!node.props) return undefined;
+  if (node.type === type) return node;
+  return findByType(node.props.children, type);
+}
+
+/** 在元素树里按 type 收集全部节点。 */
+function findAllByType(node, type, out = []) {
+  if (node === null || node === undefined || typeof node !== 'object') return out;
+  if (Array.isArray(node)) {
+    for (const child of node) findAllByType(child, type, out);
+    return out;
+  }
+  if (!node.props) return out;
+  if (node.type === type) out.push(node);
+  findAllByType(node.props.children, type, out);
+  return out;
+}
+
+/** 树里所有文本输入框（手填 provider / model 那两个）。 */
+const textInputs = (tree) => findAllByType(tree, 'input').filter((node) => node.props.type === 'text');
+
+/** 某一个选项的显示文案。 */
+const optionText = (option) => renderText(option);
 
 /** 把 React 元素树摊平成字符串，方便断言"界面上有这句话"。 */
 function renderText(node) {
@@ -201,4 +257,117 @@ test('面板发出的是同源 /status 请求，POST 都带 JSON 体', async () 
   await settle();
   assert.ok(calls.some((call) => String(call.url).endsWith('/status')));
   assert.ok(calls.every((call) => String(call.url).startsWith('/dsh-session-title-refresh/api')));
+});
+
+// ── 标题模型（可选）：下拉选择 + 手填兜底 ──────────────────────────────
+/** 渲染一屏并把表单/目录摆到指定状态（不 await，避免被后到的 /status 覆盖）。 */
+async function mountWith(provider, model, options) {
+  const loaded = loadClient(options);
+  loaded.react.render(loaded.module.Panel);
+  await settle();
+  if (provider !== undefined) {
+    loaded.react.hooks[1] = { ...statusPayload().config, provider, model };
+  }
+  return loaded;
+}
+
+/** 目录里「自定义…」那一项的 value（源码里没导出，从渲染结果取）。 */
+function customValue(tree) {
+  const hit = findAllByType(tree, 'option').find((option) => /自定义/.test(optionText(option)));
+  assert.ok(hit, '下拉里应当有「自定义…」选项');
+  return hit.props.value;
+}
+
+test('标题模型：目录按 provider 分组渲染，默认选中「跟随会话当前模型」', async () => {
+  const { module, react, calls } = await mountWith('', '');
+  const tree = react.render(module.Panel);
+  const text = renderText(tree);
+
+  assert.match(text, /标题模型/);
+  assert.ok(calls.some((call) => String(call.url).endsWith('/models')), '应当请求过 /models');
+
+  const groups = findAllByType(tree, 'optgroup').map((node) => node.props.label);
+  assert.deepEqual(groups, ['百炼 Token Plan（bailian）', '百炼 Coding（bailian-he）']);
+  assert.match(text, /deepseek-v4\.1-flash/);
+  assert.match(text, /qwen3\.7-plus/);
+  assert.match(text, /跟随会话当前模型/);
+
+  const select = findByType(tree, 'select');
+  assert.ok(select, '应当渲染一个 select');
+  assert.equal(select.props.value, '', 'provider/model 为空时选中「跟随会话当前模型」');
+  assert.equal(textInputs(tree).length, 0, '跟随会话模型时不显示手填框');
+});
+
+test('标题模型：表单里是目录内的组合时直接选中它，不显示手填框', async () => {
+  const { module, react } = await mountWith('bailian', 'glm-5.3');
+  const tree = react.render(module.Panel);
+  const select = findByType(tree, 'select');
+  assert.equal(select.props.value, 'bailian\u0000glm-5.3');
+  assert.equal(textInputs(tree).length, 0);
+});
+
+test('标题模型：目录外的组合归到「自定义」，手填框出现（不阻止保存）', async () => {
+  const { module, react } = await mountWith('bailian', 'unlisted-model');
+  const tree = react.render(module.Panel);
+  const select = findByType(tree, 'select');
+  const chosen = findAllByType(tree, 'option').find((option) => option.props.value === select.props.value);
+  assert.ok(chosen, '选中项必须是下拉里真实存在的一项');
+  assert.match(optionText(chosen), /自定义/);
+
+  const inputs = textInputs(tree);
+  assert.equal(inputs.length, 2, '自定义模式要显示 provider / model 两个手填框');
+  assert.equal(inputs[0].props.value, 'bailian');
+  assert.equal(inputs[1].props.value, 'unlisted-model');
+  assert.ok(!/不存在|无效|无法使用/.test(renderText(tree)), '目录外不等于非法：不该出现拒绝性文案');
+});
+
+test('标题模型：选目录里的一项会写进表单并标记未保存', async () => {
+  const { module, react } = await mountWith('', '');
+  let tree = react.render(module.Panel);
+  findByType(tree, 'select').props.onChange({ target: { value: 'bailian-he\u0000qwen3.7-plus' } });
+  tree = react.render(module.Panel);
+  assert.equal(react.hooks[1].provider, 'bailian-he');
+  assert.equal(react.hooks[1].model, 'qwen3.7-plus');
+  assert.equal(react.hooks[5], true, '改动后应当标记为「尚未保存」');
+});
+
+test('标题模型：选「跟随会话当前模型」会清空 provider / model', async () => {
+  const { module, react } = await mountWith('bailian', 'glm-5.3');
+  react.render(module.Panel).props.children; // 触发一次渲染，确保 select 已就绪
+  findByType(react.render(module.Panel), 'select').props.onChange({ target: { value: '' } });
+  react.render(module.Panel);
+  assert.equal(react.hooks[1].provider, '');
+  assert.equal(react.hooks[1].model, '');
+});
+
+test('标题模型：选「自定义…」把手填框亮出来，且不动已填的值', async () => {
+  const { module, react } = await mountWith('bailian', 'glm-5.3');
+  let tree = react.render(module.Panel);
+  assert.equal(textInputs(tree).length, 0);
+  findByType(tree, 'select').props.onChange({ target: { value: customValue(tree) } });
+  tree = react.render(module.Panel);
+  const inputs = textInputs(tree);
+  assert.equal(inputs.length, 2, '自定义模式要显示手填框');
+  assert.equal(inputs[0].props.value, 'bailian', '切到自定义不改动已填的值，方便就地微调');
+  assert.equal(inputs[1].props.value, 'glm-5.3');
+});
+
+test('标题模型：目录读不到时给出提示并保留手填兜底，不炸', async () => {
+  const { module, react } = await mountWith('', '', { models: { ok: false, error: 'llm 未就绪' } });
+  const tree = react.render(module.Panel);
+  const text = renderText(tree);
+  assert.match(text, /llm 未就绪/, '目录读取失败要如实显示原因');
+  assert.equal(textInputs(tree).length, 2, '目录不可用时必须保留手填通路');
+});
+
+test('标题模型：目录为空时下拉只剩「跟随」与「自定义」，手填仍可达', async () => {
+  const { module, react } = await mountWith('', '', { models: { ok: true, providers: [], skipped: [] } });
+  let tree = react.render(module.Panel);
+  assert.equal(findAllByType(tree, 'optgroup').length, 0);
+  assert.equal(textInputs(tree).length, 0, '空目录下默认也是「跟随」，不必先亮手填框');
+  assert.match(renderText(tree), /跟随会话当前模型/);
+
+  findByType(tree, 'select').props.onChange({ target: { value: customValue(tree) } });
+  tree = react.render(module.Panel);
+  assert.equal(textInputs(tree).length, 2, '空目录下仍要能通过「自定义…」手填');
 });

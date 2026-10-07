@@ -18,7 +18,7 @@ const HOME = path.join(HERE, '.tmp-home');
 
 // 插件按 DSH_HOME 落状态文件；测试里指到插件目录内的临时目录，绝不碰真实 home。
 process.env.DSH_HOME = HOME;
-const { apply, inject, name } = await import('../lib/index.js');
+const { apply, inject, name, buildModelCatalog } = await import('../lib/index.js');
 
 /** 合格的人类消息事件。 */
 function human(seq, text) {
@@ -49,6 +49,16 @@ function makeCtx(sessions) {
     streamCalls: [],
     warnings: [],
     errors: [],
+    /** 模型目录替身：与「模型」页同源的那两个方法（放在 api 上，用例可替换）。 */
+    providerList: () => [
+      { id: 'bailian', name: '百炼 Token Plan（bailian）' },
+      { id: 'bailian-he', name: '百炼 Coding（bailian-he）' },
+    ],
+    modelList: (id) => (id === 'bailian'
+      ? [{ id: 'glm-5.3', name: 'GLM-5.3' }, { id: 'deepseek-v4.1-flash', name: 'deepseek-v4.1-flash' }]
+      : [{ id: 'qwen3.7-plus' }]),
+    modelListFails: [],
+    listProvidersFails: false,
     /**
      * 默认的假模型输出；单个用例可替换。
      *
@@ -97,6 +107,15 @@ function makeCtx(sessions) {
         return (async function* stream() {
           for (const chunk of api.streamScript(options)) yield chunk;
         })();
+      },
+      /** 模型目录替身：与「模型」页同源的那两个方法。 */
+      listProviders: async () => {
+        if (api.listProvidersFails) throw new Error('llm 未就绪');
+        return api.providerList();
+      },
+      listModels: async (id) => {
+        if (api.modelListFails.includes(id)) throw new Error(`目录不可用：${id}`);
+        return api.modelList(id);
       },
     },
     webServer: {
@@ -516,6 +535,48 @@ test('手动刷新：失败记录真实轮次；无人类消息时记为跳过�
 });
 
 /** 造一个假 req/res 对，直接把插件的 HTTP 处理器当函数调。 */
+test('标题模型目录：读 llm，保留 provider 顺序与显示名', async () => {
+  const { ctx } = makeCtx(new Map());
+  const catalog = await buildModelCatalog(ctx);
+  assert.equal(catalog.ok, true);
+  assert.deepEqual(catalog.providers.map((p) => p.id), ['bailian', 'bailian-he']);
+  assert.equal(catalog.providers[0].name, '百炼 Token Plan（bailian）');
+  assert.deepEqual(catalog.providers[0].models.map((m) => m.id), ['glm-5.3', 'deepseek-v4.1-flash']);
+  // model 没给 name → 用 id 兜底，不让界面出现空白选项
+  assert.deepEqual(catalog.providers[1].models, [{ id: 'qwen3.7-plus', name: 'qwen3.7-plus' }]);
+  assert.deepEqual(catalog.skipped, []);
+});
+
+test('标题模型目录：单个 provider 读不到只记 skipped，其余照常', async () => {
+  const { ctx, api } = makeCtx(new Map());
+  api.modelListFails = ['bailian'];
+  const catalog = await buildModelCatalog(ctx);
+  assert.equal(catalog.ok, true);
+  assert.deepEqual(catalog.providers.map((p) => p.id), ['bailian-he']);
+  assert.deepEqual(catalog.skipped, ['bailian'], '读不到的 provider 要如实记下，界面才好提示');
+});
+
+test('标题模型目录：整个 llm 不可用时回 ok:false，绝不把设置页打挂', async () => {
+  const { ctx, api } = makeCtx(new Map());
+  api.listProvidersFails = true;
+  const catalog = await buildModelCatalog(ctx);
+  assert.equal(catalog.ok, false);
+  assert.match(catalog.reason, /llm 未就绪/);
+  assert.deepEqual(catalog.providers, []);
+});
+
+test('GET /models 路由把目录原样交给界面（同源、只读）', async () => {
+  const sessions = new Map();
+  const { ctx, api } = makeCtx(sessions);
+  apply(ctx, {});
+  const catalog = await callApi(api, 'GET', '/models');
+  assert.equal(catalog.ok, true);
+  assert.deepEqual(catalog.providers.map((p) => p.id), ['bailian', 'bailian-he']);
+  // 只读路由：不该被 POST 命中
+  const posted = await callApi(api, 'POST', '/models', {});
+  assert.notEqual(posted?.ok, true);
+});
+
 async function callApi(api, method, route, body, headers = {}) {
   const url = `http://localhost/dsh-session-title-refresh/api${route}`;
   const req = method === 'POST' ? Readable.from([JSON.stringify(body ?? {})]) : Readable.from([]);
