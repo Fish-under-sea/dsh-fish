@@ -16,11 +16,24 @@ const check = (label, cond, extra = '') => {
 
 const mod = await import(`file:///${PLUGIN.replace(/\\/g, '/')}`);
 const { WHITE_LIST, copyToRepo } = mod;
+// testForbidden 必须在使用前解构：它是 const，在后面的段里才解构会踩暂时性死区。
+const { testForbidden } = mod;
 
 console.log('=== 1. 白名单必须覆盖 skills（当前缺口）===');
 check('WHITE_LIST 含 skills', WHITE_LIST.includes('skills'), `实际=${JSON.stringify(WHITE_LIST)}`);
 check('profiles 条目不再写死 web（改由 activeList 按 profile 目录动态枚举）',
   !WHITE_LIST.some((w) => w.startsWith('profiles/')));
+
+console.log('\n=== 1a. 白名单必须覆盖 skill-refs（Skill 的 refs / 脚本 / 测试样本）===');
+check('WHITE_LIST 含 skill-refs', WHITE_LIST.includes('skill-refs'), `实际=${JSON.stringify(WHITE_LIST)}`);
+const coversPath = (rel) => WHITE_LIST.some((w) => rel === w || rel.startsWith(w + '/'));
+check('skill-refs 下的脚本被覆盖', coversPath('skill-refs/design-essence/scripts/detect.mjs'));
+check('skill-refs 下的 refs 被覆盖', coversPath('skill-refs/design-essence/refs/02-judgments.md'));
+check('skill-refs 下的测试样本被覆盖', coversPath('skill-refs/design-essence/tests/samples/good-dashboard.html'));
+check('近似前缀不被误判覆盖（skill-other）', !coversPath('skill-other/x.md'));
+check('★ skill-refs 下的 .bak 仍被拒', testForbidden('skill-refs/x/old.bak-2026') === true);
+check('★ skill-refs 下的 .pem 仍被拒', testForbidden('skill-refs/certs/foo.pem') === true);
+check('★ skill-refs 下的 .env 仍被拒', testForbidden('skill-refs/.env') === true);
 
 console.log('\n=== 1b. 模型配置同步范围（含密钥安全）===');
 check('白名单含 settings.yaml（模型配置 llm-pi-ai / llm-deepseek / agent-default-model 都在这个文件里）',
@@ -29,7 +42,6 @@ check('白名单不再写死 profiles/web 的 bak（改由路径规则放行）'
   !WHITE_LIST.includes('profiles/web/cordis.patch.yml.bak-plugin-manager'));
 
 // 安全回归：放行了那个 bak 之后，其它 .bak 与密钥文件必须仍然被拒。
-const { testForbidden } = mod;
 check('放行的 bak 确实不被拒', testForbidden('profiles/web/cordis.patch.yml.bak-plugin-manager') === false);
 check('★ 任意 profile 的 bak 都被放行（desktop）', testForbidden('profiles/desktop/cordis.patch.yml.bak-plugin-manager') === false);
 check('★ 任意 profile 的其它 .bak 仍被拒（desktop）', testForbidden('profiles/desktop/cordis.patch.yml.bak-something') === true);

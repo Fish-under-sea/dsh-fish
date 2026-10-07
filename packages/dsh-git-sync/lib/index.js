@@ -51,6 +51,12 @@ function resolveHome() {
  * 新机器会自己重新记账。此前它还制造了一个假象：它被同步进配置仓，而那份仓库的
  * `.gitignore` 恰好排除了它 —— 于是「复制了却永远不提交」，面板却显示待同步 0。
  *
+ * 0.2.7 起**新增** `skill-refs`（Skill 的 refs 判据、可运行脚本与测试样本）：
+ * 这些内容原先不进仓库，后果是 Skill 正文跨机复原了、它引用的
+ * `$DSH_HOME/skill-refs/...` 却在新机器上不存在 —— 正文里的命令一条都跑不起来
+ * （例如 `design-essence` 的 `detect.mjs`、`ai-asset-forge` 的 `routecheck.mjs`）。
+ * 该目录只含 md / json / mjs / html，无密钥类文件，无需担心密钥外流。
+ *
  * 想恢复同步，把对应那行加回来即可 —— 顺便看一眼 `git log -- <路径>`，
  * 被撤下的内容仍留在本仓历史里。
  */
@@ -58,6 +64,7 @@ const WHITE_LIST = [
   'settings.yaml',                    // 全局设置：主题/模型/provider/皮肤
   'skin-center-active.json',
   'skills',                           // Skill 目录（~/.dsh/skills）
+  'skill-refs',                       // Skill 的 refs / 脚本 / 测试样本（~/.dsh/skill-refs）
   'AGENTS.md',                        // 用户级全局指令：Skill 加载优先级总表
   'task-board/ledger-v2.json',
   'task-board/scheduler-v2.json',
