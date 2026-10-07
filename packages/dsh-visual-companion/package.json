@@ -1,6 +1,6 @@
 {
   "name": "@fish-under-sea/dsh-visual-companion",
-  "version": "0.1.5",
+  "version": "0.1.7",
   "description": "把「视觉伴侣页面上的提交」变成一条用户消息：用户在网页上点选、写备注、按提交，DSH 会话自动起一轮继续工作，不必回终端复述。",
   "type": "module",
   "main": "./lib/index.js",
@@ -14,7 +14,8 @@
     "bin",
     "lib",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "README.en.md"
   ],
   "license": "MIT",
   "publishConfig": {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * DSH 视觉伴侣（visual companion）—— 单文件、零依赖、Node 18+
+ * DSH 视觉伴侣（visual companion）—— 单文件、零依赖、Node `^22.19.0 || >=24.0.0`（与 package.json 的 engines 一致）
  *
  * 用途：头脑风暴时把原型 / 线框 / 并排对比渲染到浏览器（DSH 里用 sidebar_open 开在右侧栏），
  *      用户在页面上点选 A/B/C，点击事件落到 events.jsonl，模型下一轮读它。

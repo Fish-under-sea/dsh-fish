@@ -21,7 +21,7 @@
  * @module @fish-under-sea/dsh-visual-companion
  */
 import { spawn } from 'node:child_process'
-import { mkdirSync, watch } from 'node:fs'
+import { mkdirSync, readFileSync, watch } from 'node:fs'
 import { mkdir, readFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -29,6 +29,20 @@ import { fileURLToPath } from 'node:url'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import z from '@deepseek-ai/schemastery'
+
+/**
+ * 包版本：**从 package.json 现读**，不在代码里写死。
+ *
+ * 曾经这里写死 `v0.1.2`，之后连升三个版本它一次都没跟上 —— 用户拿加载日志去对版本时
+ * 会被指向错误的版本号。读不到就退化成 `unknown`（只是日志，不该因为读文件失败而影响加载）。
+ */
+const VERSION = (() => {
+  try {
+    return JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version ?? 'unknown'
+  } catch {
+    return 'unknown'
+  }
+})()
 
 import { companionMessage } from './message.js'
 
@@ -332,5 +346,5 @@ export function apply(ctx, config) {
   const watchDir = clean(config?.watchDir)
   // 目标会话不在这里钉死：由 pending.json 自带（伴侣服务用 --session 写入）。
   if (watchDir !== '') arm(ctx, watchDir, null)
-  ctx.logger?.info?.(`visual-companion: 已加载（v0.1.2）${watchDir === '' ? '，未自动绑定' : `，自动绑定 ${watchDir}`}`)
+  ctx.logger?.info?.(`visual-companion: 已加载（v${VERSION}）${watchDir === '' ? '，未自动绑定' : `，自动绑定 ${watchDir}`}`)
 }
