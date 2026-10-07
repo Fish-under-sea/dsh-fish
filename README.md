@@ -1,4 +1,4 @@
-> **🟢 活跃维护** · 最近更新：2026-10-06
+> **🟢 活跃维护** · 最近更新：2026-10-07
 >
 > 插件仍在持续增加与迭代，欢迎提 Issue / PR。
 >
@@ -26,6 +26,10 @@
 > **🆕 0.6.2（2026-10-06）**：**文档修正版**（无代码改动）—— `@fish-under-sea/dsh-settings-nav-order` **0.1.4** 把 README 顶部的半边徽章从 `client-only` 改成 **`client + host`**（它从 0.1.2 起就有宿主半区：云同步桥就是宿主写的）；本 README 修掉一处**重复的 0.5.6 条目**与一处**混入正文的 0x07 控制字符**（早期脚本里 `\a` 转义被当字面量写进文件，导致那行显示成「gent-teams」）。npm 的 README 是发布时冻结的，所以这类修正必须发版才能在包页面上生效。
 >
 > **🆕 0.6.3（2026-10-06）**：`@fish-under-sea/dsh-git-sync` **0.2.6**（依赖范围提到 `^0.2.6`）—— **同步范围再撤一条** `dsh-session-archive/`（`@linxin666/dsh-session-archive` 的归档台账与运行状态）。它是**纯本机状态**：记「哪些会话何时被归档」，而会话本身永久不跨机同步，台账换机后没有意义；自动归档的**策略**在 `profiles/<profile>/cordis.patch.yml` 里、那份是同步的，新机器会自己重新记账。它此前还制造了一个假象：配置仓的 `.gitignore` 恰好也排除它，于是「复制进仓库却永远不提交」，面板却显示待同步 0。同步引擎用例 83 → 86。
+>
+> **🆕 0.6.4（2026-10-07，补记）**：`@fish-under-sea/dsh-git-sync` **0.2.7**（依赖范围 `^0.2.6` → **`^0.2.7`**）—— 同步白名单纳入 **`skill-refs/`**（Skill 的参考研究文件随配置仓跨机复原；此前的白名单只收 `skills/` 本体）。**本条是补记**：该版当天已先发到 npm，但没在主分支留下条目与 tag（tag 只到 `v0.6.3-dsh0.2.0rc2`），所以版本号在这里补上说明。
+>
+> **🆕 0.6.5（2026-10-07）**：`@fish-under-sea/dsh-visual-companion` **0.1.5**（依赖范围 `^0.1.4` → **`^0.1.5`**）—— **修掉「加载即自动绑定」把整条插件打成「异常」的崩溃**。症状：插件面板里这一条显示红点「异常」，而 `visual_companion` 工具与 `/companion` 命令一起消失。原因：`watchDir` 指向的 `<watchDir>/state` 还不存在时（全新工作区、这个目录还没被伴侣服务创建过），`arm()` 直接 `fs.watch` 该路径**同步抛 ENOENT** —— Windows 实测 `fs.watch` 对不存在的路径是**抛错**而不是发 `error` 事件，所以原先紧跟其后的 `.on('error')` 兜不住，异常一路冒到 cordis 的 `apply()`，条目被判「未激活」。现在绑定前先 `mkdir` 递归自建目录，并把观察失败降级为一条告警、状态如实留成「未绑定」——**插件照常加载**，工具与命令都在；`visual_companion({action:"arm"})` 也改为绑不上就如实回 `arm 失败`（此前无论成败都回「已绑定」）。用例 8 → 10（新增两条：目录不存在要自建并绑定、路径不是目录要降级告警且不掉线）。
 
 <div align="center">
 
@@ -35,7 +39,7 @@
 
 Fish 自建 DSH（[DeepSeek Harness](https://github.com/Fish-under-sea/DSH)）插件聚合包
 
-![version](https://img.shields.io/badge/version-0.6.3-22d3ee?style=flat-square) ![license](https://img.shields.io/badge/license-MIT-green?style=flat-square) ![node](https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square) ![npm](https://img.shields.io/npm/v/@fish-under-sea/dsh-fish?style=flat-square&label=npm&color=cb3837) ![DSH](https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4b6ef6?style=flat-square) ![bundle](https://img.shields.io/badge/kind-bundle-6b7280?style=flat-square)
+![version](https://img.shields.io/badge/version-0.6.5-22d3ee?style=flat-square) ![license](https://img.shields.io/badge/license-MIT-green?style=flat-square) ![node](https://img.shields.io/badge/node-%3E%3D20-339933?style=flat-square) ![npm](https://img.shields.io/npm/v/@fish-under-sea/dsh-fish?style=flat-square&label=npm&color=cb3837) ![DSH](https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4b6ef6?style=flat-square) ![bundle](https://img.shields.io/badge/kind-bundle-6b7280?style=flat-square)
 
 </div>
 
@@ -55,9 +59,9 @@ Fish 自建 DSH（[DeepSeek Harness](https://github.com/Fish-under-sea/DSH)）�
 |------|:----:|------|
 | [`dsh-approval-guide`](packages/dsh-approval-guide) | 0.2.1 | 在审批弹窗里追加**中文说明**：这次审批会做什么、有什么风险、依据是什么 |
 | [`dsh-session-title-refresh`](packages/dsh-session-title-refresh) | 0.2.1 | **会话标题自动刷新**：第 N 轮起总结命名，此后每 M 轮刷新一次 |
-| [`dsh-git-sync`](packages/dsh-git-sync) | 0.2.6 | **一键 Git 同步**：把插件清单、启用状态、本地设置、Skills、看板/用量账本与设置导航顺序偏好同步到自己的私有仓库 |
+| [`dsh-git-sync`](packages/dsh-git-sync) | 0.2.7 | **一键 Git 同步**：把插件清单、启用状态、本地设置、Skills、看板/用量账本与设置导航顺序偏好同步到自己的私有仓库 |
 | [`dsh-settings-nav-order`](packages/dsh-settings-nav-order) | 0.1.4 | **设置导航重排**：把设置面板左侧菜单排成自己要的顺序、把不想看的项收起来；偏好随 Git 同步插件**跨机复原** |
-| [`dsh-visual-companion`](packages/dsh-visual-companion) | 0.1.4 | **视觉伴侣唤醒**：网页上看原型 / 比布局，点选 + 备注后按「提交给助手」，会话自动收到一条用户消息并起一轮 —— 不必回终端复述；**点选过程静默，只有提交才唤醒一次** |
+| [`dsh-visual-companion`](packages/dsh-visual-companion) | 0.1.5 | **视觉伴侣唤醒**：网页上看原型 / 比布局，点选 + 备注后按「提交给助手」，会话自动收到一条用户消息并起一轮 —— 不必回终端复述；**点选过程静默，只有提交才唤醒一次**（0.1.5 起绑定是容错的：目录缺失会自建，观察不了只降级告警，不会把整条插件打成「异常」） |
 | [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) | 0.3.0 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；本版新增**自定义美术目录**、九厂商 × 十岗位头像与厂商商标徽标，以及**中文岗位名**与**厂商通用大图兜底**（未命中岗位时显示该厂商大图并提示适配中） |
 | [`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/-dsh-better-reasoning-effort-fish) | 0.5.5 | **思考强度与输入模态**（上游 [HaoyueQin/dsh-better-reasoning-effort](https://github.com/HaoyueQin/dsh-better-reasoning-effort) 的**Fork**）：在官方「模型」页编辑卡里直接编辑每模型的 `reasoningEfforts` 与 `input` 声明，并支持一键自动适配；本 Fork 把 `settings.models.provider-card` 席位完整让给模型能力面板 |
 
@@ -215,7 +219,7 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 
 ```text
 dsh-fish/                 # 仓库目录名（npm 包名是 @fish-under-sea/dsh-fish）
-├── package.json          # 聚合包清单（version 0.6.3，dsh.bundle.patch 指向 cordis.patch.yml）
+├── package.json          # 聚合包清单（version 0.6.5，dsh.bundle.patch 指向 cordis.patch.yml）
 ├── cordis.patch.yml      # bundle 层：停用内置标题插件 + 插入七个插件的插件行
 ├── pnpm-workspace.yaml   # workspace 声明（仅本地开发用）
 ├── lib/                  # 聚合包自身的空实现（本包不注册任何东西）
@@ -283,4 +287,4 @@ node packages/dsh-visual-companion/test/visual-companion.test.mjs
 
 ---
 
-<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.6.3 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
+<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.6.5 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>

@@ -124,12 +124,13 @@ node "$env:DSH_HOME\profiles\<profile>\node_modules\@fish-under-sea\dsh-visual-c
 - 服务**闲置 4 小时自动退出**（`--idle-minutes` 可调），原型文件是临时产物，别当交付物；
 - 降级链：无 Node → 自包含 HTML + `present`；无侧边栏浏览器 → 把完整 URL 交给用户手动打开；连插件都没装 → 下一轮手工读 `events.jsonl`；
 - 需要 Node `^22.19.0 || >=24`、DSH `>=0.2.0-rc.2`；不需要任何 API key；
+- **绑定是容错的**（0.1.5 起）：`watchDir` 指向的 `<watchDir>/state` 还不存在时会**递归自建**；万一观察不了（路径不是目录、权限不足），只记一条告警并把状态如实留成「未绑定」——**插件照常加载**，工具与 `/companion` 不会一起消失，修好后 `visual_companion({action:"arm"})` 可重试；
 - **已知限制**：宿主插件代码不热重载 —— 改 `lib/index.js` 后要重启宿主；只改 `cordis.patch.yml` 的内容可热重载。
 
 ## 开发与测试
 
 ```sh
-node packages/dsh-visual-companion/test/visual-companion.test.mjs   # 语料渲染 + 清单契约（8 用例）
+node packages/dsh-visual-companion/test/visual-companion.test.mjs   # 语料渲染 + 清单契约 + 绑定容错（10 用例）
 pnpm pack                                                          # 产物检查：files 覆盖 bin / lib / patch / README
 ```
 
