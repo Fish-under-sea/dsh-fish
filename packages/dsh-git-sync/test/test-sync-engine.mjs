@@ -8,6 +8,11 @@ import { fileURLToPath } from 'node:url';
 const PLUGIN = fileURLToPath(new URL('../lib/index.js', import.meta.url));
 const TMP = path.join(os.tmpdir(), 'dsh-engine-tmp');
 
+// 额外扫描根（壁纸引擎）默认落在 ~/.dsh-wallpaper-engine。测试必须把它隔离到临时目录，
+// 否则断言里的文件计数会跟着「这台机器上真实存在的那份」飘 —— 那是壁纸引擎自己也遵守的
+// 同一套测试隔离约定（DSH_WE_DATA_DIR，见其 lib/index.js 的注释）。
+process.env.DSH_WE_DATA_DIR = path.join(TMP, 'we-isolated');
+
 let pass = 0, fail = 0;
 const check = (label, cond, extra = '') => {
   if (cond) { pass++; console.log(`  [ok]   ${label}`); }
@@ -309,6 +314,105 @@ console.log('\n=== 9. 0.2.5 撤下三条 + 0.2.6 再撤一条：预设 / 桌宠�
   check('还原 copied 里不含这两条',
     !back9.copied.map((p) => p.split(path.sep).join('/')).some((p) => p.startsWith('.agent-presets') || p === 'pet.json'),
     JSON.stringify(back9.copied));
+}
+
+console.log('\n=== 12. 额外扫描根：壁纸引擎数据目录（在 $DSH_HOME 之外）===');
+{
+  /** 文件不存在时返回空串：红灯阶段要「断言失败」而不是「抛错中断整轮」。 */
+  const safeRead = (file) => {
+    try { return readFileSync(file, 'utf8'); } catch { return ''; }
+  };
+  // 白名单口径：额外根在仓库里落成一个同名子目录，所以条目本身带前缀。
+  check('★ 白名单含壁纸引擎设置', WHITE_LIST.includes('wallpaper-engine/config.json'), JSON.stringify(WHITE_LIST));
+  check('★ 白名单含壁纸引擎玻璃预设目录', WHITE_LIST.includes('wallpaper-engine/glass-presets'));
+  check('玻璃预设目录下的文件被覆盖', coversPath('wallpaper-engine/glass-presets/preset-muy3afnl-nq7l.json'));
+  // 安全回归：换了个根，排除规则必须一条都不松。
+  check('★ 额外根里的 .bak 仍被拒', testForbidden('wallpaper-engine/glass-presets/x.json.bak-1') === true);
+  check('★ 额外根里的 .credentials 仍被拒', testForbidden('wallpaper-engine/.credentials.yaml') === true);
+  check('★ 额外根里的 .pem 仍被拒', testForbidden('wallpaper-engine/certs/a.pem') === true);
+  check('★ 额外根里的 node_modules 仍被拒', testForbidden('wallpaper-engine/node_modules/x/y.js') === true);
+
+  const h10 = path.join(TMP, 'home10');
+  const r10 = path.join(TMP, 'repo10');
+  const we10 = path.join(TMP, 'we10');
+  const prevWe = process.env.DSH_WE_DATA_DIR;
+  process.env.DSH_WE_DATA_DIR = we10;
+  try {
+    mkdirSync(path.join(h10, 'skills'), { recursive: true });
+    mkdirSync(path.join(we10, 'glass-presets'), { recursive: true });
+    mkdirSync(path.join(we10, 'cache', 'faststart'), { recursive: true });
+    mkdirSync(path.join(we10, 'ffmpeg'), { recursive: true });
+    mkdirSync(path.join(we10, 'avatars'), { recursive: true });
+    mkdirSync(r10, { recursive: true });
+    writeFileSync(path.join(h10, 'skills', 'core-rules.md'), '# rules\n');
+    writeFileSync(path.join(we10, 'config.json'), '{"settings":{"glassAlpha":80}}\n');
+    writeFileSync(path.join(we10, 'glass-presets', 'preset-muy3afnl-nq7l.json'), '{"name":"FISH"}\n');
+    writeFileSync(path.join(we10, 'cache', 'faststart', 'fs_x.mp4'), 'binary\n');
+    writeFileSync(path.join(we10, 'ffmpeg', 'ffmpeg.exe'), 'binary\n');
+    writeFileSync(path.join(we10, 'avatars', 'ai-x.webp'), 'binary\n');
+    // 同名陷阱：$DSH_HOME 下也存在一个 wallpaper-engine/，绝不能被当成来源。
+    mkdirSync(path.join(h10, 'wallpaper-engine'), { recursive: true });
+    writeFileSync(path.join(h10, 'wallpaper-engine', 'config.json'), '{"fromHome":true}\n');
+
+    // 差异比较：先看未同步时的待同步量（3 = skills 1 + 壁纸引擎 2）。
+    const diffTotal = (d) => d.added.length + d.changed.length + d.removed.length;
+    const diffBefore = mod.diffHomeVsRepo(h10, { repoDir: r10, lastRun: null });
+    check('★ 差异比较认得额外根（3 个待同步）', diffTotal(diffBefore) === 3, JSON.stringify(diffBefore));
+
+    const r10res = mod.copyToRepo(h10, { repoDir: r10 });
+    const copied10 = r10res.copied.map((p) => p.split(path.sep).join('/'));
+    check('★ 壁纸引擎设置被采集到配置仓的 wallpaper-engine/ 下',
+      existsSync(path.join(r10, 'wallpaper-engine', 'config.json')));
+    check('★ 采集的是额外根那份，不是 $DSH_HOME 同名目录那份',
+      safeRead(path.join(r10, 'wallpaper-engine', 'config.json')).includes('glassAlpha'));
+    check('★ FISH 玻璃预设被采集',
+      existsSync(path.join(r10, 'wallpaper-engine', 'glass-presets', 'preset-muy3afnl-nq7l.json')));
+    check('★ cache/ 未被采集（2.8 GB 派生缓存）', !existsSync(path.join(r10, 'wallpaper-engine', 'cache')));
+    check('★ ffmpeg/ 未被采集', !existsSync(path.join(r10, 'wallpaper-engine', 'ffmpeg')));
+    check('★ avatars/ 未被采集（本轮未纳入）', !existsSync(path.join(r10, 'wallpaper-engine', 'avatars')));
+    check('copied 的键以 "/" 分隔且带根前缀',
+      copied10.includes('wallpaper-engine/config.json'), JSON.stringify(copied10));
+    check('其余配置面照常采集', existsSync(path.join(r10, 'skills', 'core-rules.md')));
+    check('采集后待同步归零', diffTotal(mod.diffHomeVsRepo(h10, { repoDir: r10, lastRun: null })) === 0,
+      JSON.stringify(mod.diffHomeVsRepo(h10, { repoDir: r10, lastRun: null })));
+
+    // 还原方向：仓库里的两条要写回**额外根**，而不是 $DSH_HOME。
+    const h11 = path.join(TMP, 'home11');
+    const we11 = path.join(TMP, 'we11');
+    mkdirSync(h11, { recursive: true });
+    process.env.DSH_WE_DATA_DIR = we11;
+    const back11 = mod.copyToHome(h11, { repoDir: r10 });
+    check('★ 还原把设置写回额外根',
+      existsSync(path.join(we11, 'config.json')), JSON.stringify(back11.copied));
+    check('★ 还原把 FISH 预设写回额外根的 glass-presets/',
+      existsSync(path.join(we11, 'glass-presets', 'preset-muy3afnl-nq7l.json')));
+    check('★ 还原不会在 $DSH_HOME 下造出 wallpaper-engine/',
+      !existsSync(path.join(h11, 'wallpaper-engine')));
+    check('还原照常写回 skills', existsSync(path.join(h11, 'skills', 'core-rules.md')));
+    check('还原后 $DSH_HOME 侧待同步也归零',
+      diffTotal(mod.diffHomeVsRepo(h11, { repoDir: r10, lastRun: null })) === 0,
+      JSON.stringify(mod.diffHomeVsRepo(h11, { repoDir: r10, lastRun: null })));
+
+    // 额外根不存在（全新机器 / 没装壁纸引擎）：跳过它，其余照常，绝不抛错。
+    const h12 = path.join(TMP, 'home12');
+    const r12 = path.join(TMP, 'repo12');
+    mkdirSync(path.join(h12, 'skills'), { recursive: true });
+    mkdirSync(r12, { recursive: true });
+    writeFileSync(path.join(h12, 'skills', 'core-rules.md'), '# rules\n');
+    process.env.DSH_WE_DATA_DIR = path.join(TMP, 'we-does-not-exist');
+    let r12res;
+    let threw = false;
+    try { r12res = mod.copyToRepo(h12, { repoDir: r12 }); } catch { threw = true; }
+    check('★ 额外根不存在时不抛错', threw === false);
+    check('额外根不存在时其余条目照常采集', existsSync(path.join(r12, 'skills', 'core-rules.md')));
+    check('额外根不存在时不造出 wallpaper-engine/ 目录', !existsSync(path.join(r12, 'wallpaper-engine')));
+    check('额外根不存在时 listed 里没有壁纸引擎条目',
+      !r12res.copied.map((p) => p.split(path.sep).join('/')).some((p) => p.startsWith('wallpaper-engine/')),
+      JSON.stringify(r12res.copied));
+  } finally {
+    if (prevWe === undefined) delete process.env.DSH_WE_DATA_DIR;
+    else process.env.DSH_WE_DATA_DIR = prevWe;
+  }
 }
 
 rmSync(TMP, { recursive: true, force: true });

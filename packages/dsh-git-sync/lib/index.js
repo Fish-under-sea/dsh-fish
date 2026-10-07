@@ -34,6 +34,9 @@ function resolveHome() {
   return path.join(os.homedir(), '.dsh');
 }
 
+/** 统一把路径规整成 `/` 分隔：白名单、仓库键、`.gitignore` 都按这个口径比对。 */
+const normRel = (p) => String(p).split(path.sep).join('/');
+
 /**
  * 白名单：相对 DSH home 的路径。换机后需要复原的就在这里面。
  * 与 sync-kit/dsh-sync.ps1 的清单保持一致。
@@ -76,6 +79,15 @@ const WHITE_LIST = [
   // 文件（用户每次保存时用自己那条同源路由写入），本插件只负责按相对路径搬运。
   // 少了这一条，换机后设置菜单的顺序与隐藏项就复原不了（剩下的都能复原）。
   'dsh-settings-nav-order/state.json',
+  // ── 额外扫描根（见上方 EXTRA_ROOTS）：前缀就是根的键，不是 $DSH_HOME 下的路径 ──
+  // 壁纸引擎（dsh-plugin-wallpaper-engine）的**全部设置**都在这一个文件里：外观
+  //（配色 / 边框 / 雾化 / 玻璃颜色与透明度 / 保真度 / 思考块与左侧栏液态玻璃）、
+  // 扩展（自定义会话头像开关与尺寸、点击与拖尾效果）、播放与系统、壁纸库的隐藏与轮播。
+  // 它落在 `~/.dsh-wallpaper-engine`，与 $DSH_HOME 同级，普通白名单条目够不到。
+  'wallpaper-engine/config.json',
+  // 用户保存的玻璃预设（本机是「FISH」）。按**目录**收录而不是点名某个文件：
+  // 以后新存的预设自动跟着走；隐藏出厂预设的墓碑标记也是同目录的同名形态文件。
+  'wallpaper-engine/glass-presets',
   // `profiles/<profile>/` 下的配置面不在这里写死，见下方 PROFILE_FILES + activeList()。
   //
   // 曾经的写法是 'profiles/web/package.json' 这类字面量：0.2.0 桌面版把 profile
@@ -223,6 +235,101 @@ function listProfileDirs(root) {
     .sort();
 }
 
+// ── 扫描根 ────────────────────────────────────────────────────────────
+/**
+ * 额外扫描根：白名单里以 `<key>/` 开头的条目**不来自** $DSH_HOME，而来自这些目录。
+ *
+ * 为什么需要它：`dsh-plugin-wallpaper-engine`（壁纸引擎）把全部设置与素材放在
+ * `~/.dsh-wallpaper-engine` —— 那是 $DSH_HOME 的**同级**目录，而白名单的口径是
+ * 「相对 DSH home 的路径」，所以无论往白名单里写什么都够不到它。
+ *
+ * 为什么用「加扫描根」而不是「把文件搬进 home」：壁纸引擎的默认数据目录是**跨插件读
+ * 契约**（皮肤中心在出文档之前同步读 `<该目录>/config.json` 的 `settings.id` 来预判
+ * 「壁纸在台」），把它挪走会让皮肤侧的首帧先闪一下。加扫描根则完全不动生产路径。
+ *
+ * 仓库里的落点就是同名子目录（`<repoDir>/<key>/…`），所以额外根在 git 侧只是一个普通
+ * 文件夹，`.gitignore` 与提交前复查都按它看待。
+ *
+ * 再加一个根：在表里补一行，然后往 WHITE_LIST 加 `<key>/…` 条目即可。
+ */
+const EXTRA_ROOTS = {
+  'wallpaper-engine': () => {
+    const override = process.env.DSH_WE_DATA_DIR;
+    return override && override.trim()
+      ? path.resolve(override.trim())
+      : path.join(os.homedir(), '.dsh-wallpaper-engine');
+  },
+};
+
+/** 一条白名单条目属于哪个额外根；不属于任何额外根时返回 undefined（= 走 DSH home）。 */
+function extraRootKeyOf(rel) {
+  const text = normRel(rel);
+  for (const key of Object.keys(EXTRA_ROOTS)) {
+    if (text === key || text.startsWith(`${key}/`)) return key;
+  }
+  return undefined;
+}
+
+/** 条目在额外根**之内**的相对路径（不属于额外根时原样返回）。 */
+function innerOf(rel, key) {
+  const text = normRel(rel);
+  return key === undefined ? text : text.slice(key.length + 1);
+}
+
+/**
+ * 额外根的磁盘位置。
+ * @returns 绝对路径；取不到时返回 undefined —— 调用方跳过该条目，**绝不抛错**
+ *（全新机器没装壁纸引擎是常态）。
+ */
+function extraRootDir(key) {
+  let dir;
+  try { dir = EXTRA_ROOTS[key]?.(); } catch { return undefined; }
+  return typeof dir === 'string' && dir.trim() ? dir : undefined;
+}
+
+/**
+ * 枚举一侧（本机 / 配置仓）在白名单范围内的全部文件 —— **唯一**的
+ * 「白名单条目 → 磁盘文件」入口。
+ *
+ * 采集、还原、差异比较、密钥体检、面板统计都走这里。此前这五处各写一遍循环，
+ * 于是「新增一种扫描口径只在其中一两处生效」是必然结局；本项目已经因为「多层防御
+ * 各自为政」踩过两次（见 `isBakAllowed` 与 `.gitignore` 的注释），所以额外扫描根
+ * 这件事必须只有一个落点。
+ *
+ * @param base - 本机侧传 DSH home，配置仓侧传 repoDir。
+ * @param side - `'home'` 时额外根会重定向到它自己的目录；`'repo'` 时一切都在配置仓内。
+ * @returns 每项 `{ repoRel, abs }`；`repoRel` 是**配置仓内**的相对路径（`/` 分隔），
+ *          两侧因此天然对齐，差异比较不需要任何额外映射。
+ */
+export function entriesOf(base, side) {
+  const out = [];
+  for (const rel of activeList(base)) {
+    if (testForbidden(rel)) continue;
+    const key = side === 'home' ? extraRootKeyOf(rel) : undefined;
+    const dir = key === undefined ? base : extraRootDir(key);
+    if (dir === undefined) continue;
+    const inner = key === undefined ? normRel(rel) : innerOf(rel, key);
+    for (const abs of collectFiles(dir, inner)) {
+      const within = normRel(path.relative(dir, abs));
+      if (!within || within.startsWith('..') || testForbidden(within)) continue;
+      out.push({ repoRel: key === undefined ? within : `${key}/${within}`, abs });
+    }
+  }
+  return out;
+}
+
+/**
+ * 配置仓内的相对路径 → 本机侧的落地路径（额外根会落回它自己的目录）。
+ * @returns 绝对路径；额外根解析不出来时返回 undefined（调用方跳过该文件）。
+ */
+export function homeDestination(home, repoRel) {
+  const key = extraRootKeyOf(repoRel);
+  if (key === undefined) return path.join(home, ...normRel(repoRel).split('/'));
+  const dir = extraRootDir(key);
+  if (dir === undefined) return undefined;
+  return path.join(dir, ...innerOf(repoRel, key).split('/'));
+}
+
 // ── 文件搬运 ──────────────────────────────────────────────────────────
 function collectFiles(root, rel) {
   const start = path.join(root, rel);
@@ -278,19 +385,14 @@ export function copyToRepo(home, settings, io = {}) {
   const copyFile = io.copyFile ?? copyFileRobust;
   const copied = [];
   const skipped = [];
-  for (const rel of activeList(home)) {
-    if (testForbidden(rel)) continue;
-    for (const src of collectFiles(home, rel)) {
-      const relFile = path.relative(home, src);
-      if (!relFile || relFile.startsWith('..') || testForbidden(relFile)) continue;
-      const dst = path.join(settings.repoDir, relFile);
-      try {
-        fs.mkdirSync(path.dirname(dst), { recursive: true });
-        copyFile(src, dst);
-        copied.push(relFile);
-      } catch (error) {
-        skipped.push({ path: relFile, error: String(error?.message ?? error) });
-      }
+  for (const { repoRel, abs: src } of entriesOf(home, 'home')) {
+    const dst = path.join(settings.repoDir, ...repoRel.split('/'));
+    try {
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      copyFile(src, dst);
+      copied.push(repoRel);
+    } catch (error) {
+      skipped.push({ path: repoRel, error: String(error?.message ?? error) });
     }
   }
   return { copied, skipped };
@@ -302,24 +404,20 @@ export function copyToHome(home, settings) {
   const backedUp = [];
   const skipped = [];
   const backupDir = path.join(settings.repoDir, '_backup');
-  for (const rel of activeList(settings.repoDir)) {
-    if (testForbidden(rel)) continue;
-    for (const src of collectFiles(settings.repoDir, rel)) {
-      const relFile = path.relative(settings.repoDir, src);
-      if (!relFile || relFile.startsWith('..') || testForbidden(relFile)) continue;
-      const dst = path.join(home, relFile);
-      if (fs.existsSync(dst)) {
-        fs.mkdirSync(backupDir, { recursive: true });
-        const bk = path.join(backupDir, `${relFile.replace(/[\\/]/g, '__')}.pre-sync`);
-        try { copyFileRobust(dst, bk); backedUp.push(bk); } catch { /* 备份失败不阻断 */ }
-      }
-      try {
-        fs.mkdirSync(path.dirname(dst), { recursive: true });
-        copyFileRobust(src, dst);
-        copied.push(relFile);
-      } catch (error) {
-        skipped.push({ path: relFile, error: String(error?.message ?? error) });
-      }
+  for (const { repoRel, abs: src } of entriesOf(settings.repoDir, 'repo')) {
+    const dst = homeDestination(home, repoRel);
+    if (dst === undefined) continue;
+    if (fs.existsSync(dst)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+      const bk = path.join(backupDir, `${repoRel.replace(/[\\/]/g, '__')}.pre-sync`);
+      try { copyFileRobust(dst, bk); backedUp.push(bk); } catch { /* 备份失败不阻断 */ }
+    }
+    try {
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      copyFileRobust(src, dst);
+      copied.push(repoRel);
+    } catch (error) {
+      skipped.push({ path: repoRel, error: String(error?.message ?? error) });
     }
   }
   return { copied, backedUp, skipped };
@@ -499,31 +597,27 @@ function extractCredentialValues(home) {
 function scanForSecrets(home, settings) {
   const findings = [];
   const targets = [];
-  for (const rel of activeList(home)) {
-    for (const f of collectFiles(home, rel)) {
-      // 只扫文本类，跳过 zstd 二进制（纯文本扫描无法解释压缩内容）
-      if (/\.(jsonl\.zstd|zst|gz|zip|png|jpe?g|webp|gif|pdf|tgz)$/i.test(f)) continue;
-      targets.push(f);
-    }
+  for (const { repoRel, abs } of entriesOf(home, 'home')) {
+    // 只扫文本类，跳过 zstd 二进制（纯文本扫描无法解释压缩内容）
+    if (/\.(jsonl\.zstd|zst|gz|zip|png|jpe?g|webp|gif|pdf|tgz)$/i.test(abs)) continue;
+    targets.push({ repoRel, abs });
   }
   const creds = extractCredentialValues(home);
-  for (const f of targets) {
+  for (const { repoRel, abs } of targets) {
     let text;
-    try { text = fs.readFileSync(f, 'utf8'); } catch { continue; }
-    const rel = path.relative(home, f);
+    try { text = fs.readFileSync(abs, 'utf8'); } catch { continue; }
     for (const value of creds) {
-      if (text.includes(value)) findings.push({ file: rel, kind: '精确命中 .credentials.yaml 中的密钥值' });
+      if (text.includes(value)) findings.push({ file: repoRel, kind: '精确命中 .credentials.yaml 中的密钥值' });
     }
     for (const [re, label] of SECRET_PATTERNS) {
       const m = text.match(re);
-      if (m?.length) findings.push({ file: rel, kind: `${label} ×${m.length}` });
+      if (m?.length) findings.push({ file: repoRel, kind: `${label} ×${m.length}` });
     }
   }
   return { scanned: targets.length, credentialValues: creds.length, findings };
 }
 
 // ── 本机 ↔ 仓库 差异 ──────────────────────────────────────────────────
-const normRel = (p) => p.split(path.sep).join('/');
 
 /** 两个文件内容是否一致（先比大小，再比字节）。 */
 function sameFile(a, b) {
@@ -535,17 +629,10 @@ function sameFile(a, b) {
   }
 }
 
-/** 收集白名单范围内某一侧的全部文件，键为统一的相对路径。 */
-function collectSide(root, settings) {
+/** 收集白名单范围内某一侧的全部文件，键为统一的仓库相对路径。 */
+function collectSide(root, side) {
   const map = new Map();
-  for (const rel of activeList(root)) {
-    if (testForbidden(rel)) continue;
-    for (const abs of collectFiles(root, rel)) {
-      const r = path.relative(root, abs);
-      if (!r || r.startsWith('..') || testForbidden(r)) continue;
-      map.set(normRel(r), abs);
-    }
-  }
+  for (const { repoRel, abs } of entriesOf(root, side)) map.set(repoRel, abs);
   return map;
 }
 
@@ -558,8 +645,8 @@ function collectSide(root, settings) {
  * @returns `{ added, changed, removed, repoFiles, homeFiles }`
  */
 export function diffHomeVsRepo(home, settings) {
-  const homeSet = collectSide(home, settings);
-  const repoSet = collectSide(settings.repoDir, settings);
+  const homeSet = collectSide(home, 'home');
+  const repoSet = collectSide(settings.repoDir, 'repo');
   const added = [];
   const changed = [];
   const removed = [];
@@ -598,11 +685,9 @@ async function readStatus(home, settings) {
   };
   if (!status.repoExists) return status;
 
-  for (const rel of activeList(settings.repoDir)) {
-    for (const f of collectFiles(settings.repoDir, rel)) {
-      status.files += 1;
-      try { status.sizeKB += fs.statSync(f).size / 1024; } catch { /* 忽略 */ }
-    }
+  for (const { abs } of entriesOf(settings.repoDir, 'repo')) {
+    status.files += 1;
+    try { status.sizeKB += fs.statSync(abs).size / 1024; } catch { /* 忽略 */ }
   }
   status.sizeKB = Math.round(status.sizeKB);
 
