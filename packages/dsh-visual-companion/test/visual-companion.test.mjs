@@ -1,7 +1,36 @@
 import assert from 'node:assert/strict'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
 
 import { companionMessage } from '../lib/message.js'
+
+/** 最小 ctx：记录工具/命令、收集 warn，并提供卸载入口。 */
+function testCtx() {
+  const tools = []
+  const commands = []
+  const warns = []
+  const offs = []
+  return {
+    tools: { register: (tool) => { tools.push(tool); return () => {} } },
+    commands: { register: (command) => { commands.push(command); return () => {} } },
+    effect: (fn) => { const dispose = fn(); offs.push(dispose); return () => { if (typeof dispose === 'function') dispose() } },
+    logger: { info: () => {}, warn: (message) => warns.push(String(message)) },
+    registered: { tools, commands, warns },
+    dispose: () => { for (const off of offs) if (typeof off === 'function') off() },
+  }
+}
+
+/** 建一个只用一次的临时伴侣目录，异步体跑完（含失败）后连目录一起删。 */
+async function withTempDir(fn) {
+  const dir = mkdtempSync(join(tmpdir(), 'vc-arm-'))
+  try {
+    return await fn(dir)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
 
 const TAIL = '已同步给你，直接往下走就行（不必再问他）。'
 
@@ -83,4 +112,41 @@ test('空提交不崩，给出可读兜底', () => {
     companionMessage({}),
     `【视觉伴侣】用户在页面上留了句话：（无内容）。${TAIL}`,
   )
+})
+
+test('watchDir 里的 state 目录还不存在时：加载不崩，并自建目录后完成绑定', async () => {
+  await withTempDir(async (dir) => {
+    assert.equal(existsSync(join(dir, 'state')), false, '前置：state 目录本不存在')
+    const mod = await import('../lib/index.js')
+    const ctx = testCtx()
+    try {
+      mod.apply(ctx, { watchDir: dir })
+      assert.equal(existsSync(join(dir, 'state')), true, '应自建 <watchDir>/state')
+      assert.deepEqual(ctx.registered.warns, [], '自建目录属正常路径，不该告警')
+      const [tool] = ctx.registered.tools
+      const status = await tool.execute({ action: 'status' })
+      assert.equal(status.status, '已绑定', `应完成绑定，实际：${status.status} — ${status.detail}`)
+    } finally {
+      ctx.dispose()
+    }
+  })
+})
+
+test('watchDir 指向的不是目录（无法观察）时：加载不崩，降级为告警 + 未绑定', async () => {
+  await withTempDir(async (dir) => {
+    const notADir = join(dir, 'not-a-dir')
+    writeFileSync(notADir, '这不是目录', 'utf8')
+    const mod = await import('../lib/index.js')
+    const ctx = testCtx()
+    try {
+      mod.apply(ctx, { watchDir: notADir })
+      assert.equal(ctx.registered.warns.length, 1, `应留下一条告警，实际：${JSON.stringify(ctx.registered.warns)}`)
+      assert.match(ctx.registered.warns[0], /观察/)
+      const [tool] = ctx.registered.tools
+      const status = await tool.execute({ action: 'status' })
+      assert.equal(status.status, '未绑定', `观察器不该假装绑上，实际：${status.status}`)
+    } finally {
+      ctx.dispose()
+    }
+  })
 })

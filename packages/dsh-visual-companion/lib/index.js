@@ -21,7 +21,7 @@
  * @module @fish-under-sea/dsh-visual-companion
  */
 import { spawn } from 'node:child_process'
-import { watch } from 'node:fs'
+import { mkdirSync, watch } from 'node:fs'
 import { mkdir, readFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -145,12 +145,23 @@ function arm(ctx, dir, sessionId) {
   state.sessionId = sessionId
   state.lastFingerprint = null
   const watchDir = join(dir, 'state')
-  state.watcher = watch(watchDir, { persistent: false }, (_event, filename) => {
-    if (filename !== null && basename(String(filename)) !== 'pending.json') return
-    void readPending(dir).then((pending) => (pending === undefined ? undefined : handleSubmit(ctx, pending)))
-  })
-  state.watcher.on?.('error', (error) => ctx.logger?.warn?.(`visual-companion: 观察 ${watchDir} 出错：${String(error)}`))
-  ctx.logger?.info?.(`visual-companion: 已绑定 ${watchDir}/pending.json → 会话 ${sessionId ?? '（由 pending.json 自带）'}`)
+  try {
+    // 目录还不存在（这个工作区还没起过伴侣服务）时要自建：fs.watch 对不存在的路径
+    // 会同步抛 ENOENT，而那会把整条插件记录成「未激活」——工具和斜杠命令一起消失。
+    mkdirSync(watchDir, { recursive: true })
+    state.watcher = watch(watchDir, { persistent: false }, (_event, filename) => {
+      if (filename !== null && basename(String(filename)) !== 'pending.json') return
+      void readPending(dir).then((pending) => (pending === undefined ? undefined : handleSubmit(ctx, pending)))
+    })
+    state.watcher.on?.('error', (error) => ctx.logger?.warn?.(`visual-companion: 观察 ${watchDir} 出错：${String(error)}`))
+    ctx.logger?.info?.(`visual-companion: 已绑定 ${watchDir}/pending.json → 会话 ${sessionId ?? '（由 pending.json 自带）'}`)
+    return true
+  } catch (error) {
+    // 观察不了不该让插件掉线：退化成「未绑定」，需要时还能用 visual_companion arm 重试。
+    state.watcher = null
+    ctx.logger?.warn?.(`visual-companion: 无法观察 ${watchDir}（${String(error?.message ?? error)}）；已跳过自动绑定，可稍后用 visual_companion({action:"arm"}) 重试`)
+    return false
+  }
 }
 
 function disarm() {
@@ -183,7 +194,8 @@ function registerTool(ctx) {
       if (args.action === 'arm') {
         const dir = clean(args.dir)
         if (dir === '') return { status: 'arm 失败', detail: '需要 dir' }
-        arm(ctx, dir, args.session_id === undefined || clean(args.session_id) === '' ? null : clean(args.session_id))
+        const bound = arm(ctx, dir, args.session_id === undefined || clean(args.session_id) === '' ? null : clean(args.session_id))
+        if (!bound) return { status: 'arm 失败', detail: `无法观察 ${join(dir, 'state')}（详见日志）；先修好目录或权限再重试` }
         return { status: '已绑定', detail: `${dir}/state/pending.json → ${state.sessionId ?? '（由 pending.json 自带 sessionId）'}` }
       }
       if (args.action === 'disarm') {
