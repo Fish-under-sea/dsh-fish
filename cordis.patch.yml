@@ -1,9 +1,9 @@
 # @fish-under-sea/dsh-fish bundle layer —— Fish 自建插件聚合包的 bundle 入口。
 #
-# 本文件把三个自建插件的宿主行一次性插入 web profile 的 roster，
-# 装一个 @fish-under-sea/dsh-fish 就等于装齐下面三个插件。
+# 本文件把五个自建插件与两个外部补充版的宿主行一次性插入 web profile 的 roster，
+# 装一个 @fish-under-sea/dsh-fish 就等于装齐下面七个插件。
 #
-# ️ 行为什么必须写「子包自己的包名」，不能改写成聚合包的子路径
+# 行为什么必须写「子包自己的包名」，不能改写成聚合包的子路径
 # （`@fish-under-sea/dsh-fish/approval-guide`）：
 #
 # 行的 name 决定两件事，而这两件事对子路径的态度相反：
@@ -28,7 +28,7 @@
 # 所以聚合包必须自己把子包的插行动作复述一遍，否则装了聚合包却一个插件
 # 都不生效。
 #
-# 三个插件的运行期参数都写在 $DSH_HOME 下的各自 config.json 里
+# 七个插件的运行期参数都写在 $DSH_HOME 下的各自 config.json 里
 # （在 GUI 设置页改），不写在这里，因此不会跟着本包同步到别的机器。
 
 # 会话标题服务每个进程只接受一个提供方，第二次注册直接抛错。
@@ -62,7 +62,7 @@
 
     # AgentTeams 多智能体团队协作 —— **外部补充版，不是本仓库子包**：
     # 上游 NanmiCoder/dsh-agent-teams 的补充版，新增自定义美术目录、
-    # 九厂商 × 九岗位头像与厂商商标徽标。行名 = 它的 npm 包名。
+    # 十五厂商头像（十个有厂商 × 岗位全套）与厂商商标徽标。行名 = 它的 npm 包名。
     # artworkDir（自定义美术目录）是机器相关绝对路径，故意不写在这里：
     # 需要时在自己 profile 的 patch 层覆盖同一个 id 行即可。
     - id: agent-teams

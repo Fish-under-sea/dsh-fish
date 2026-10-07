@@ -2,13 +2,15 @@
 
 # @fish-under-sea/dsh-visual-companion
 
-**网页上点完就继续** —— 用户在视觉伴侣页面选好选项、写两句备注、按下「提交给助手」，DSH 会话立刻收到一条用户消息并自动起一轮。
+**网页上点完就继续 —— 给 DSH 会话配一个视觉伴侣，点选、备注、提交，会话自动起一轮。**
 
 [![npm](https://img.shields.io/npm/v/@fish-under-sea/dsh-visual-companion?style=flat-square&label=npm&color=cb3837)](https://www.npmjs.com/package/@fish-under-sea/dsh-visual-companion)
 ![license](https://img.shields.io/badge/license-MIT-green?style=flat-square)
-![node](https://img.shields.io/badge/node-%5E22.19%20%7C%7C%20%3E%3D24-339933?style=flat-square)
+![node](https://img.shields.io/badge/node-%5E22.19.0%20%7C%7C%20%3E%3D24.0.0-339933?style=flat-square)
 ![DSH](https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4b6ef6?style=flat-square)
-![host-only](https://img.shields.io/badge/plugin-host--only-6b7280?style=flat-square)
+![plugin](https://img.shields.io/badge/plugin-host%20only-6b7280?style=flat-square)
+
+**简体中文** · [English](README.en.md)
 
 </div>
 
@@ -43,19 +45,30 @@ dsh plugin --profile <profile> add "link:<仓库路径>/packages/dsh-visual-comp
 
 ## 使用
 
-本包由**两部分**组成，都不接触模型 API：宿主插件（`lib/index.js`）只投消息，本地服务（`bin/visual-companion.mjs`）只写文件。
+本包由**两部分**组成，都不接触模型 API：
 
-**1）起本地服务**（受管后台任务；目录放工作区内的临时目录）：
+- **本地服务**（`bin/visual-companion.mjs`）：零依赖 HTTP 服务，负责渲染页面、接收点击、写 `events.jsonl` 与 `pending.json`；
+- **宿主插件**（`lib/index.js`）：观察 `state/pending.json`，一有提交就给目标会话投一条用户消息并起一轮。
 
-```powershell
-node "$env:DSH_HOME\profiles\<profile>\node_modules\@fish-under-sea\dsh-visual-companion\bin\visual-companion.mjs" `
-  --dir "<工作区>\.dsh-visual" --port 0 --session "$env:DSH_SESSION_ID"
+### 起本地服务
+
+受管后台任务；目录放工作区内的临时目录：
+
+```sh
+node "$DSH_HOME/profiles/<profile>/node_modules/@fish-under-sea/dsh-visual-companion/bin/visual-companion.mjs" \
+  --dir "<工作区>/.dsh-visual" --port 0 --session "$DSH_SESSION_ID"
 # → 打印 { url, port, key, screenDir, stateDir, pendingFile, session }
 ```
 
-**2）写一屏 HTML 片段**到 `<dir>\screen\`（语义化文件名、别复用；需要完全控制页面时才写完整文档，即以 `<!DOCTYPE` / `<html` 开头）。
+### 写屏
 
-**3）打开页面**：把 `url` 连同 `?key=` 一起交给用户（DSH 里用 `sidebar_open` 开在右侧栏）。密钥缺失会被 403 拒绝。
+把 HTML 片段写到 `<dir>/screen/`（语义化文件名、别复用；需要完全控制页面时才写完整文档，即以 `<!DOCTYPE` / `<html` 开头）。
+
+### 打开页面
+
+把 `url` 连同 `?key=` 一起交给用户（DSH 里用 `sidebar_open` 开在右侧栏）。密钥缺失会被 403 拒绝。
+
+### 框架样式
 
 服务自带的框架样式提供这些类，写片段即可用：
 
@@ -64,6 +77,8 @@ node "$env:DSH_HOME\profiles\<profile>\node_modules\@fish-under-sea\dsh-visual-c
 | 选项（单选 / 容器加 `data-multiselect` 变多选） | `.options` > `.option[data-choice]`，点击调 `toggleSelect(this)`；`.cards` > `.card` 同款 |
 | 视觉块 | `.mockup`、`.split`、`.pros-cons`、`.mock-nav`、`.mock-sidebar`、`.mock-content`、`.mock-button`、`.mock-input`、`.placeholder` |
 | 文字层级 | `h2` / `h3` / `.subtitle` / `.section` / `.label` |
+
+### `visual_companion` 工具
 
 插件注册一个工具 `visual_companion`：
 
@@ -74,7 +89,9 @@ node "$env:DSH_HOME\profiles\<profile>\node_modules\@fish-under-sea\dsh-visual-c
 | `status` | — | 绑定状态、唤醒次数、最近一次结果、当前 `pending.json` |
 | `wake` | `session_id`、`text` | 立刻探测唤醒链路（不经过页面） |
 
-落盘文件都在 `<dir>\state\`：
+### 落盘文件
+
+落盘文件都在 `<dir>/state/`：
 
 | 文件 | 内容 |
 | --- | --- |
@@ -119,7 +136,7 @@ node "$env:DSH_HOME\profiles\<profile>\node_modules\@fish-under-sea\dsh-visual-c
 2. `agent.steer(...)` —— 目标正在跑时；
 3. `ctx.subagents[Symbol.for('dsh.subagent.queuePrompt' | 'deliverPrompt')]` —— 可续期子代理的宿主内部投递钩子。
 
-- **host-only**：不声明 `dsh.client`，无前端、无构建；
+- **host-only**：宿主插件（不声明 `dsh.client`、没有浏览器半区、没有前端构建）+ 本地服务（零依赖 HTTP 服务，提供带交互的浏览器页面）。那个页面由本地服务自己提供，**不是** DSH 客户端插件；
 - 服务零依赖（只用 Node 标准库）、端口自动分配、URL 带会话密钥；`--host 0.0.0.0 --url-host <主机名>` 可用于远程 / 容器，但**必须保留 `?key=`**；
 - 服务**闲置 4 小时自动退出**（`--idle-minutes` 可调），原型文件是临时产物，别当交付物；
 - 降级链：无 Node → 自包含 HTML + `present`；无侧边栏浏览器 → 把完整 URL 交给用户手动打开；连插件都没装 → 下一轮手工读 `events.jsonl`；
@@ -130,6 +147,7 @@ node "$env:DSH_HOME\profiles\<profile>\node_modules\@fish-under-sea\dsh-visual-c
 ## 开发与测试
 
 ```sh
+# 全新 clone 需先在包目录 pnpm install（运行时零依赖，但测试需要 devDependencies 里的 3 个 DSH 包）
 node packages/dsh-visual-companion/test/visual-companion.test.mjs   # 语料渲染 + 清单契约 + 绑定容错（10 用例）
 pnpm pack                                                          # 产物检查：files 覆盖 bin / lib / patch / README
 ```
