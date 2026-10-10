@@ -60,6 +60,16 @@ function makeCtx(sessions) {
     modelListFails: [],
     listProvidersFails: false,
     /**
+     * 单次标题调用前的能力探测（`ctx.llm.resolveModelInfo`）替身。
+     *
+     * 默认给「支持 off」——官方 deepseek 通道就是这样，所以既有用例不受影响。
+     * 用例可替换成 hy3 那种「只有 low / high」来复现 `UNSUPPORTED_REASONING_EFFORT`。
+     */
+    modelInfo: { reasoning: { efforts: [{ id: 'off' }, { id: 'low' }, { id: 'high' }] } },
+    modelInfoFails: false,
+    modelInfoImpl: undefined,
+    modelInfoCalls: [],
+    /**
      * 默认的假模型输出；单个用例可替换。
      *
      * 注意 `finish.reason` 必须是 DSH 真实协议里的**对象**（`{ kind }`）：
@@ -116,6 +126,14 @@ function makeCtx(sessions) {
       listModels: async (id) => {
         if (api.modelListFails.includes(id)) throw new Error(`目录不可用：${id}`);
         return api.modelList(id);
+      },
+      /** 能力探测替身：真实签名是 `resolveModelInfo(provider, model, signal)`。 */
+      resolveModelInfo: async (provider, model, signal) => {
+        api.modelInfoCalls.push({ provider, model });
+        // 用例可替换 `modelInfoImpl` 来模拟取消 / 超时 / 其它探测失败。
+        if (api.modelInfoImpl !== undefined) return api.modelInfoImpl(provider, model, signal);
+        if (api.modelInfoFails) throw new Error(`无法解析模型：${provider}/${model}`);
+        return api.modelInfo;
       },
     },
     webServer: {
@@ -281,10 +299,10 @@ test('提供方：取样首条+最近若干条、用会话当前路由、清洗�
   assert.equal(call.provider, 'deepseek-official');
   assert.equal(call.model, 'deepseek-flash');
   assert.equal(call.purpose, 'session-title');
-  // 回归（0.3.1）：官方 provider 在 `purpose === 'session-title'` 时会强制关思考，
-  // 本插件自己发起的辅助调用必须显式表态——否则思考型标题模型把输出预算全花在
-  // reasoning 上，流以 max-tokens 收尾、正文为空，每一次自动命名都失败。
-  assert.equal(call.reasoningEffort, 'off', '标题调用必须显式关闭思考');
+  // 回归（0.3.1）：本插件自己发起的辅助调用必须显式表态思考档位——否则思考型标题模型
+  // 把输出预算全花在 reasoning 上，流以 max-tokens 收尾、正文为空，每一次自动命名都失败。
+  // 回归（0.3.2）：表态的档位必须是**该模型真支持的**。这里替身默认支持 off，所以仍是 off。
+  assert.equal(call.reasoningEffort, 'off', '模型支持 off 时应当关思考');
   assert.equal(call.sessionId, 'session-gen');
   assert.match(call.system, /overall direction/);
   assert.match(call.messages[0].content[0].text, /JSON array/);
@@ -293,6 +311,169 @@ test('提供方：取样首条+最近若干条、用会话当前路由、清洗�
   assert.equal(call.messages[0].source.kind, 'plugin:dsh-session-title-refresh');
   assert.equal(call.messages[0].source.plugin, undefined, '不再使用已废止的 plugin 成员');
   assert.equal(call.messages[0].role, 'user');
+});
+
+// ── 回归（0.3.2）：思考档位必须按模型真实能力挑，不能无条件传 'off' ──────────
+//
+// 实测故障：标题模型设成 `hy-f` / `buddy/hy3`（只声明了 low / high，没有 off）之后，
+// 0.3.1 无条件传 `reasoningEffort: 'off'` 撞上 DSH 核心的硬校验（不做任何降级），
+// 每一次自动命名都抛 `UNSUPPORTED_REASONING_EFFORT`，标题功能整个失效。
+// 2026-10-10 当天从 10:09 起 history.json 里清一色是这个错。
+
+test('提供方：模型不支持 off 时不传 off，而是退到它支持的最低档（hy3 场景）', async () => {
+  const sessions = new Map();
+  const { ctx, api } = makeCtx(sessions);
+  apply(ctx, {});
+  const session = makeSession('session-hy3');
+  sessions.set(session.id, session);
+
+  // 与 hy-f 的 buddy/hy3 完全一致：只有 low 与 high，没有 off。
+  api.modelInfo = { reasoning: { efforts: [{ id: 'low' }, { id: 'high' }] } };
+
+  const result = await api.provider.generate({
+    session,
+    messages: [{ seq: 0, text: '你好' }],
+    route: { provider: 'hy-f', model: 'buddy/hy3' },
+    signal: new AbortController().signal,
+  });
+
+  assert.equal(result.title, '插件自动命名');
+  const call = api.streamCalls.at(-1);
+  assert.equal(call.reasoningEffort, 'low', '不支持 off 时应退到最低档，而不是硬传 off 把自己撞死');
+});
+
+test('提供方：模型没有任何思考元数据时完全不传档位', async () => {
+  const sessions = new Map();
+  const { ctx, api } = makeCtx(sessions);
+  apply(ctx, {});
+  const session = makeSession('session-noreasoning');
+  sessions.set(session.id, session);
+  // 核心校验：reasoning 为 undefined 时，传任何显式档位都会抛。
+  api.modelInfo = {};
+
+  await api.provider.generate({
+    session,
+    messages: [{ seq: 0, text: '你好' }],
+    route: { provider: 'p', model: 'plain' },
+    signal: new AbortController().signal,
+  });
+  assert.equal('reasoningEffort' in api.streamCalls.at(-1), false, '没有思考元数据时不该传这个字段');
+});
+
+test('提供方：探测失败时不缓存结论，下次仍会重新探测', async () => {
+  const sessions = new Map();
+  const { ctx, api } = makeCtx(sessions);
+  apply(ctx, {});
+  const session = makeSession('session-probefail');
+  sessions.set(session.id, session);
+  api.modelInfoFails = true;
+
+  const result = await api.provider.generate({
+    session,
+    messages: [{ seq: 0, text: '你好' }],
+    route: { provider: 'p', model: 'm' },
+    signal: new AbortController().signal,
+  });
+  assert.equal(result.title, '插件自动命名', '探测失败不该让命名失败');
+  assert.equal('reasoningEffort' in api.streamCalls.at(-1), false);
+
+  // 失败不是能力结论：不该被缓存。恢复后必须重新探测并拿到真实档位。
+  api.modelInfoFails = false;
+  api.modelInfo = { reasoning: { efforts: [{ id: 'low' }, { id: 'high' }] } };
+  await api.provider.generate({
+    session,
+    messages: [{ seq: 0, text: '再来一次' }],
+    route: { provider: 'p', model: 'm' },
+    signal: new AbortController().signal,
+  });
+  assert.equal(api.modelInfoCalls.length, 2, '失败结论不该被缓存');
+  assert.equal(api.streamCalls.at(-1).reasoningEffort, 'low');
+});
+
+test('提供方：档位探测结果按 provider/model 缓存，不为每次命名重复问一遍', async () => {
+  const sessions = new Map();
+  const { ctx, api } = makeCtx(sessions);
+  apply(ctx, {});
+  const session = makeSession('session-cache');
+  sessions.set(session.id, session);
+  api.modelInfo = { reasoning: { efforts: [{ id: 'low' }, { id: 'high' }] } };
+
+  for (let round = 1; round <= 3; round += 1) {
+    await api.provider.generate({
+      session,
+      messages: [{ seq: 0, text: `第 ${round} 次` }],
+      route: { provider: 'hy-f', model: 'buddy/hy3' },
+      signal: new AbortController().signal,
+    });
+  }
+  assert.equal(api.modelInfoCalls.length, 1, '同一个路由只探测一次');
+  assert.deepEqual(api.modelInfoCalls[0], { provider: 'hy-f', model: 'buddy/hy3' });
+});
+
+test('提供方：换模型后重新探测，不吃上一个模型的档位', async () => {
+  const sessions = new Map();
+  const { ctx, api } = makeCtx(sessions);
+  apply(ctx, {});
+  const session = makeSession('session-switch');
+  sessions.set(session.id, session);
+
+  api.modelInfo = { reasoning: { efforts: [{ id: 'low' }, { id: 'high' }] } };
+  await api.provider.generate({ session, messages: [{ seq: 0, text: '甲' }], route: { provider: 'hy-f', model: 'buddy/hy3' }, signal: new AbortController().signal });
+  assert.equal(api.streamCalls.at(-1).reasoningEffort, 'low');
+
+  // 换成支持 off 的模型：必须重新探测，而不是沿用上一个模型的 low。
+  api.modelInfo = { reasoning: { efforts: [{ id: 'off' }, { id: 'high' }] } };
+  await api.provider.generate({ session, messages: [{ seq: 0, text: '乙' }], route: { provider: 'hy-f', model: 'buddy/hy4-preview-f' }, signal: new AbortController().signal });
+  assert.equal(api.streamCalls.at(-1).reasoningEffort, 'off');
+  assert.equal(api.modelInfoCalls.length, 2);
+});
+
+test('提供方：探测被取消时不把「无档位」当结论缓存下来', async () => {
+  const sessions = new Map();
+  const { ctx, api } = makeCtx(sessions);
+  apply(ctx, {});
+  const session = makeSession('session-cancel-probe');
+  sessions.set(session.id, session);
+
+  // 第一次：探测挂起，调用方取消。被取消的探测没有回答任何问题，绝不能当结论缓存。
+  const controller = new AbortController();
+  api.modelInfoImpl = (provider, model, signal) => new Promise((_, reject) => {
+    signal?.addEventListener('abort', () => reject(signal.reason ?? new Error('aborted')), { once: true });
+    controller.signal.addEventListener('abort', () => {}, { once: true });
+  });
+  const pending = api.provider.generate({ session, messages: [{ seq: 0, text: '甲' }], route: { provider: 'hy-f', model: 'buddy/hy3' }, signal: controller.signal });
+  controller.abort(new Error('标题生成被取消'));
+  await assert.rejects(() => pending, /取消/);
+
+  // 第二次：探测恢复正常。若上一次的取消被缓存成「不传档位」，这里就拿不到 low。
+  api.modelInfoImpl = undefined;
+  api.modelInfo = { reasoning: { efforts: [{ id: 'low' }, { id: 'high' }] } };
+  await api.provider.generate({ session, messages: [{ seq: 0, text: '乙' }], route: { provider: 'hy-f', model: 'buddy/hy3' }, signal: new AbortController().signal });
+  assert.equal(api.streamCalls.at(-1).reasoningEffort, 'low', '取消不该让这个路由永久失去档位控制');
+});
+
+test('提供方：探测超时走插件的截止时间，不会另开一段等待', async () => {
+  const sessions = new Map();
+  const { ctx, api } = makeCtx(sessions);
+  apply(ctx, {});
+  const session = makeSession('session-probe-timeout');
+  sessions.set(session.id, session);
+  // 探测永远不返回：只有和标题调用共用截止时间，才能在这里被超时掐断。
+  api.modelInfoImpl = (provider, model, signal) => new Promise((_, reject) => {
+    signal?.addEventListener('abort', () => reject(signal.reason ?? new Error('aborted')), { once: true });
+  });
+
+  const home = path.join(HOME, 'dsh-session-title-refresh');
+  fs.mkdirSync(home, { recursive: true });
+  fs.writeFileSync(path.join(home, 'config.json'), JSON.stringify({ timeoutMs: 5000 }), 'utf8');
+  try {
+    await assert.rejects(
+      () => api.provider.generate({ session, messages: [{ seq: 0, text: '甲' }], route: { provider: 'hy-f', model: 'buddy/hy3' }, signal: new AbortController().signal }),
+      /未完成|abort/i,
+    );
+  } finally {
+    fs.rmSync(path.join(home, 'config.json'), { force: true });
+  }
 });
 
 test('提供方：没有可用路由时抛错（保留旧标题）', async () => {

@@ -16,7 +16,11 @@
 
 ---
 
-> **🆕 0.7.1（2026-10-10）**：**修掉「第八个成员装不上」** —— `dsh-our-free-model` 已发布到 npm **官方源**（`2.0.0`），本包对它的依赖由 `github:Fish-under-sea/Our-Free-Mode-fish` 改为 **`^2.0.0`**。根因：pnpm 11 **默认启用** `blockExoticSubdeps`，**禁止子依赖使用 git / file / link 协议**，于是 0.7.0 在任何默认配置的机器上都以 `ERR_PNPM_EXOTIC_SUBDEP` 失败 —— 只有让用户关掉 `blockExoticSubdeps` 才能装。registry 版本不触发该保护，**不需要你放宽任何安全设置**。功能零变化：0.7.0 相对 0.6.11 的唯一改动就是新增这个成员。
+> **🆕 0.7.2（2026-10-10）**：两个成员同时升级 —— `@fish-under-sea/dsh-session-title-refresh` **0.3.2** 与 `dsh-agent-teams-fish` **0.4.2**。
+>
+> **① 标题刷新（0.3.2）**：**修掉「标题模型不支持 off 档时，每一次自动命名都报 `UNSUPPORTED_REASONING_EFFORT`」**。0.3.1 为了修「思考吃光输出预算」而**无条件**传 `reasoningEffort: 'off'`，但 **DSH 核心对显式档位是硬校验、不做任何降级**（模型没声明该档位就直接抛，连 reasoning 元数据都没有时传任何档位同样抛），`dsh-llm-pi-ai` 又会把未声明的档位一律钉成不支持 —— 于是**所有没声明 `off` 的模型**（真实配置 58 个里占 **33 个**）自动命名全部失效。0.3.2 改为**先探测再表态**：读该模型真实档位，能关思考就传 `off`、关不掉退到它支持的最低档、实在没有才完全不传该字段。core 25 + host 25 + client 13 = **63** 用例全通过。
+>
+> **② AgentTeams（0.4.2）**：**修掉「队长头像永远是 DeepSeek 那张」**。队长换成 qwen / claude / glm 后头像不变 —— 不是缺素材（10 个厂商的队长图早在包里），而是客户端把队长图**写死成常量** `team-lead-deepseek-v2.png`，另外 9 张永远不可达；宿主端 `team.json` 也只记 `captainSessionId`、没有队长的模型路由。0.4.2 建队时写入 `captainProvider` / `captainModel`，快照暴露（实时值优先），客户端走与成员同一套厂商识别。artwork-role-match 30 → **34** 用例 + 2 条新门禁。
 >
 > ⚠️ **第八个成员的安装约定**：本包插入 `id: our-free-model` 行，而 `dsh-our-free-model` 自己的 bundle 层也插入同一个 id —— 聚合 patch **不去重**，两边都生效就是**重复挂载、启动失败**。所以请把它写在 profile 的 `devDependencies`（装得到，且不会被对账提升为 bundle 层），**不要**再列进 `dsh.profile.bundles`（见 [安装](#安装) 与「[为什么子包要写在 devDependencies](#方式二从-git-仓库安装跨机可复现)」）。
 >
@@ -37,11 +41,11 @@ Fish 自建 [DSH](https://github.com/Fish-under-sea/DSH)（DeepSeek Harness）�
 | 子包 | 版本 | 说明 |
 |------|:----:|------|
 | [`dsh-approval-guide`](packages/dsh-approval-guide) | 0.2.2 | 在审批弹窗里追加**中文说明**：这次审批会做什么、有什么风险、依据是什么 |
-| [`dsh-session-title-refresh`](packages/dsh-session-title-refresh) | 0.3.1 | **会话标题自动刷新**：第 N 轮起总结命名，此后每 M 轮刷新一次；设置页「标题模型（可选）」下拉与官方「模型」页同源；标题调用**显式关思考**、默认输出预算 256、`max-tokens` 有正文即接受截断结果 |
+| [`dsh-session-title-refresh`](packages/dsh-session-title-refresh) | 0.3.2 | **会话标题自动刷新**：第 N 轮起总结命名，此后每 M 轮刷新一次；设置页「标题模型（可选）」下拉与官方「模型」页同源；标题调用的**思考档位按模型真实能力挑**（能关就关、关不掉退最低档、无元数据不传），默认输出预算 256、`max-tokens` 有正文即接受截断结果 |
 | [`dsh-git-sync`](packages/dsh-git-sync) | 0.3.2 | **一键 Git 同步**：把插件清单、启用状态、本地设置、Skills、看板/用量账本、设置导航顺序偏好、**标题自动刷新设置**与**免费模型插件配置及用量账本**同步到自己的私有仓库；支持**额外扫描根**，白名单条目可用根前缀指向 `$DSH_HOME` 之外的目录（壁纸引擎的设置、玻璃预设、字体集与吉祥物素材都走这条路） |
 | [`dsh-settings-nav-order`](packages/dsh-settings-nav-order) | 0.1.5 | **设置导航重排**：把设置面板左侧菜单排成自己要的顺序、把不想看的项收起来；偏好随 Git 同步插件**跨机复原** |
 | [`dsh-visual-companion`](packages/dsh-visual-companion) | 0.1.7 | **视觉伴侣唤醒**：网页上看原型 / 比布局，点选 + 备注后按「提交给助手」，会话自动收到一条用户消息并起一轮 —— 不必回终端复述；**点选过程静默，只有提交才唤醒一次**（0.1.7 起加载日志的版本号从 `package.json` 现读，不再写死） |
-| [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) | 0.4.0 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；**厂商头像素材随包分发**（15 厂商 × 10 岗位 + 厂商通用图 + 立绘 + 队长 + 商标 SVG，280 个文件 / 约 28.6 MB，含 1024×1024 高清 WebP 族），装完即有，跨机不再依赖 `artworkDir`；自定义目录仍可整套覆盖；商标 SVG 按扩展名送达 |
+| [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) | 0.4.2 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；**厂商头像素材随包分发**（15 厂商 × 10 岗位 + 厂商通用图 + 立绘 + 队长 + 商标 SVG，280 个文件 / 约 28.6 MB，含 1024×1024 高清 WebP 族），装完即有，跨机不再依赖 `artworkDir`；自定义目录仍可整套覆盖；商标 SVG 按扩展名送达；**队长头像跟随队长自己的模型路由**（0.4.2 修，此前写死成 DeepSeek 那张，其余 9 张永远不可达） |
 | [`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish) | 0.5.7 | **思考强度与输入模态**（上游 [HaoyueQin/dsh-better-reasoning-effort](https://github.com/HaoyueQin/dsh-better-reasoning-effort) 的**Fork**）：在官方「模型」页编辑卡里直接编辑每模型的 `reasoningEfforts` 与 `input` 声明，并支持一键自动适配；本 Fork 把 `settings.models.provider-card` 席位完整让给模型能力面板 |
 | [`dsh-our-free-model`](https://github.com/Fish-under-sea/Our-Free-Mode-fish) | 2.0.0 | **免费模型与渠道聚合**（上游 [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 的**Fork**）：把 13 个免费渠道（CodeArts / CodeBuddy / Loomy / Raccoon / MiniMax / Gemini 等）与免费模型并入官方模型选择器，并自带渠道网关供其它本地 harness 反代。本 Fork 新增「**隐藏渠道模型分组**」总开关 —— 渠道分组会与你自己配的 provider 混在一起把选择器撑长，打开即一次收起 13 组；**只影响展示不影响路由**（网关请求走 `resolveModelInfo()`，被隐藏的模型照常收发），渠道设置页的「显示列表 / 关闭全部」读 `listAllModels()` 也不受影响；默认关闭，升级不会静默改变你看到的列表 |
 
@@ -205,7 +209,7 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 
 ```text
 dsh-fish/                 # 仓库目录名（npm 包名是 @fish-under-sea/dsh-fish）
-├── package.json          # 聚合包清单（version 0.7.1，dsh.bundle.patch 指向 cordis.patch.yml）
+├── package.json          # 聚合包清单（version 0.7.2，dsh.bundle.patch 指向 cordis.patch.yml）
 ├── cordis.patch.yml      # bundle 层：停用内置标题插件 + 插入八个插件的插件行
 ├── CHANGELOG.md          # 完整版本记录（README 顶部只留最近一版）
 ├── pnpm-workspace.yaml   # workspace 声明（仅本地开发用）
@@ -275,4 +279,4 @@ node packages/dsh-visual-companion/test/visual-companion.test.mjs
 
 ---
 
-<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.7.1 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
+<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.7.2 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>

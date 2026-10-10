@@ -453,6 +453,52 @@ export function cleanTitle(text) {
 }
 
 /**
+ * 标题调用的思考档位升级顺序（低 → 高）。
+ *
+ * 抄自 `@deepseek-ai/dsh-llm-pi-ai` 的 `THINKING_LEVELS`（那里的键顺序即升级顺序）。
+ * 本插件自带一份而不是去 import 平台内部常量：插件只允许依赖 DSH 的服务
+ * （`ctx.llm`），不该 import 别的包的内部实现。
+ */
+export const THINKING_LEVEL_ORDER = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+
+/**
+ * 为一次标题调用挑一个**该模型确实支持**的思考档位。
+ *
+ * 为什么必须探测而不能无条件传 `'off'`：DSH 核心对显式档位是硬校验
+ * （`dsh-llm` 的 `resolveCallWithInfo`），模型没声明该档位就直接抛
+ * `UNSUPPORTED_REASONING_EFFORT`，**不做任何降级**；模型连 reasoning 元数据都没有时，
+ * 传任何显式档位同样抛错。0.3.1 无条件传 `'off'` 正是这样把标题功能整个打死的。
+ *
+ * 为什么不能干脆不传：`purpose: 'session-title'` 只有 `dsh-llm-deepseek` 一家消费
+ * （它据此把档位强制成 `off`），`dsh-llm-pi-ai` 完全不看 `purpose`。所以在 pi-ai
+ * 通道上，不传档位 = 放任思考型模型把输出预算全花在 reasoning 上。
+ *
+ * 策略：能关思考就关（最省预算、标题也不需要思考）；关不掉就退到它支持的**最低**
+ * 档，把预算留给正文；连思考元数据都没有（此时传任何档位都会抛）才完全不传。
+ * @param info - `ctx.llm.resolveModelInfo()` 的结果，或 `{ reasoning }` 形状的对象。
+ * @returns 可安全传给 `ctx.llm.stream()` 的档位；没有可传值时返回 `undefined`。
+ */
+export function pickTitleReasoningEffort(info) {
+  if (info === null || typeof info !== 'object') return undefined;
+  const reasoning = info.reasoning;
+  if (reasoning === null || typeof reasoning !== 'object') return undefined;
+  const efforts = Array.isArray(reasoning.efforts) ? reasoning.efforts : [];
+  const supported = new Set();
+  for (const effort of efforts) {
+    if (effort === null || typeof effort !== 'object') continue;
+    const id = typeof effort.id === 'string' ? effort.id.trim() : '';
+    if (id !== '') supported.add(id);
+  }
+  // 按升级顺序取第一个被支持的档位：`off` 在首位，所以"支持就关思考"是自然结果，
+  // 不支持时拿到的就是它真正支持的最低档（hy3 的 low），而不是数组里碰巧排前面的 high。
+  for (const level of THINKING_LEVEL_ORDER) {
+    if (supported.has(level)) return level;
+  }
+  // 只声明了未知档位时，那些档位传过去同样会被核心拒绝，所以一个都不传。
+  return undefined;
+}
+
+/**
  * 人话描述当前触发规则（界面与日志共用）。
  * @param config - 已归一化的配置。
  * @returns 例如「第 3 轮首次总结，之后每 5 轮刷新一次」。

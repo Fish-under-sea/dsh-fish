@@ -114,13 +114,14 @@ Config file path: `$DSH_HOME/dsh-session-title-refresh/config.json`. It is not s
 - The active session list comes from the **current process**: sessions restored after a DSH restart reappear only after they emit another human message (the titles themselves are persistent and remain in the session log).
 - Generating a title on the first turn requires the session to have recorded a main-request route at least once. In the rare case of "refresh title immediately after creating a session", it may fail because no route is available — pin a provider/model in the **Title model** dropdown to work around this. When the model catalog cannot be read (the llm service is not ready), the card shows the reason and keeps the manual entry path available; the settings page stays functional.
 - **`FinishReason` is an object, not a string** (`{ kind: 'stop' }`). The assembler parses by `kind`; `error` / `aborted` carry `failure.message` and `failure.code` into the error text. Test fakes must also feed objects — the 0.1.0 fakes fed the string `'stop'`, which masked this defect and caused all real-session auto-naming to fail with "abnormal finish reason ([object Object])" (fixed in 0.1.1).
-- **The title call explicitly disables thinking** (`reasoningEffort: 'off'`), matching the official provider's behaviour when `purpose === 'session-title'`. Channels that do not support that rung fall back to their own default instead of erroring.
+- **The title call's reasoning effort is chosen from the model's real capability, not hard-coded to `off`.** DSH core **hard-validates** an explicit effort and never degrades it: a model that does not declare the rung makes the call throw `UNSUPPORTED_REASONING_EFFORT`. So the plugin first asks `ctx.llm.resolveModelInfo()` (the same source the dispatch validation uses), sends `off` when thinking can be disabled, otherwise falls back to the **lowest** rung the model does support (such as `low` for hy3), and omits the field entirely when the model carries no reasoning metadata at all. Probe results are cached per provider/model, and a failed probe only falls back to omitting the field rather than failing the naming. Version 0.3.1 sent `'off'` unconditionally and killed auto-naming for **every model that does not declare `off`** (fixed in 0.3.2).
+- **`purpose: 'session-title'` is consumed only by the official DeepSeek channel** (which forces the effort to `off` on that basis); `dsh-llm-pi-ai` ignores the field entirely. So on a pi-ai route, omitting the effort means leaving a thinking model free to spend the whole output budget on reasoning — which is exactly why the explicit effort above is necessary.
 - **A `max-tokens` finish reason is no longer an automatic failure**: as long as the stream produced usable text, the truncated result is accepted (titles are short, so truncation usually only affects trailing punctuation or whitespace). Only an empty body — thinking consumed the whole budget — still fails and preserves the old title. Version 0.3.0 rejected every `max-tokens` outcome outright; combined with the then-default 64-token budget, a thinking title model made **every** auto-naming attempt fail with "title model abnormal finish reason (max-tokens)" (fixed in 0.3.1).
 
 ## Development and testing
 
 ```sh
-# Run all tests (core 19 + host 20 + client 13 = 52 cases)
+# Run all tests (core 25 + host 25 + client 13 = 63 cases)
 node test/run-all.mjs
 
 # Or run a single file
@@ -131,8 +132,8 @@ node test/core.test.mjs
 
 | File | Responsibility |
 | --- | --- |
-| `lib/core.js` | Pure logic: config clamping, turn scheduling, message sampling, stream assembly, title cleaning, model catalog normalization (`normalizeModelCatalog`) |
-| `lib/index.js` | Host half: registers the title provider, listens to session events, same-origin HTTP API (including the read-only `GET /models` catalog route), `buildModelCatalog` |
+| `lib/core.js` | Pure logic: config clamping, turn scheduling, message sampling, stream assembly, title cleaning, model catalog normalization (`normalizeModelCatalog`), reasoning-effort selection (`pickTitleReasoningEffort`) |
+| `lib/index.js` | Host half: registers the title provider, listens to session events, probes and caches the title call's reasoning effort from model capability, same-origin HTTP API (including the read-only `GET /models` catalog route), `buildModelCatalog` |
 | `lib/client.js` | Web half: settings page (no JSX, only `require('react')`) |
 | `cordis.patch.yml` | Bundle layer: disables the built-in provider + inserts this plugin's row |
 | `test/*.test.mjs` | Test suite, zero dependencies (only `node:test` and built-in modules) |

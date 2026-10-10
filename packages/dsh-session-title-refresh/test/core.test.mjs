@@ -36,6 +36,14 @@ const normalizeModelCatalog = (...args) => {
   return coreNs.normalizeModelCatalog(...args);
 };
 
+/** 同上：`pickTitleReasoningEffort` 也要能红灯。 */
+const pickTitleReasoningEffort = (...args) => {
+  if (typeof coreNs.pickTitleReasoningEffort !== 'function') {
+    assert.fail('core 应导出 pickTitleReasoningEffort（尚未实现）');
+  }
+  return coreNs.pickTitleReasoningEffort(...args);
+};
+
 /** 造一个合格的人类 user/message 事件。 */
 function humanMessage(seq, text) {
   return { seq, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text }] } };
@@ -305,4 +313,48 @@ test('normalizeModelCatalog：只做清洗、不做限制（目录外组合不�
   const catalog = normalizeModelCatalog([{ provider: { id: 'p', name: 'P' }, models: [{ id: 'listed' }] }]);
   assert.deepEqual(Object.keys(catalog).sort(), ['providers', 'skipped']);
   assert.equal(JSON.stringify(catalog).includes('unlisted-model'), false);
+});
+
+// ── 标题调用的思考档位选择 ────────────────────────────────────────────────
+//
+// 回归（0.3.2）：0.3.1 为了修「思考吃光输出预算」而**无条件**传 `reasoningEffort: 'off'`，
+// 但 DSH 核心对显式档位是**硬校验**、不做任何降级：模型没声明 `off` 就直接抛
+// `UNSUPPORTED_REASONING_EFFORT`，标题功能被整个打死。
+// 实测：`hy-f` 的 `buddy/hy3` / `workbuddy/hy3` 只声明了 `low` / `high`（未声明 `off`），
+// 于是 2026-10-10 当天从 10:09 起每一次自动命名都失败。
+// 正确做法是先读该模型的真实档位，再挑一个它确实支持的。
+
+test('pickTitleReasoningEffort：模型支持 off 时优先关思考', () => {
+  const info = { reasoning: { efforts: [{ id: 'off' }, { id: 'high' }], defaultEffort: 'high' } };
+  assert.equal(pickTitleReasoningEffort(info), 'off', '支持 off 就该关思考，省预算又不跑偏');
+});
+
+test('pickTitleReasoningEffort：不支持 off 时退到最低的思考档（hy3 场景）', () => {
+  // 与 hy-f 的 buddy/hy3 / workbuddy/hy3 完全一致：只有 low 与 high。
+  const info = { reasoning: { efforts: [{ id: 'low' }, { id: 'high' }] } };
+  assert.equal(pickTitleReasoningEffort(info), 'low', '不能传 off，但也不该传 high 浪费预算');
+});
+
+test('pickTitleReasoningEffort：按升级顺序挑最低档，而不是按数组顺序', () => {
+  const info = { reasoning: { efforts: [{ id: 'high' }, { id: 'medium' }, { id: 'xhigh' }] } };
+  assert.equal(pickTitleReasoningEffort(info), 'medium', 'medium 比 high 低，应按升级顺序而不是数组顺序取');
+});
+
+test('pickTitleReasoningEffort：模型没有任何思考元数据时不传档位', () => {
+  // 核心校验：模型 reasoning 为 undefined 时，传任何显式档位都会抛
+  // `does not support reasoning effort`。此时唯一安全的做法是根本不传。
+  assert.equal(pickTitleReasoningEffort({}), undefined);
+  assert.equal(pickTitleReasoningEffort({ reasoning: undefined }), undefined);
+  assert.equal(pickTitleReasoningEffort({ reasoning: { efforts: [] } }), undefined);
+});
+
+test('pickTitleReasoningEffort：认不出的输入一律回退成不传档位', () => {
+  for (const bad of [null, undefined, 'x', 42, [], { reasoning: null }, { reasoning: { efforts: null } }, { reasoning: { efforts: [null, {}, { id: '' }, { id: '  ' }] } }]) {
+    assert.equal(pickTitleReasoningEffort(bad), undefined, `输入 ${JSON.stringify(bad)} 应当回退成不传档位`);
+  }
+});
+
+test('pickTitleReasoningEffort：只认得出升级顺序里的档位，未知档位不采纳', () => {
+  const info = { reasoning: { efforts: [{ id: 'turbo' }, { id: 'high' }] } };
+  assert.equal(pickTitleReasoningEffort(info), 'high', '未知档位不是可用的降级目标');
 });

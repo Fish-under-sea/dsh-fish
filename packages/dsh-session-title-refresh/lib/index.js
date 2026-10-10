@@ -40,6 +40,7 @@ import {
   nextDueAfter,
   normalizeConfig,
   normalizeModelCatalog,
+  pickTitleReasoningEffort,
   selectTitleMessages,
 } from './core.js';
 
@@ -251,6 +252,14 @@ async function onRound(state, session, titleApi, logger) {
  * @returns `{ title, messageSeqs, model }`；失败一律抛错（服务会保留旧标题）。
  */
 export function createProvider(ctx, state) {
+  /**
+   * 每个 `provider/model` 的思考档位缓存。
+   *
+   * 探测要走一次适配器的 `resolveModel`（pi-ai 会重建模型描述符），没必要每次命名都问。
+   * 用 `Map.has` 而不是真值判断，好把「探测过、结论是不传档位」也缓存住——否则
+   * 每个不支持思考的模型每次都要重探一遍。
+   */
+  const effortCache = new Map();
   return {
     id: PROVIDER_ID,
     automatic: 'first-prompt',
@@ -270,16 +279,18 @@ export function createProvider(ctx, state) {
 
       const deadline = createDeadline(request.signal, config.timeoutMs);
       try {
+        // 探测与真正的标题调用共用同一个截止时间：探测不该在超时之外另开一段等待。
+        const reasoningEffort = await resolveTitleReasoningEffort(ctx, route, effortCache, deadline.signal);
         const chunks = [];
         for await (const chunk of ctx.llm.stream({
           provider: route.provider,
           model: route.model,
           purpose: 'session-title',
-          // 与官方 provider 口径一致（`dsh-llm-deepseek` 在 purpose 为 session-title
-          // 时强制 effort='off'）：标题调用必须显式关思考。否则思考型标题模型会把
-          // 输出预算全花在 reasoning 上，流以 max-tokens 收尾、正文为空，每一次
-          // 自动命名都失败。不支持该档位的通道会退化成自己的默认档，不会报错。
-          reasoningEffort: 'off',
+          // 显式表态思考档位，但**必须是这个模型真支持的档位**：DSH 核心对显式档位是
+          // 硬校验、不做降级，传了不支持的档位会直接抛 UNSUPPORTED_REASONING_EFFORT。
+          // 0.3.1 无条件传 'off' 就是这么把标题功能整个打死的（hy-f 的 hy3 没有 off）。
+          // 这里按探测结果取：能关思考就关，关不掉退到它支持的最低档，实在没有就不传。
+          ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
           sessionId: request.session.id,
           messages: [{ role: 'user', content: [{ type: 'text', text: prompt }], source: { kind: 'plugin:dsh-session-title-refresh' } }],
           system,
@@ -329,6 +340,43 @@ function resolveRoute(config, request) {
     return { provider: route.provider, model: route.model };
   }
   throw new Error('dsh-session-title-refresh: 没有可用路由——请在设置里指定 provider/model，或先让会话发出一次主请求');
+}
+
+/**
+ * 问出这个路由该用的思考档位（带缓存）。
+ *
+ * 探测走 `ctx.llm.resolveModelInfo()` —— 与派发时那条校验**同一个数据源**
+ * （`dsh-llm` 的 `resolveCallWithInfo` 也是拿它判档位），所以探测结论与派发口径一致，
+ * 不会出现「探测说支持、派发说不行」。
+ *
+ * 两条边界：
+ *   · **探测失败一律回退成「不传档位」并继续命名** —— 能力探测只是省预算的优化，
+ *     不能让标题功能跟着一起挂；
+ *   · **只有探测成功才写缓存** —— 失败（含取消 / 超时）不是能力结论，缓存下来会让一次
+ *     偶发故障变成这个路由**永久**失去档位控制。代价是持续失败时每次命名都重探一遍，
+ *     而那本来就会各留一条告警，看得见。
+ *
+ * 档位判定本身在 core 的 `pickTitleReasoningEffort` 里，这里只管取数与缓存。
+ * @param ctx - DSH 上下文（需要 llm）。
+ * @param route - 已解析出的 `{ provider, model }`。
+ * @param cache - `provider/model` → 档位（`undefined` 也是一条有效结论）的缓存。
+ * @param signal - 调用方信号，用于取消探测（通常传本插件自己的超时截止信号）。
+ * @returns 可安全传给 `ctx.llm.stream()` 的档位，或 `undefined`（不传该字段）。
+ */
+async function resolveTitleReasoningEffort(ctx, route, cache, signal) {
+  const key = `${route.provider}/${route.model}`;
+  if (cache.has(key)) return cache.get(key);
+  try {
+    const info = await ctx.llm.resolveModelInfo(route.provider, route.model, signal);
+    const effort = pickTitleReasoningEffort(info);
+    cache.set(key, effort);
+    return effort;
+  } catch (error) {
+    // 取消 / 超时：原样抛出，让上层按「这次生成作废」处理（与标题调用本身的口径一致）。
+    if (signal?.aborted) signal.throwIfAborted();
+    ctx.logger?.warn?.(`标题档位探测失败，按不传档位处理（${key}）：${String(error?.message ?? error)}`);
+    return undefined;
+  }
 }
 
 /**

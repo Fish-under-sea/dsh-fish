@@ -114,13 +114,14 @@ v0.3.0 起，原来埋在「高级」折叠区最底部的 provider / model 两�
 - 活动会话列表来自**当前进程**：DSH 重启后恢复的旧会话要等它再发一次言才会重新出现（标题本身是持久的，一直在会话日志里）。
 - 第一轮生成标题需要会话已记录过主请求路由；极少数「刚建会话立刻刷新标题」的场景会因为拿不到路由而失败——此时在「标题模型」里固定一个 provider/model 即可。模型目录读不到（llm 服务未就绪）时该卡片会如实显示原因，并保留手填通路，不会把设置页打挂。
 - **`FinishReason` 是对象不是字符串**（`{ kind: 'stop' }`）。装配层按 `kind` 解析，`error` / `aborted` 会把 `failure.message` 与 `failure.code` 带进报错文本。测试替身也必须喂对象——0.1.0 的替身喂的是字符串 `'stop'`，正好掩盖了这个缺陷，导致真实会话的自动命名全部报「结束原因异常（[object Object]）」（0.1.1 已修）。
-- **标题调用显式关闭思考**（`reasoningEffort: 'off'`），与官方 provider 在 `purpose === 'session-title'` 时的口径一致。不支持该档位的通道会退化成自己的默认档，不会报错。
+- **标题调用的思考档位按模型真实能力挑，不是硬写 `off`**。DSH 核心对显式档位是**硬校验、不做降级**：模型没声明该档位就直接抛 `UNSUPPORTED_REASONING_EFFORT`。所以插件先问一次 `ctx.llm.resolveModelInfo()`（与派发校验同源），能关思考就传 `off`，关不掉就退到它支持的**最低**档（如 hy3 的 `low`），连思考元数据都没有才完全不传该字段；探测结果按 provider/model 缓存，探测失败也只退回不传档位、不让命名跟着挂。0.3.1 曾无条件传 `'off'`，把**所有没声明 `off` 的模型**的自动命名全部打死（0.3.2 已修）。
+- **`purpose: 'session-title'` 只有官方 DeepSeek 通道消费**（它据此把档位强制成 `off`），`dsh-llm-pi-ai` 完全不看这个字段。所以在 pi-ai 通道上，不传档位等于放任思考型模型把输出预算花在 reasoning 上——这正是上面那条必须显式表态的原因。
 - **`max-tokens` 结束原因不再一律判失败**：只要流里已经产出可用正文，就接受这份被截断的结果（标题本来就短，截断通常只影响尾部标点 / 空白）；只有正文为空（思考把预算吃光）才判失败、保留旧标题。0.3.0 曾对 `max-tokens` 一刀切抛错，配合当时 64 token 的默认预算，思考型标题模型会让**每一次**自动命名都报「标题模型结束原因异常（max-tokens）」（0.3.1 已修）。
 
 ## 开发与测试
 
 ```sh
-# 跑全部测试（core 19 + host 20 + client 13 = 52 个用例）
+# 跑全部测试（core 25 + host 25 + client 13 = 63 个用例）
 node test/run-all.mjs
 
 # 或单独跑某个文件
@@ -131,8 +132,8 @@ node test/core.test.mjs
 
 | 文件 | 职责 |
 | --- | --- |
-| `lib/core.js` | 纯逻辑：配置夹紧、轮次调度、消息取样、流装配、标题清洗、模型目录归一化（`normalizeModelCatalog`） |
-| `lib/index.js` | 宿主半边：注册标题提供方、监听会话事件、同源 HTTP API（含只读 `GET /models` 模型目录路由）、`buildModelCatalog` |
+| `lib/core.js` | 纯逻辑：配置夹紧、轮次调度、消息取样、流装配、标题清洗、模型目录归一化（`normalizeModelCatalog`）、思考档位挑选（`pickTitleReasoningEffort`） |
+| `lib/index.js` | 宿主半边：注册标题提供方、监听会话事件、按能力探测并缓存标题调用的思考档位、同源 HTTP API（含只读 `GET /models` 模型目录路由）、`buildModelCatalog` |
 | `lib/client.js` | Web 半边：设置页（不用 JSX，只 `require('react')`） |
 | `cordis.patch.yml` | bundle 层：停用内置提供方 + 插入本插件行 |
 | `test/*.test.mjs` | 测试套件，零依赖（只用 `node:test` 与内置模块） |

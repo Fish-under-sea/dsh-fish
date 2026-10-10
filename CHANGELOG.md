@@ -4,6 +4,14 @@
 
 ---
 
+> **0.7.2（2026-10-10）**：两个成员同时升级 —— `@fish-under-sea/dsh-session-title-refresh` **0.3.2**（依赖范围 `^0.3.1` → **`^0.3.2`**）与 `dsh-agent-teams-fish` **0.4.2**（依赖范围 `^0.4.0` → **`^0.4.2`**）。
+>
+> **① `session-title-refresh` 0.3.2 —— 修掉「标题模型不支持 off 档时，每一次自动命名都报 UNSUPPORTED_REASONING_EFFORT」**。症状：`provider "hy-f" model "buddy/hy3" does not support reasoning effort "off"`，标题功能整个失效。根因是 0.3.1 的修复引入了新缺陷：为了修「思考吃光输出预算」而**无条件**传 `reasoningEffort: 'off'`，但 **DSH 核心对显式档位是硬校验、不做任何降级**（`dsh-llm` 的 `resolveCallWithInfo`：模型没声明该档位就直接抛；模型连 reasoning 元数据都没有时传任何档位同样抛），而 `dsh-llm-pi-ai` 会把**未声明的档位一律钉成不支持**。0.3.1 那行代码的注释写着「不支持该档位的通道会退化成自己的默认档，不会报错」——**这句是错的**。用真实配置复现：58 个模型里 **33 个**（gpt / claude / kimi / glm / hy3 / minimax / mimo 等）在 0.3.1 下每一次命名都必然失败。0.3.2 改为**先探测再表态**：调 `ctx.llm.resolveModelInfo()`（与派发校验同源）读该模型真实档位，能关思考就传 `off`、关不掉退到它支持的**最低**档、连元数据都没有才完全不传该字段；探测结果按 provider/model 缓存，探测失败也只退回不传档位。同时纠正一处事实：`purpose: 'session-title'` **只有**官方 `dsh-llm-deepseek` 消费，`dsh-llm-pi-ai` 完全不看它——所以在 pi-ai 通道上不传档位等于放任思考吃掉预算，这正是必须显式表态的原因。core 25 + host 25 + client 13 = **63** 用例全通过（新增 core 6 条 + host 5 条回归）。
+>
+> **② `dsh-agent-teams-fish` 0.4.2 —— 修掉「队长头像永远是 DeepSeek 那张」**。队长换成 qwen / claude / glm 后，面板里的队长头像始终不变。根因不是缺素材（10 个厂商的队长图早在包里），而是**客户端把队长图写死成常量** `team-lead-deepseek-v2.png`，三处渲染点直接引用，从不看队长实际跑在哪个模型上——于是 `team-lead-qwen-v2.png` 等另外 9 张**永远不可达**。更深一层，宿主端 `team.json` 只记 `captainSessionId`（队长是拥有团队的会话本身，不是成员），**根本没有队长的模型路由**，客户端想算也无从算起。0.4.2 建队时写入 `captainProvider` / `captainModel`，快照暴露（实时值优先，换模型即时跟随），客户端走与成员同一套厂商识别；未知厂商回落随包队长图。老团队记录（无该字段）读取照旧，素材与降级链零改动。artwork-role-match 30 → **34** 用例，`verify.mjs` 新增 2 条门禁并已注入缺陷验证有效性。
+
+---
+
 > **0.7.1（2026-10-10）**：**修掉「第八个成员装不上」** —— `dsh-our-free-model` 已发布到 npm **官方源**（`2.0.0`），本包对它的依赖由 `github:Fish-under-sea/Our-Free-Mode-fish` 改为 **`^2.0.0`**。根因：pnpm 11 **默认启用** `blockExoticSubdeps`，**禁止子依赖使用 git / file / link 协议**，于是 0.7.0 在任何默认配置的机器上都以 `ERR_PNPM_EXOTIC_SUBDEP` 失败 —— 只有让用户关掉 `blockExoticSubdeps` 才能装。改用 registry 版本后不再触发该保护，**不需要用户放宽任何安全设置**。功能零变化：0.7.0 相对 0.6.11 的唯一改动就是新增这个成员。
 >
 > 同步更新：`dsh-our-free-model` 的 `package.json` 移除 `private: true`（它只用于拦误发布，不影响清单内容）；本仓库 `package.json`（0.7.0 → **0.7.1**、依赖改 `^2.0.0`）；README 中英双语（安装说明、`[NOT_FOUND]` 镜像同步清单、版本号）。
