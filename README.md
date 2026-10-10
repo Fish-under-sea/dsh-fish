@@ -16,7 +16,7 @@
 
 ---
 
-> **🆕 0.6.10（2026-10-10）**：`@fish-under-sea/dsh-git-sync` **0.3.1**（依赖范围 `^0.3.0` → **`^0.3.1`**）—— 同步范围纳入**免费模型插件（`our-free-model`）的配置面**三份文件：`settings.json`（开关 / 探测间隔 / 转发 / 出口 / 渠道网关 / 默认 maxTokens）、`catalog.json`（模型目录快照）、`availability.json`（可用性快照）。**刻意排除两份**：`stats.json` 是本机累计用量账本，跨机互相覆盖会让两边统计双双失真且换机无复原价值；`eac-user.json` 含**真实登录 token 与 GitHub 登录名**，属凭据——与 `.credentials.yaml` 同理由 **U 盘手工拷贝**，并同时进 `NEVER_COPY` 作纵深防御（白名单哪天被改成整目录也拦得住）。同步引擎用例 120 → **152** 全通过（新增 32 条覆盖「只搬配置、不搬账本与凭据」）。同时：README 顶部只保留**最新一版**，历史条目归档到 [CHANGELOG.md](CHANGELOG.md)。
+> **🆕 0.6.11（2026-10-10）**：`@fish-under-sea/dsh-git-sync` **0.3.2**（依赖范围 `^0.3.1` → **`^0.3.2`**）—— 补上三处「配置同步了，但它引用的东西没同步」的缺口，并按你的要求收录免费模型用量账本：① **壁纸字体集 `fontsets/`**——`config.json` 的**根字段** `fontSetId` 指向它，而字体键（themeColors / themeSize / themeWeight / themeFamily / globalFamily / componentFonts）**已从 settings 键集退出、只住在这个文件里**；随包层只有 `compact.json`、**没有 `default`**，所以用户层那份是该 id 的唯一真源，不同步就是「设置过去了、字体值没过去」。② **壁纸吉祥物 `mascot/`**——`config.json` 里写着 `mascotImage: "<文件名>"`，图本身不在里面，只搬 config 会指向一张不存在的图。③ **标题自动刷新设置 `dsh-session-title-refresh/config.json`**——标题模型（provider / model）与整套调参，换机后不必再在原界面重设一遍。④ **免费模型用量账本 `our-free-model/stats.json`**——按你的要求跨机携带；代价是明确的：它是本机累计量，两台机器互相覆盖，**以最后同步者为准**，「两边都完整」用当前实现做不到，要两边都准得改成合并式账本（未做）。唯一仍排除的是含真实 token 的 `eac-user.json`（同时进 `NEVER_COPY` 作纵深防御）。同步引擎用例 152 → **178** 全通过。
 >
 > 更早的版本记录见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -36,7 +36,7 @@ Fish 自建 [DSH](https://github.com/Fish-under-sea/DSH)（DeepSeek Harness）�
 |------|:----:|------|
 | [`dsh-approval-guide`](packages/dsh-approval-guide) | 0.2.2 | 在审批弹窗里追加**中文说明**：这次审批会做什么、有什么风险、依据是什么 |
 | [`dsh-session-title-refresh`](packages/dsh-session-title-refresh) | 0.3.1 | **会话标题自动刷新**：第 N 轮起总结命名，此后每 M 轮刷新一次；设置页「标题模型（可选）」下拉与官方「模型」页同源；标题调用**显式关思考**、默认输出预算 256、`max-tokens` 有正文即接受截断结果 |
-| [`dsh-git-sync`](packages/dsh-git-sync) | 0.3.1 | **一键 Git 同步**：把插件清单、启用状态、本地设置、Skills、看板/用量账本、设置导航顺序偏好与**免费模型插件配置**同步到自己的私有仓库；支持**额外扫描根**，白名单条目可用根前缀指向 `$DSH_HOME` 之外的目录 |
+| [`dsh-git-sync`](packages/dsh-git-sync) | 0.3.2 | **一键 Git 同步**：把插件清单、启用状态、本地设置、Skills、看板/用量账本、设置导航顺序偏好、**标题自动刷新设置**与**免费模型插件配置及用量账本**同步到自己的私有仓库；支持**额外扫描根**，白名单条目可用根前缀指向 `$DSH_HOME` 之外的目录（壁纸引擎的设置、玻璃预设、字体集与吉祥物素材都走这条路） |
 | [`dsh-settings-nav-order`](packages/dsh-settings-nav-order) | 0.1.5 | **设置导航重排**：把设置面板左侧菜单排成自己要的顺序、把不想看的项收起来；偏好随 Git 同步插件**跨机复原** |
 | [`dsh-visual-companion`](packages/dsh-visual-companion) | 0.1.7 | **视觉伴侣唤醒**：网页上看原型 / 比布局，点选 + 备注后按「提交给助手」，会话自动收到一条用户消息并起一轮 —— 不必回终端复述；**点选过程静默，只有提交才唤醒一次**（0.1.7 起加载日志的版本号从 `package.json` 现读，不再写死） |
 | [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) | 0.4.0 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；**厂商头像素材随包分发**（15 厂商 × 10 岗位 + 厂商通用图 + 立绘 + 队长 + 商标 SVG，280 个文件 / 约 28.6 MB，含 1024×1024 高清 WebP 族），装完即有，跨机不再依赖 `artworkDir`；自定义目录仍可整套覆盖；商标 SVG 按扩展名送达 |
@@ -196,7 +196,7 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 
 ```text
 dsh-fish/                 # 仓库目录名（npm 包名是 @fish-under-sea/dsh-fish）
-├── package.json          # 聚合包清单（version 0.6.10，dsh.bundle.patch 指向 cordis.patch.yml）
+├── package.json          # 聚合包清单（version 0.6.11，dsh.bundle.patch 指向 cordis.patch.yml）
 ├── cordis.patch.yml      # bundle 层：停用内置标题插件 + 插入七个插件的插件行
 ├── CHANGELOG.md          # 完整版本记录（README 顶部只留最近一版）
 ├── pnpm-workspace.yaml   # workspace 声明（仅本地开发用）
@@ -265,4 +265,4 @@ node packages/dsh-visual-companion/test/visual-companion.test.mjs
 
 ---
 
-<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.6.10 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
+<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.6.11 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
