@@ -16,9 +16,9 @@
 
 ---
 
-> **🆕 0.7.0 (2026-10-10):** Adds an eighth member — **`dsh-our-free-model`** (fork of upstream [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model), [repo](https://github.com/Fish-under-sea/Our-Free-Mode-fish)). This fork adds a **"hide channel model groups" master switch**: the channel pack contributes 13 provider groups to the model picker, which mix with the providers you configured yourself in the profile and make the picker too long — turning this switch on collapses all 13 at once. **Display only, never routing**: gateway requests go through `resolveModelInfo()`, so hidden models keep working; the channel settings page's "show list" / "disable all" read `listAllModels()`, which is also unaffected. Off by default, so an upgrade never silently changes the list you see. The switch lives at **Settings → Free models → Preferences** (`hideChannelModels` in `our-free-model/settings.json`). Upstream contributor mode: 36/37 passing (`upgrade-ui` already failed before the change).
+> **🆕 0.7.1 (2026-10-10):** **Fixes "the eighth member cannot be installed"** — `dsh-our-free-model` is now published to the npm **official registry** (`2.0.0`), and this bundle's dependency on it changed from `github:Fish-under-sea/Our-Free-Mode-fish` to **`^2.0.0`**. Root cause: pnpm 11 **enables `blockExoticSubdeps` by default**, which **forbids git / file / link protocols in subdependencies**, so 0.7.0 failed with `ERR_PNPM_EXOTIC_SUBDEP` on any machine with default settings — the only way to install it was to disable `blockExoticSubdeps`. A registry version does not trip that guard, so **no security setting has to be relaxed**. Zero functional change: the only difference between 0.7.0 and 0.6.11 was adding this member.
 >
-> ⚠️ **Upgrading from 0.6.x to 0.7.0 requires one profile edit**: this bundle now inserts the `id: our-free-model` row, and `dsh-our-free-model`'s own bundle layer inserts the same id — the aggregate patch **does not dedupe**, so both taking effect means a **duplicate mount and a failed startup**. Move that package out of the profile's `dsh.profile.bundles` and into `devDependencies` (see [Installation](#installation) and "[why sub-packages belong in devDependencies](#option-2-install-from-the-git-repository-reproducible-across-machines)").
+> ⚠️ **Installation convention for the eighth member**: this bundle inserts the `id: our-free-model` row, and `dsh-our-free-model`'s own bundle layer inserts the same id — the aggregate patch **does not dedupe**, so both taking effect means a **duplicate mount and a failed startup**. Keep it in the profile's `devDependencies` (it still installs, and reconciliation never promotes it to a bundle layer) and do **not** list it in `dsh.profile.bundles` (see [Installation](#installation) and "[why sub-packages belong in devDependencies](#option-2-install-from-the-git-repository-reproducible-across-machines)").
 >
 > Older releases are recorded in [CHANGELOG.en.md](CHANGELOG.en.md).
 
@@ -71,7 +71,7 @@ The bundle declares all eight plugin dependencies. They are installed as transit
 
 **Why duplicate entries don't appear**: the reconciliation logic (`reconcile` in `dsh-plugin-manager`) only walks **the profile's own `dependencies`**, not transitive dependencies recursively, so sub-packages are not promoted to bundle layers and entries don't stack.
 
-> ⚠️ **If installation reports `[NOT_FOUND]`**: this package and seven of its member packages are published to the npm **official registry** (the eighth member, `dsh-our-free-model`, is **not on npm** — it installs from a `github:` dependency, see [Option 2](#option-2-install-from-the-git-repository-reproducible-across-machines)). If your machine points the registry at a domestic mirror (e.g. `registry.npmmirror.com`), the mirror's **lazy sync** may not have picked up one of the sub-packages yet, so `dsh plugin add` fails with
+> ⚠️ **If installation reports `[NOT_FOUND]`**: this package and **all eight** of its member packages are published to the npm **official registry**. If your machine points the registry at a domestic mirror (e.g. `registry.npmmirror.com`), the mirror's **lazy sync** may not have picked up one of the sub-packages yet, so `dsh plugin add` fails with
 > `404 Not Found … {"error":"[NOT_FOUND] @fish-under-sea/<sub-package> not found"}`.
 > **This does not mean the package doesn't exist** — pick any of the following:
 >
@@ -84,6 +84,7 @@ The bundle declares all eight plugin dependencies. They are installed as transit
 >   curl.exe -X PUT https://registry.npmmirror.com/-/package/@fish-under-sea/dsh-visual-companion/syncs
 >   curl.exe -X PUT https://registry.npmmirror.com/-/package/dsh-agent-teams-fish/syncs
 >   curl.exe -X PUT https://registry.npmmirror.com/-/package/dsh-better-reasoning-effort-fish/syncs
+>   curl.exe -X PUT https://registry.npmmirror.com/-/package/dsh-our-free-model/syncs
 >   ```
 >   A response of `{"ok":true,"state":"waiting"}` means accepted; verify with
 >   `curl.exe https://registry.npmmirror.com/@fish-under-sea%2Fdsh-approval-guide` — when `"latest"` appears, sync is complete.
@@ -151,7 +152,7 @@ When a sub-package is not at the profile top level, the entry cannot resolve to 
 
 > Once a sub-package is promoted to a bundle layer, entry insertions will **duplicate**, and **duplicate mounting causes application startup failure**.
 
-**This matters most for the eighth member, `dsh-our-free-model`**: its own `cordis.patch.yml` inserts the id `our-free-model`, the **same id** this bundle inserts (`composeEntries` only pushes, it does not dedupe). So when upgrading to 0.7.0 you **must** remove it from `dsh.profile.bundles` (or move it from the profile's `dependencies` into `devDependencies`).
+**This matters most for the eighth member, `dsh-our-free-model`**: its own `cordis.patch.yml` inserts the id `our-free-model`, the **same id** this bundle inserts (`composeEntries` only pushes, it does not dedupe). So you **must** always remove it from `dsh.profile.bundles` (or move it from the profile's `dependencies` into `devDependencies`).
 
 Placing them in `devDependencies` still installs them at the profile top level (entry names still resolve correctly), but they won't be promoted to bundle layers by the reconciliation logic.
 
@@ -202,7 +203,7 @@ The order of the left column menu in the settings panel (General / Models / Buil
 
 ```text
 dsh-fish/                 # Repository directory name (npm package name is @fish-under-sea/dsh-fish)
-├── package.json          # Bundle manifest (version 0.7.0, dsh.bundle.patch points to cordis.patch.yml)
+├── package.json          # Bundle manifest (version 0.7.1, dsh.bundle.patch points to cordis.patch.yml)
 ├── cordis.patch.yml      # Bundle layer: disables built-in title plugin + inserts eight plugin entries
 ├── CHANGELOG.en.md       # Full release history (the README keeps only the latest release)
 ├── pnpm-workspace.yaml   # Workspace declaration (local development only)
@@ -272,4 +273,4 @@ See each companion fork's `NOTICE.md` for provenance, attribution, and scope of 
 
 ---
 
-<sub>Bundle <code>@fish-under-sea/dsh-fish</code> v0.7.0 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
+<sub>Bundle <code>@fish-under-sea/dsh-fish</code> v0.7.1 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>

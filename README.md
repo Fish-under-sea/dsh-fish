@@ -16,9 +16,9 @@
 
 ---
 
-> **🆕 0.7.0（2026-10-10）**：新增第八个成员 —— **`dsh-our-free-model`**（上游 [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 的 **Fork**，[仓库](https://github.com/Fish-under-sea/Our-Free-Mode-fish)）。本 Fork 新增「**隐藏渠道模型分组**」总开关：渠道包会向模型选择器贡献 13 个 provider 分组，与你自己在 profile 里配的 provider 混在一起，选择器过长 —— 打开这个开关即把 13 组一次性收起来。**只影响展示，不影响路由**：网关请求走 `resolveModelInfo()`，被隐藏的模型照常收发；渠道设置页的「显示列表」「关闭全部」读的是 `listAllModels()`，也不受影响。默认**关闭**，升级不会静默改变你看到的模型列表。开关位置：**设置 → 免费模型 → 偏好**（`our-free-model/settings.json` 的 `hideChannelModels`）。上游 contributor 模式 36/37 通过（`upgrade-ui` 在改动前即失败）。
+> **🆕 0.7.1（2026-10-10）**：**修掉「第八个成员装不上」** —— `dsh-our-free-model` 已发布到 npm **官方源**（`2.0.0`），本包对它的依赖由 `github:Fish-under-sea/Our-Free-Mode-fish` 改为 **`^2.0.0`**。根因：pnpm 11 **默认启用** `blockExoticSubdeps`，**禁止子依赖使用 git / file / link 协议**，于是 0.7.0 在任何默认配置的机器上都以 `ERR_PNPM_EXOTIC_SUBDEP` 失败 —— 只有让用户关掉 `blockExoticSubdeps` 才能装。registry 版本不触发该保护，**不需要你放宽任何安全设置**。功能零变化：0.7.0 相对 0.6.11 的唯一改动就是新增这个成员。
 >
-> ⚠️ **从 0.6.x 升到 0.7.0 需要改一处 profile**：本包现在会插入 `id: our-free-model` 行，而 `dsh-our-free-model` 自己的 bundle 层也插入同一个 id —— 聚合 patch **不去重**，两边都生效就是**重复挂载、启动失败**。所以请把该包从 profile 的 `dsh.profile.bundles` 移到 `devDependencies`（见 [安装](#安装) 与「[为什么子包要写在 devDependencies](#方式二从-git-仓库安装跨机可复现)」）。
+> ⚠️ **第八个成员的安装约定**：本包插入 `id: our-free-model` 行，而 `dsh-our-free-model` 自己的 bundle 层也插入同一个 id —— 聚合 patch **不去重**，两边都生效就是**重复挂载、启动失败**。所以请把它写在 profile 的 `devDependencies`（装得到，且不会被对账提升为 bundle 层），**不要**再列进 `dsh.profile.bundles`（见 [安装](#安装) 与「[为什么子包要写在 devDependencies](#方式二从-git-仓库安装跨机可复现)」）。
 >
 > 更早的版本记录见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -71,7 +71,7 @@ dsh plugin --profile <profile> add @fish-under-sea/dsh-fish
 
 **为什么不会插出重复行**：对账逻辑（`dsh-plugin-manager` 的 `reconcile`）只遍历 **profile 自己的 `dependencies`**，不递归看传递依赖，所以子包不会被提升为 bundle 层，插行不会叠加。
 
-> ⚠️ **如果安装报 `[NOT_FOUND]`**：本包与七个成员包都已发布到 npm **官方源**（第八个成员 `dsh-our-free-model` **不在 npm 上**，它按 `github:` 依赖安装，见「[方式二](#方式二从-git-仓库安装跨机可复现)」）。若你的机器把 registry 指向国内镜像（例如 `registry.npmmirror.com`），镜像**懒同步**可能还没收录其中某个子包，于是 `dsh plugin add` 会以
+> ⚠️ **如果安装报 `[NOT_FOUND]`**：本包与**八个**成员包都已发布到 npm **官方源**。若你的机器把 registry 指向国内镜像（例如 `registry.npmmirror.com`），镜像**懒同步**可能还没收录其中某个子包，于是 `dsh plugin add` 会以
 > `404 Not Found … {"error":"[NOT_FOUND] @fish-under-sea/<子包> not found"}` 失败。
 > **这不是包不存在** —— 任选下面一条即可：
 >
@@ -84,6 +84,7 @@ dsh plugin --profile <profile> add @fish-under-sea/dsh-fish
 >   curl.exe -X PUT https://registry.npmmirror.com/-/package/@fish-under-sea/dsh-visual-companion/syncs
 >   curl.exe -X PUT https://registry.npmmirror.com/-/package/dsh-agent-teams-fish/syncs
 >   curl.exe -X PUT https://registry.npmmirror.com/-/package/dsh-better-reasoning-effort-fish/syncs
+>   curl.exe -X PUT https://registry.npmmirror.com/-/package/dsh-our-free-model/syncs
 >   ```
 >   返回 `{"ok":true,"state":"waiting"}` 即已受理；用
 >   `curl.exe https://registry.npmmirror.com/@fish-under-sea%2Fdsh-approval-guide` 复查，出现 `"latest"` 就同步好了。
@@ -153,7 +154,7 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 
 > 子包一旦被提升为 bundle 层，插行就会**叠加成重复行**，而**重复挂载会让应用启动失败**。
 
-**这一条对第八个成员 `dsh-our-free-model` 尤其要紧**：它自己的 `cordis.patch.yml` 插入的 id 就是 `our-free-model`，与本包插的是**同一个 id**（`composeEntries` 只做 `push`、不去重）。所以升级到 0.7.0 时，**必须**把它从 `dsh.profile.bundles` 里移走（或直接从 profile 的 `dependencies` 挪到 `devDependencies`）。
+**这一条对第八个成员 `dsh-our-free-model` 尤其要紧**：它自己的 `cordis.patch.yml` 插入的 id 就是 `our-free-model`，与本包插的是**同一个 id**（`composeEntries` 只做 `push`、不去重）。所以任何时候都**必须**把它从 `dsh.profile.bundles` 里移走（或直接从 profile 的 `dependencies` 挪到 `devDependencies`）。
 
 写在 `devDependencies` 同样会被装到 profile 顶层（行名照常解析得到），但不会被对账逻辑提升为 bundle 层。
 
@@ -204,7 +205,7 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 
 ```text
 dsh-fish/                 # 仓库目录名（npm 包名是 @fish-under-sea/dsh-fish）
-├── package.json          # 聚合包清单（version 0.7.0，dsh.bundle.patch 指向 cordis.patch.yml）
+├── package.json          # 聚合包清单（version 0.7.1，dsh.bundle.patch 指向 cordis.patch.yml）
 ├── cordis.patch.yml      # bundle 层：停用内置标题插件 + 插入八个插件的插件行
 ├── CHANGELOG.md          # 完整版本记录（README 顶部只留最近一版）
 ├── pnpm-workspace.yaml   # workspace 声明（仅本地开发用）
@@ -274,4 +275,4 @@ node packages/dsh-visual-companion/test/visual-companion.test.mjs
 
 ---
 
-<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.7.0 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
+<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.7.1 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>

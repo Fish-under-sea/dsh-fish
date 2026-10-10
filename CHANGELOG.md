@@ -4,6 +4,12 @@
 
 ---
 
+> **0.7.1（2026-10-10）**：**修掉「第八个成员装不上」** —— `dsh-our-free-model` 已发布到 npm **官方源**（`2.0.0`），本包对它的依赖由 `github:Fish-under-sea/Our-Free-Mode-fish` 改为 **`^2.0.0`**。根因：pnpm 11 **默认启用** `blockExoticSubdeps`，**禁止子依赖使用 git / file / link 协议**，于是 0.7.0 在任何默认配置的机器上都以 `ERR_PNPM_EXOTIC_SUBDEP` 失败 —— 只有让用户关掉 `blockExoticSubdeps` 才能装。改用 registry 版本后不再触发该保护，**不需要用户放宽任何安全设置**。功能零变化：0.7.0 相对 0.6.11 的唯一改动就是新增这个成员。
+>
+> 同步更新：`dsh-our-free-model` 的 `package.json` 移除 `private: true`（它只用于拦误发布，不影响清单内容）；本仓库 `package.json`（0.7.0 → **0.7.1**、依赖改 `^2.0.0`）；README 中英双语（安装说明、`[NOT_FOUND]` 镜像同步清单、版本号）。
+
+---
+
 > **0.7.0（2026-10-10）**：新增**第八个成员** —— `dsh-our-free-model`（上游 [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 的 **Fork**，仓库 [Fish-under-sea/Our-Free-Mode-fish](https://github.com/Fish-under-sea/Our-Free-Mode-fish)，依赖 `github:Fish-under-sea/Our-Free-Mode-fish`）。本 Fork 新增「**隐藏渠道模型分组**」总开关：渠道包向模型选择器贡献 13 个 provider 分组（CodeArts / CodeBuddy / Loomy / Raccoon / MiniMax / Gemini 等），与用户自己在 profile 里配的 provider 混在一起把选择器撑长 —— 打开开关即一次收起 13 组。**只影响展示、不影响路由**：网关请求走 `resolveModelInfo()`，被隐藏的模型照常收发；渠道设置页的「显示列表」「关闭全部」读 `listAllModels()`，同样不受影响；默认**关闭**，升级不会静默改变用户看到的列表。开关位置：设置 → 免费模型 → 偏好（`our-free-model/settings.json` 的 `hideChannelModels`，该文件已在 `git-sync` 白名单里，跨机复原）。上游 contributor 模式 36/37 通过（`upgrade-ui` 在改动前即失败）。
 >
 > ⚠️ **升级注意（必须改一处 profile）**：本包现在插入 `id: our-free-model` 行，而 `dsh-our-free-model` 自己的 bundle 层插入的是**同一个 id** —— `composeEntries` 只做 `push`、**不去重**，两边都生效即**重复挂载、启动失败**。所以升级到 0.7.0 时必须把该包从 profile 的 `dsh.profile.bundles` 移走（或从 `dependencies` 挪到 `devDependencies`）。本仓库既有约定本就要求子包写在 `devDependencies`，这一条对第八个成员尤其要紧。
