@@ -4,6 +4,14 @@
 
 ---
 
+> **0.7.0（2026-10-10）**：新增**第八个成员** —— `dsh-our-free-model`（上游 [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 的 **Fork**，仓库 [Fish-under-sea/Our-Free-Mode-fish](https://github.com/Fish-under-sea/Our-Free-Mode-fish)，依赖 `github:Fish-under-sea/Our-Free-Mode-fish`）。本 Fork 新增「**隐藏渠道模型分组**」总开关：渠道包向模型选择器贡献 13 个 provider 分组（CodeArts / CodeBuddy / Loomy / Raccoon / MiniMax / Gemini 等），与用户自己在 profile 里配的 provider 混在一起把选择器撑长 —— 打开开关即一次收起 13 组。**只影响展示、不影响路由**：网关请求走 `resolveModelInfo()`，被隐藏的模型照常收发；渠道设置页的「显示列表」「关闭全部」读 `listAllModels()`，同样不受影响；默认**关闭**，升级不会静默改变用户看到的列表。开关位置：设置 → 免费模型 → 偏好（`our-free-model/settings.json` 的 `hideChannelModels`，该文件已在 `git-sync` 白名单里，跨机复原）。上游 contributor 模式 36/37 通过（`upgrade-ui` 在改动前即失败）。
+>
+> ⚠️ **升级注意（必须改一处 profile）**：本包现在插入 `id: our-free-model` 行，而 `dsh-our-free-model` 自己的 bundle 层插入的是**同一个 id** —— `composeEntries` 只做 `push`、**不去重**，两边都生效即**重复挂载、启动失败**。所以升级到 0.7.0 时必须把该包从 profile 的 `dsh.profile.bundles` 移走（或从 `dependencies` 挪到 `devDependencies`）。本仓库既有约定本就要求子包写在 `devDependencies`，这一条对第八个成员尤其要紧。
+>
+> 同步更新：`package.json`（0.6.11 → **0.7.0**，新增 `dsh-our-free-model` 依赖）、`cordis.patch.yml`（插入第八行）、README 中英双语（成员表、安装示例、配置表、仓库结构、许可与出处、成员数量 七 → 八）。
+
+---
+
 > **0.6.10（2026-10-10）**：`@fish-under-sea/dsh-git-sync` **0.3.1**（依赖范围 `^0.3.0` → **`^0.3.1`**）—— 同步范围纳入**免费模型插件（`our-free-model`）的配置面**三份文件：`settings.json`（开关 / 探测间隔 / 转发 / 出口 / 渠道网关 / 默认 maxTokens）、`catalog.json`（模型目录快照）、`availability.json`（可用性快照）。**刻意排除两份**：`stats.json` 是本机累计用量账本，跨机互相覆盖会让两边统计双双失真且换机无复原价值；`eac-user.json` 含**真实登录 token 与 GitHub 登录名**，属凭据——与 `.credentials.yaml` 同理由 **U 盘手工拷贝**，并同时进 `NEVER_COPY` 作纵深防御（白名单哪天被改成整目录也拦得住）。同步引擎用例 120 → **152** 全通过（新增 32 条覆盖「只搬配置、不搬账本与凭据」）。同时：README 顶部只保留**最新一版**，历史条目归档到 [CHANGELOG.md](CHANGELOG.md)。
 >
 > **0.6.9（2026-10-10）**：`@fish-under-sea/dsh-session-title-refresh` **0.3.1**（依赖范围 `^0.3.0` → **`^0.3.1`**）—— **修掉「每一次自动命名都报 max-tokens」**。症状：所有会话的自动命名与手动刷新全部失败，记录里清一色 `标题模型结束原因异常（max-tokens）`。根因是三层叠加：① 标题调用**没有显式关思考**（官方 provider 在 `purpose === 'session-title'` 时会强制 `effort='off'`，本插件自己发起的辅助调用漏了这一层）；② 输出预算默认只有 **64** token，思考型标题模型的 reasoning 直接把它吃光；③ 装配层对结束原因**一刀切**——`finish !== 'stop'` 就抛错保留旧标题，于是「预算撞顶」被当成「模型异常」。0.3.1 三处一起修：标题调用显式传 `reasoningEffort: 'off'`；默认输出预算 64 → **256**；`max-tokens` 收尾时**有正文就接受截断结果**（标题短，截断通常只影响尾部标点 / 空白），只有正文为空才判失败。core 19 + host 20 + client 13 = 52 用例全通过（新增 3 条回归：必须传 `reasoningEffort`、有正文的 `max-tokens` 要接受、默认预算 ≥ 256）。

@@ -87,3 +87,17 @@
     # 运行期参数写在插件行的 config 或 settings.yaml 的插件 config 块里。
     - id: dsh-better-reasoning-effort-fish
       name: dsh-better-reasoning-effort-fish
+
+    # 免费模型与渠道聚合（Fork）—— **外部补充版，不是本仓库子包**。
+    # 上游 Ebony-Vinyl/dsh-our-free-model 的 Fork：本 Fork 新增「隐藏渠道模型分组」
+    # 总开关，把 13 个渠道 provider 分组从模型选择器里一次性收起来
+    # （**只影响展示，不影响路由** —— 网关请求走 resolveModelInfo，被隐藏的模型照常收发）。
+    # 行名 = 它的 npm 包名（无 scope，不涉及子路径两段式限制）。
+    #
+    # ⚠️ 本行插入后，profile 的 `dsh.profile.bundles` 里**不得**再单列
+    # `dsh-our-free-model`：那个 bundle 层会展开它自己的 patch（同样插入
+    # `id: our-free-model`），而 composeEntries 只做 push、**不去重** ——
+    # 同一 id 插两次即重复挂载，而重复挂载会让应用启动失败。按本仓库既有约定，
+    # 把该包写进 profile 的 `devDependencies` 即可（装得到，且不会被对账提升为 bundle 层）。
+    - id: our-free-model
+      name: 'dsh-our-free-model'

@@ -16,7 +16,9 @@
 
 ---
 
-> **🆕 0.6.11 (2026-10-10):** `@fish-under-sea/dsh-git-sync` **0.3.2** (dependency range `^0.3.1` → **`^0.3.2`**) — closes three "the setting syncs but the thing it points at does not" gaps, and collects the free-model usage ledger as requested. (1) **Wallpaper font sets `fontsets/`** — `config.json`'s **root field** `fontSetId` points at them, and the font keys (themeColors / themeSize / themeWeight / themeFamily / globalFamily / componentFonts) **have left the settings key set and now live only in those files**; the packaged layer ships only `compact.json` and **no `default`**, so the user-layer file is the only source for that id — without it the setting travels and the font values do not. (2) **Wallpaper mascot `mascot/`** — `config.json` carries `mascotImage: "<filename>"` while the image itself is not inside it, so syncing config alone points at a missing file. (3) **Title auto-refresh settings `dsh-session-title-refresh/config.json`** — the title model (provider / model) and every tuning knob, so a machine switch no longer means re-setting them in the UI. (4) **Free-model usage ledger `our-free-model/stats.json`** — carried across machines as requested, at a known cost: it is a machine-local cumulative tally, the two machines overwrite each other, and **whichever synced last wins**; "both sides complete" is not achievable with the current implementation and would need a mergeable ledger (not implemented). The only remaining exclusion is `eac-user.json`, which carries a real token (and is additionally in `NEVER_COPY` as defense in depth). Sync-engine cases went from 152 to **178**, all passing.
+> **🆕 0.7.0 (2026-10-10):** Adds an eighth member — **`dsh-our-free-model`** (fork of upstream [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model), [repo](https://github.com/Fish-under-sea/Our-Free-Mode-fish)). This fork adds a **"hide channel model groups" master switch**: the channel pack contributes 13 provider groups to the model picker, which mix with the providers you configured yourself in the profile and make the picker too long — turning this switch on collapses all 13 at once. **Display only, never routing**: gateway requests go through `resolveModelInfo()`, so hidden models keep working; the channel settings page's "show list" / "disable all" read `listAllModels()`, which is also unaffected. Off by default, so an upgrade never silently changes the list you see. The switch lives at **Settings → Free models → Preferences** (`hideChannelModels` in `our-free-model/settings.json`). Upstream contributor mode: 36/37 passing (`upgrade-ui` already failed before the change).
+>
+> ⚠️ **Upgrading from 0.6.x to 0.7.0 requires one profile edit**: this bundle now inserts the `id: our-free-model` row, and `dsh-our-free-model`'s own bundle layer inserts the same id — the aggregate patch **does not dedupe**, so both taking effect means a **duplicate mount and a failed startup**. Move that package out of the profile's `dsh.profile.bundles` and into `devDependencies` (see [Installation](#installation) and "[why sub-packages belong in devDependencies](#option-2-install-from-the-git-repository-reproducible-across-machines)").
 >
 > Older releases are recorded in [CHANGELOG.en.md](CHANGELOG.en.md).
 
@@ -24,9 +26,9 @@
 
 ## What is this
 
-An aggregate package for Fish-made [DSH](https://github.com/Fish-under-sea/DSH) (DeepSeek Harness) plugins. The repository root is the **bundle package**; sub-plugin sources live under `packages/`. The bundle uses its own bundle layer (`cordis.patch.yml`) to **insert all seven plugin entries at once** into the profile's roster — five are local sub-plugins under `packages/` in this repository, and two are **external companion forks**: `dsh-agent-teams-fish` and `dsh-better-reasoning-effort-fish` (each in its own repository, not sub-packages of this one).
+An aggregate package for Fish-made [DSH](https://github.com/Fish-under-sea/DSH) (DeepSeek Harness) plugins. The repository root is the **bundle package**; sub-plugin sources live under `packages/`. The bundle uses its own bundle layer (`cordis.patch.yml`) to **insert all eight plugin entries at once** into the profile's roster — five are local sub-plugins under `packages/` in this repository, and three are **external companion forks**: `dsh-agent-teams-fish`, `dsh-better-reasoning-effort-fish` and `dsh-our-free-model` (each in its own repository, not sub-packages of this one).
 
-> **Installing `@fish-under-sea/dsh-fish` once = installing all seven plugins.**
+> **Installing `@fish-under-sea/dsh-fish` once = installing all eight plugins.**
 
 **Naming difference (easy to trip on):** npm package names `@fish-under-sea/*` carry a scope, but the repository directory name (`dsh-fish/`) and the GitHub repository name (`Fish-under-sea/dsh-fish`) **do not**.
 
@@ -41,6 +43,7 @@ An aggregate package for Fish-made [DSH](https://github.com/Fish-under-sea/DSH) 
 | [`dsh-visual-companion`](packages/dsh-visual-companion) | 0.1.7 | **Visual Companion wake**: preview prototypes / compare layouts on the web, select + annotate, then press "Submit to assistant" — the session automatically receives a user message and starts a new round, no need to go back to the terminal to repeat; **the selection process is silent, only the submission wakes the session once** (since 0.1.7 the version in the load log is read live from `package.json`, no longer hard-coded) |
 | [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) | 0.4.0 | **AgentTeams multi-agent collaboration** (companion fork of upstream [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams)): natural-language team building, member/task dependency DAG, mailbox communication, right-sidebar tree monitoring; **vendor avatar assets shipped in-package** (15 vendors × 10 roles + vendor-generic art + portraits + captain + brand SVGs, 280 files / ~28.6 MB, including a 1024×1024 HD WebP family), available immediately after install, no `artworkDir` dependency across machines; custom directory still overrides the full set; brand SVGs served by extension |
 | [`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish) | 0.5.7 | **Reasoning effort & input modality** (fork of upstream [HaoyueQin/dsh-better-reasoning-effort](https://github.com/HaoyueQin/dsh-better-reasoning-effort)): edit per-model `reasoningEfforts` and `input` declarations directly in the official Models page edit card, with one-click auto-adaptation; this fork yields the `settings.models.provider-card` slot entirely to the model capabilities panel |
+| [`dsh-our-free-model`](https://github.com/Fish-under-sea/Our-Free-Mode-fish) | 2.0.0 | **Free models & channel aggregation** (fork of upstream [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model)): folds 13 free channels (CodeArts / CodeBuddy / Loomy / Raccoon / MiniMax / Gemini and more) and free models into the official model picker, and ships its own channel gateway for other local harnesses to proxy. This fork adds a **"hide channel model groups" master switch** — the channel groups mix with your own configured providers and stretch the picker, and turning it on collapses all 13 at once; **display only, never routing** (gateway requests go through `resolveModelInfo()`, so hidden models keep working), and the channel settings page's "show list / disable all" reads `listAllModels()`, also unaffected; off by default, so an upgrade never silently changes the list you see |
 
 ## This package disables a built-in DSH plugin
 
@@ -64,11 +67,11 @@ An aggregate package for Fish-made [DSH](https://github.com/Fish-under-sea/DSH) 
 dsh plugin --profile <profile> add @fish-under-sea/dsh-fish
 ```
 
-The bundle declares all seven plugin dependencies. They are installed as transitive dependencies to the profile top level by pnpm (this profile uses `nodeLinker: hoisted`), and plugin entries resolve by package name.
+The bundle declares all eight plugin dependencies. They are installed as transitive dependencies to the profile top level by pnpm (this profile uses `nodeLinker: hoisted`), and plugin entries resolve by package name.
 
 **Why duplicate entries don't appear**: the reconciliation logic (`reconcile` in `dsh-plugin-manager`) only walks **the profile's own `dependencies`**, not transitive dependencies recursively, so sub-packages are not promoted to bundle layers and entries don't stack.
 
-> ⚠️ **If installation reports `[NOT_FOUND]`**: this package and all seven member packages are published to the npm **official registry**. If your machine points the registry at a domestic mirror (e.g. `registry.npmmirror.com`), the mirror's **lazy sync** may not have picked up one of the sub-packages yet, so `dsh plugin add` fails with
+> ⚠️ **If installation reports `[NOT_FOUND]`**: this package and seven of its member packages are published to the npm **official registry** (the eighth member, `dsh-our-free-model`, is **not on npm** — it installs from a `github:` dependency, see [Option 2](#option-2-install-from-the-git-repository-reproducible-across-machines)). If your machine points the registry at a domestic mirror (e.g. `registry.npmmirror.com`), the mirror's **lazy sync** may not have picked up one of the sub-packages yet, so `dsh plugin add` fails with
 > `404 Not Found … {"error":"[NOT_FOUND] @fish-under-sea/<sub-package> not found"}`.
 > **This does not mean the package doesn't exist** — pick any of the following:
 >
@@ -105,7 +108,7 @@ The bundle declares all seven plugin dependencies. They are installed as transit
 }
 ```
 
-`#path:` is pnpm's sub-directory syntax, letting one repository provide multiple packages — the five sub-packages point to this repository; the two external companion forks point to their respective repositories: [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) and [`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish) (the latter is at the repository root, no `#path:` needed). After `pnpm install` on a new machine, packages download directly from the repository with **no dependency on any machine-specific absolute paths**. Only `"@fish-under-sea/dsh-fish"` needs to be listed in `bundles` (its patch handles inserting all seven entries).
+`#path:` is pnpm's sub-directory syntax, letting one repository provide multiple packages — the five sub-packages point to this repository; the three external companion forks point to their respective repositories: [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish), [`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish) and [`dsh-our-free-model`](https://github.com/Fish-under-sea/Our-Free-Mode-fish) (all three are at their repository root, no `#path:` needed). After `pnpm install` on a new machine, packages download directly from the repository with **no dependency on any machine-specific absolute paths**. Only `"@fish-under-sea/dsh-fish"` needs to be listed in `bundles` (its patch handles inserting all eight entries).
 
 ### Option 3: Local development install (source changes take effect immediately)
 
@@ -144,9 +147,11 @@ When a sub-package is not at the profile top level, the entry cannot resolve to 
 
 **② When declaring manually, sub-packages go in `devDependencies`**
 
-`dsh plugin` reconciles on every run, automatically appending any package in the profile's `dependencies` that declares `dsh.bundle` into `dsh.profile.bundles`. All seven packages declare `dsh.bundle`, and the bundle's patch already restates all seven entry insertions —
+`dsh plugin` reconciles on every run, automatically appending any package in the profile's `dependencies` that declares `dsh.bundle` into `dsh.profile.bundles`. All eight packages declare `dsh.bundle`, and the bundle's patch already restates all eight entry insertions —
 
 > Once a sub-package is promoted to a bundle layer, entry insertions will **duplicate**, and **duplicate mounting causes application startup failure**.
+
+**This matters most for the eighth member, `dsh-our-free-model`**: its own `cordis.patch.yml` inserts the id `our-free-model`, the **same id** this bundle inserts (`composeEntries` only pushes, it does not dedupe). So when upgrading to 0.7.0 you **must** remove it from `dsh.profile.bundles` (or move it from the profile's `dependencies` into `devDependencies`).
 
 Placing them in `devDependencies` still installs them at the profile top level (entry names still resolve correctly), but they won't be promoted to bundle layers by the reconciliation logic.
 
@@ -163,6 +168,7 @@ The five local sub-plugins' parameters are **not written in `cordis.patch.yml`**
 | `dsh-visual-companion` | No settings page (configuration is in its own profile patch plugin entry) | Same as above (`watchDir`: visual companion root directory, used for "auto-bind on load") |
 | `dsh-agent-teams-fish` | No settings page (configuration is in the bundle's `cordis.patch.yml` plugin entry) | Same as above (`stateDir` / `memberProvider` / `artworkDir`) |
 | `dsh-better-reasoning-effort-fish` | No settings page (capabilities embed directly into the official Models page edit card) | Same as above (`autofill` / `modalityAutofill` / `probeTimeoutMs` / `bootRetryDelaysMs` / `defaultGuard`, written in the plugin entry's `config` or the plugin `config` block in `settings.yaml`) |
+| `dsh-our-free-model` | Settings → Free models (includes the **hide channel model groups** switch under Preferences) | `$DSH_HOME/our-free-model/settings.json` (in the `git-sync` allowlist, restored across machines) |
 
 **Config directory names are unscoped short names** (`$DSH_HOME/dsh-git-sync/` etc.), decoupled from npm package names — so **renaming the package does not affect existing configuration**.
 
@@ -196,8 +202,8 @@ The order of the left column menu in the settings panel (General / Models / Buil
 
 ```text
 dsh-fish/                 # Repository directory name (npm package name is @fish-under-sea/dsh-fish)
-├── package.json          # Bundle manifest (version 0.6.11, dsh.bundle.patch points to cordis.patch.yml)
-├── cordis.patch.yml      # Bundle layer: disables built-in title plugin + inserts seven plugin entries
+├── package.json          # Bundle manifest (version 0.7.0, dsh.bundle.patch points to cordis.patch.yml)
+├── cordis.patch.yml      # Bundle layer: disables built-in title plugin + inserts eight plugin entries
 ├── CHANGELOG.en.md       # Full release history (the README keeps only the latest release)
 ├── pnpm-workspace.yaml   # Workspace declaration (local development only)
 ├── lib/                  # Bundle's own empty implementation (this package registers nothing)
@@ -211,9 +217,9 @@ dsh-fish/                 # Repository directory name (npm package name is @fish
     └── dsh-visual-companion/
 ```
 
-> The two external companion forks are **not** under `packages/` — `dsh-agent-teams-fish` source lives in [its own repository](https://github.com/Fish-under-sea/dsh-agent-teams-fish), and `dsh-better-reasoning-effort-fish` in [another repository](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish); both are installed at the profile top level as **npm dependencies** of the bundle.
+> The three external companion forks are **not** under `packages/` — `dsh-agent-teams-fish` source lives in [its own repository](https://github.com/Fish-under-sea/dsh-agent-teams-fish), `dsh-better-reasoning-effort-fish` in [another repository](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish), and `dsh-our-free-model` in [a third](https://github.com/Fish-under-sea/Our-Free-Mode-fish); all three are installed at the profile top level as **npm dependencies** of the bundle.
 
-> **Why sub-packages are not bundled in the aggregate's `files`**: the bundle only carries `lib/`, `cordis.patch.yml`, and `README*.md`. The five sub-packages and two external companion forks are all installed at the profile top level as **npm dependencies** (see Option 1). Only when "one repository provides multiple packages, installed from GitHub" do you need to declare them explicitly with `#path:` in the installer's profile (see Option 2).
+> **Why sub-packages are not bundled in the aggregate's `files`**: the bundle only carries `lib/`, `cordis.patch.yml`, and `README*.md`. The five sub-packages and three external companion forks are all installed at the profile top level as **npm dependencies** (see Option 1). Only when "one repository provides multiple packages, installed from GitHub" do you need to declare them explicitly with `#path:` in the installer's profile (see Option 2).
 
 ## Development
 
@@ -248,16 +254,17 @@ A package name is not just a string in `package.json` — **five places must be 
 
 Good news: client tests for all four sub-packages with a client side assert this, and the assertions **read `package.json`'s `name`** rather than hard-coded strings — if you rename and miss a spot in the future, **tests will catch it directly**.
 
-**Same applies to external companion forks**: `dsh-agent-teams-fish` ([repository](https://github.com/Fish-under-sea/dsh-agent-teams-fish)) and `dsh-better-reasoning-effort-fish` ([repository](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish)) both come from independent repositories. When renaming, you must similarly synchronize `package.json`'s `name` / `cordis.patch.yml`'s entry `name` / `lib/client.js`'s registration `id` — the former's art routing chain test asserts "registration name = `package.json`'s `name`", and the latter's constant `PLUGIN_ID` also equals the package name (`src/constants.ts`). Missing a spot will be caught the same way.
+**Same applies to external companion forks**: `dsh-agent-teams-fish` ([repository](https://github.com/Fish-under-sea/dsh-agent-teams-fish)), `dsh-better-reasoning-effort-fish` ([repository](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish)) and `dsh-our-free-model` ([repository](https://github.com/Fish-under-sea/Our-Free-Mode-fish)) all come from independent repositories. When renaming, you must similarly synchronize `package.json`'s `name` / `cordis.patch.yml`'s entry `name` / `lib/client.js`'s registration `id` — the former's art routing chain test asserts "registration name = `package.json`'s `name`", and the latter's constant `PLUGIN_ID` also equals the package name (`src/constants.ts`). Missing a spot will be caught the same way.
 
 ## License
 
 **MIT** (consistent across the bundle and all five sub-packages).
 
-The two external companion forks are also distributed under **MIT**, with **copyright belonging to their respective upstream original authors**:
+The three external companion forks are also distributed under **MIT**, with **copyright belonging to their respective upstream original authors**:
 
 - `dsh-agent-teams-fish` → [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) (程序员阿江 / Relakkes)
 - `dsh-better-reasoning-effort-fish` → [HaoyueQin/dsh-better-reasoning-effort](https://github.com/HaoyueQin/dsh-better-reasoning-effort) (**HaoyueQin**)
+- `dsh-our-free-model` → [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) (**Ebony-Vinyl**)
 
 See each companion fork's `NOTICE.md` for provenance, attribution, and scope of changes.
 
@@ -265,4 +272,4 @@ See each companion fork's `NOTICE.md` for provenance, attribution, and scope of 
 
 ---
 
-<sub>Bundle <code>@fish-under-sea/dsh-fish</code> v0.6.11 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
+<sub>Bundle <code>@fish-under-sea/dsh-fish</code> v0.7.0 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>

@@ -1,7 +1,7 @@
 {
   "name": "@fish-under-sea/dsh-fish",
-  "version": "0.6.11",
-  "description": "Fish 自建 DSH 插件全家桶聚合包：一键插入本人自建插件与常用外部补充插件的插件行（approval-guide / session-title-refresh / git-sync / settings-nav-order + agent-teams / visual-companion / better-reasoning-effort）。",
+  "version": "0.7.0",
+  "description": "Fish 自建 DSH 插件全家桶聚合包：一键插入本人自建插件与常用外部补充插件的插件行（approval-guide / session-title-refresh / git-sync / settings-nav-order + agent-teams / visual-companion / better-reasoning-effort / our-free-model）。",
   "type": "module",
   "main": "./lib/index.js",
   "exports": {
@@ -27,7 +27,8 @@
     "@fish-under-sea/dsh-settings-nav-order": "^0.1.5",
     "@fish-under-sea/dsh-visual-companion": "^0.1.7",
     "dsh-agent-teams-fish": "^0.4.0",
-    "dsh-better-reasoning-effort-fish": "^0.5.7"
+    "dsh-better-reasoning-effort-fish": "^0.5.7",
+    "dsh-our-free-model": "github:Fish-under-sea/Our-Free-Mode-fish"
   },
   "engines": {
     "node": ">=20"
