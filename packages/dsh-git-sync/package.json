@@ -1,7 +1,7 @@
 {
   "name": "@fish-under-sea/dsh-git-sync",
-  "version": "0.3.1",
-  "description": "DeepSeek Harness 一键 GitHub 同步：把插件清单、插件启用状态、插件配置、本地设置、Skills、Skill 的 refs/脚本、看板/用量账本、设置导航顺序偏好、壁纸引擎设置与免费模型插件配置采集进你自己的私有 git 仓库并推送，换机可一键还原；采集前自动 fetch 远端并合并，密钥永不搬运。0.2.5 起不再同步 agent 预设 / 桌宠存档 / 工作区映射，0.2.6 起不再同步归档台账，0.2.7 起纳入 skill-refs，0.3.0 起支持额外扫描根（壁纸引擎的 config.json 与玻璃预设，取自 ~/.dsh-wallpaper-engine），0.3.1 起纳入免费模型插件（our-free-model）的配置面三份文件——用量账本 stats.json 与含 token 的 eac-user.json 明确排除。仓库目录在「设置 → Git 同步」里改。",
+  "version": "0.3.2",
+  "description": "DeepSeek Harness 一键 GitHub 同步：把插件清单、插件启用状态、插件配置、本地设置、Skills、Skill 的 refs/脚本、看板/用量账本、设置导航顺序偏好、标题自动刷新设置、壁纸引擎设置（含字体集与吉祥物素材）、免费模型插件配置与用量账本采集进你自己的私有 git 仓库并推送，换机可一键还原；采集前自动 fetch 远端并合并，密钥永不搬运。0.2.5 起不再同步 agent 预设 / 桌宠存档 / 工作区映射，0.2.6 起不再同步归档台账，0.2.7 起纳入 skill-refs，0.3.0 起支持额外扫描根（壁纸引擎，取自 ~/.dsh-wallpaper-engine），0.3.1 起纳入免费模型插件（our-free-model）配置面，0.3.2 起补上「配置引用了但素材在别处」的字体集与吉祥物、标题自动刷新设置，并按用户要求收录免费模型用量账本（跨机以最后同步者为准）。仓库目录在「设置 → Git 同步」里改。",
   "type": "module",
   "main": "./lib/index.js",
   "exports": {

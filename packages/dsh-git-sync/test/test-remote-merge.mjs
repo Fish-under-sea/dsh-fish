@@ -26,6 +26,9 @@ const gitSafe = (cwd, args) => {
 };
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-merge-'));
+// 壁纸引擎的额外扫描根默认落在 **~/.dsh-wallpaper-engine**，不受 DSH_HOME 影响。
+// 不隔离就会读到真机那份，采集内容随机器而变。与 test-sync-engine.mjs 同一套约定。
+process.env.DSH_WE_DATA_DIR = path.join(TMP, 'we-isolated');
 const mod = await import(`file:///${PLUGIN.replace(/\\/g, '/')}/lib/index.js`);
 
 /** 造一套「origin + 本机 work + 另一台机器 other」的隔离环境。 */

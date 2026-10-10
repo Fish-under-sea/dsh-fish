@@ -79,25 +79,38 @@ const WHITE_LIST = [
   // 文件（用户每次保存时用自己那条同源路由写入），本插件只负责按相对路径搬运。
   // 少了这一条，换机后设置菜单的顺序与隐藏项就复原不了（剩下的都能复原）。
   'dsh-settings-nav-order/state.json',
+  // 标题自动刷新（dsh-session-title-refresh）的用户设置。
+  //
+  // 里面是「用哪个模型起标题」（provider / model）与全部调参（首轮轮次、间隔、窗口、
+  // 输出预算、超时、目标字数、是否跳过子代理会话……）。少了这一条，换机后要把标题
+  // 模型和这套参数**在原界面上重设一遍**。
+  //
+  // 只点名 config.json：同目录的 history.json 是**本机运行记录**（每次刷新的成败与
+  // 会话 id），只增不减、跨机互相覆盖且没有复原价值，所以不进白名单。
+  'dsh-session-title-refresh/config.json',
   // ── our-free-model（omf）的配置面 ──
   //
   // 该目录在 $DSH_HOME **之内**（`$DSH_HOME/our-free-model/`），所以按普通相对路径点名即可，
   // 不需要往 EXTRA_ROOTS 加根。
   //
-  // 只点名下面三个文件，**绝不写 'our-free-model' 整目录**：同目录下另有两个文件必须排除 ——
-  //   - `stats.json`     用量统计账本（days / models / requests / failedRequests / samples）。
-  //                      它是**本机累计量**，两台机器各自累加后互相覆盖，两边的统计都会失真，
-  //                      换机后也没有复原价值，所以明确排除。
+  // 除 eac-user.json 外逐一点名，**绝不写 'our-free-model' 整目录**；必须排除的只有它 ——
   //   - `eac-user.json`  含一个**真实的登录 token** 与 GitHub 登录名，属凭据。
   //                      凭据一律不进配置仓（`.credentials.yaml` 同理，由用户用 U 盘手工拷贝）。
+  //                      它另在 NEVER_COPY 里再拦一道作纵深防御。
   //
-  // 收录的三个都是纯配置 / 快照，不含密钥：
+  // 收录的四份都是纯配置 / 快照，不含密钥：
   // 注意：settings.json 里 `forward.key` / `egress` / `chanGateway.relay.key` 三个字段目前是
   // **空串**（字段存在、值为空），所以能过下方 SECRET_PATTERNS 的内容级体检；将来真填了密钥，
   // 「体检」动作会如实报出来 —— 那时该由用户决定是走 U 盘还是别的办法，而不是放宽体检。
   'our-free-model/settings.json',     // 用户设置：开关、探测间隔、转发、出口、渠道网关、默认 maxTokens
   'our-free-model/catalog.json',      // 模型目录快照（模型 id 列表 + 时间戳），无密钥
   'our-free-model/availability.json', // 模型可用性快照（出口 IP + 各模型探测结果），无密钥
+  // 用量统计账本（days / models / requests / failedRequests / samples）。
+  //
+  // 用户明确要求跨机携带，所以收录。**代价是知道的**：它是本机累计量，两台机器各自
+  // 累加后互相覆盖，最后同步的那台会盖掉另一台的计数 —— 「两边都完整」做不到，
+  // 只能保证「有一份跟着仓库走」。真要两边都准，得改成合并式账本（未做）。
+  'our-free-model/stats.json',
   // ── 额外扫描根（见上方 EXTRA_ROOTS）：前缀就是根的键，不是 $DSH_HOME 下的路径 ──
   // 壁纸引擎（dsh-plugin-wallpaper-engine）的**全部设置**都在这一个文件里：外观
   //（配色 / 边框 / 雾化 / 玻璃颜色与透明度 / 保真度 / 思考块与左侧栏液态玻璃）、
@@ -107,6 +120,21 @@ const WHITE_LIST = [
   // 用户保存的玻璃预设（本机是「FISH」）。按**目录**收录而不是点名某个文件：
   // 以后新存的预设自动跟着走；隐藏出厂预设的墓碑标记也是同目录的同名形态文件。
   'wallpaper-engine/glass-presets',
+  // 字体集（`fontsets/<id>.json`）。**这是 `config.json` 引用的配置，不是派生物**：
+  //   · `config.json` 的**根字段** `fontSetId` 就是活动字体集的 id；
+  //   · 字体键（themeColors / themeSize / themeWeight / themeFamily / globalFamily /
+  //     componentFonts）已从 settings 白名单里退出，**只住在这个文件里**；
+  //   · 用户层是 `<数据目录>/fontsets/`，随包层才是插件里的 `lib/fontsets/`——本机的
+  //     `default` 是当年「六个内联字体键」那次一次性迁移的产物（`FONTSET_MIGRATED_ID`），
+  //     而随包层只有 `compact.json`、**没有 default**，所以它是该 id 的唯一真源。
+  // 不同步的后果很具体：设置过去了、字体值没过去，打开就是默认外观。
+  // 按**目录**收录，以后导入 / 新建的字体集自动跟着走。
+  'wallpaper-engine/fontsets',
+  // 自定义吉祥物图（本机是 mascot-mv1377ack6tl.webp）。
+  // `config.json` 里写着 `mascotImage: "<文件名>"` 与 `mascotImageBox`，但图本身不在
+  // config.json 里 —— 只同步 config.json 会得到「设置指着一张不存在的图」，
+  // 正是这个插件最容易踩的「配置与素材分离」缺口，所以按目录一起搬。
+  'wallpaper-engine/mascot',
   // `profiles/<profile>/` 下的配置面不在这里写死，见下方 PROFILE_FILES + activeList()。
   //
   // 曾经的写法是 'profiles/web/package.json' 这类字面量：0.2.0 桌面版把 profile

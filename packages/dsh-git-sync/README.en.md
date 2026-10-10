@@ -99,9 +99,11 @@ The allowlist lists paths relative to `$DSH_HOME`. `<profile>` is enumerated dyn
 | `task-board/scheduler-v2.json` | Task-board scheduler state |
 | `dsh-usage/` | Usage ledger |
 | `dsh-settings-nav-order/state.json` | Settings navigation order preference (see dedicated section below) |
+| `dsh-session-title-refresh/config.json` | Title auto-refresh user settings: **which model writes the title** (`provider` / `model`) plus every tuning knob (first-round rounds, interval, window, output budget, timeout, target length, skip-subagent-sessions). The sibling `history.json` is a machine-local run log and is **not** on the allowlist |
 | `our-free-model/settings.json` | Free-model plugin (`dsh-our-free-model`) user settings: enable switch, probe interval, forwarding, egress, channel gateway, default maxTokens (see dedicated section below) |
 | `our-free-model/catalog.json` | Free-model catalog snapshot (model id list + timestamp), no secrets |
 | `our-free-model/availability.json` | Free-model availability snapshot (egress IP + per-model probe results), no secrets |
+| `our-free-model/stats.json` | Free-model usage ledger (see the dedicated section below for the cross-machine caveat) |
 | `profiles/<profile>/package.json` | Which plugins are installed + bundle-layer order |
 | `profiles/<profile>/cordis.patch.yml` | **Per-plugin enable/disable** (`disabled:` lines) + config overrides |
 | `profiles/<profile>/cordis.patch.yml.bak-plugin-manager` | Config backup written by the plugin manager (exact-path allow; all other `*.bak*` remain denied) |
@@ -109,6 +111,8 @@ The allowlist lists paths relative to `$DSH_HOME`. `<profile>` is enumerated dyn
 | `profiles/<profile>/pnpm-workspace.yaml` | pnpm configuration |
 | `wallpaper-engine/config.json` | Wallpaper engine full settings (extra scan root — see dedicated section below) |
 | `wallpaper-engine/glass-presets/` | User-saved glass presets (directory-level collection, via extra scan root) |
+| `wallpaper-engine/fontsets/` | Font sets (directory-level collection, via extra scan root). **These are configuration `config.json` references, not derived data** — see the dedicated section below |
+| `wallpaper-engine/mascot/` | Custom mascot image (directory-level collection, via extra scan root). `config.json`'s `mascotImage` points here |
 
 > **`<profile>` is enumerated dynamically**: every profile directory under the local `profiles/` is covered — `desktop` for the desktop app, `web` for the web app. Hard-coding a profile name would miss the three most important things — "which plugins are installed / which are enabled / exact versions". The 0.2.0 desktop edition learned this the hard way: after the profile was renamed, not a single allowlist entry matched, and the repo was left with only a 0.1.x `profiles/web` snapshot.
 
@@ -116,35 +120,62 @@ The allowlist lists paths relative to `$DSH_HOME`. `<profile>` is enumerated dyn
 
 The settings menu order and hidden items **actually take effect in the browser's `localStorage`** (key `dsh-settings-nav-order/v1`), which the host process cannot reach. The host half of [`dsh-settings-nav-order`](https://github.com/Fish-under-sea/dsh-fish/tree/main/packages/dsh-settings-nav-order) therefore mirrors it to `$DSH_HOME/dsh-settings-nav-order/state.json` — written every time the user saves, via its own same-origin route. This plugin is only responsible for carrying that file by relative path. Without it, the settings menu order and hidden items cannot be restored on a new machine (everything else can).
 
+### Title auto-refresh settings
+
+[`dsh-session-title-refresh`](https://github.com/Fish-under-sea/dsh-fish/tree/main/packages/dsh-session-title-refresh) stores its user settings in `$DSH_HOME/dsh-session-title-refresh/config.json` — that is **which model writes the title** (`provider` / `model`) plus the whole set of tuning knobs (first-round rounds, interval, window, output budget, timeout, target length, skip-subagent-sessions). Without this entry, a machine switch means **re-setting the title model and every one of those knobs in the original UI**.
+
+The sibling `history.json` is a **machine-local run log** (per-refresh success/failure and session ids). It only grows, it overwrites its counterpart across machines, and it has no restoration value — so the allowlist names **only `config.json`** and never the directory.
+
 ### Extra scan roots (new in 0.3.0)
 
 The allowlist's frame of reference is "paths relative to `$DSH_HOME`", but `dsh-plugin-wallpaper-engine` (the wallpaper engine) keeps all its settings and assets in `~/.dsh-wallpaper-engine` — a **sibling** directory of `$DSH_HOME` that no ordinary allowlist entry can ever reach.
 
 0.3.0 introduces **extra scan roots**: allowlist entries can use a "root prefix" to point at an additional root, landing as a same-named subdirectory in the repo. In code, this is an `EXTRA_ROOTS` table — currently with only the `wallpaper-engine` entry — overridable via the `DSH_WE_DATA_DIR` environment variable, falling back to `~/.dsh-wallpaper-engine` when unset.
 
-This version collects two entries:
+This version collects four entries:
 
 - `wallpaper-engine/config.json` — all wallpaper engine settings (appearance, extensions, playback, wallpaper library hiding and rotation);
-- `wallpaper-engine/glass-presets/` — user-saved glass presets, collected at the **directory** level so that newly saved presets are picked up automatically.
+- `wallpaper-engine/glass-presets/` — user-saved glass presets, collected at the **directory** level so that newly saved presets are picked up automatically;
+- `wallpaper-engine/fontsets/` — **font sets**, collected at the directory level; see "Configuration and assets travel apart" below;
+- `wallpaper-engine/mascot/` — the **custom mascot image**, collected at the directory level; see "Configuration and assets travel apart" below.
 
 Why "add a scan root" instead of "move the files into home": the wallpaper engine's default data directory is a **cross-plugin read contract** (the skin center reads `<that directory>/config.json`'s `settings.id` to predict "wallpaper is on stage"); moving it would cause a first-frame flicker on the skin side. Adding a scan root leaves the production path untouched.
 
-Explicitly **not** collected: the wallpaper engine's `cache/` (~2.8 GB of derived cache), `ffmpeg/` binaries, `bin/`, `diag/`, `avatars/`.
+Explicitly **not** collected: the wallpaper engine's `cache/` (~2.8 GB of derived cache), `ffmpeg/` binaries, `bin/`, `diag/`, and `avatars/` (currently empty).
 
 > **Implementation note**: 0.3.0 also consolidates the allowlist loop that was previously scattered across five places (collect / restore / diff / secret scan / panel stats) into a **single entry point**, `entriesOf(base, side)` — otherwise "a new scan scope taking effect in only one or two of those places" would be an inevitable outcome; this project has already been bitten twice by "multiple defense layers drifting apart" (see the `isBakAllowed` and `.gitignore` comments), so the extra scan root must have exactly one place to land.
 
+### Configuration and assets travel apart: font sets and mascot (new in 0.3.2)
+
+The wallpaper engine has two designs where **the settings file keeps only a pointer while the real thing is stored alongside it**. Syncing `config.json` alone therefore yields "the setting points at a file that does not exist":
+
+**Font sets, `fontsets/<id>.json`.** `config.json`'s **root field** `fontSetId` is the active font set's id, and the font keys (`themeColors` / `themeSize` / `themeWeight` / `themeFamily` / `globalFamily` / `componentFonts`) have **left the settings key set and now live only in that file**. The plugin has two layers:
+
+| Layer | Location | Contents |
+| --- | --- | --- |
+| Packaged | `lib/fontsets/` inside the plugin | Factory presets (this machine ships only `compact.json`) |
+| User | `<data directory>/fontsets/` | Imports, overrides, and **one-time migration output** |
+
+The user layer wins. This machine's `default` is exactly the output of the "six inline font keys" migration (`FONTSET_MIGRATED_ID`), and the packaged layer has **no** `default` — so the user-layer file is the **only source** for that id. Without it, a machine switch moves the setting but not the font values, and the panel opens with the default appearance.
+
+**Mascot, `mascot/<filename>`.** `config.json` carries `mascotImage: "<filename>"` and `mascotImageBox`, but the image itself is not inside `config.json`. Syncing only `config.json` points the setting at a missing file.
+
+Both are collected at the **directory** level, so font sets you import or create later, and a mascot you replace, travel automatically.
+
 ### Free-model plugin (`our-free-model`)
 
-`dsh-our-free-model`'s config directory `$DSH_HOME/our-free-model/` lives **inside** home, so it is named by an ordinary relative path and needs no extra scan root. Three files are collected:
+`dsh-our-free-model`'s config directory `$DSH_HOME/our-free-model/` lives **inside** home, so it is named by an ordinary relative path and needs no extra scan root. Four files are collected:
 
 - `our-free-model/settings.json` — user settings: enable switch, probe interval, forwarding, egress, channel gateway, default maxTokens;
 - `our-free-model/catalog.json` — model catalog snapshot (model id list + timestamp);
-- `our-free-model/availability.json` — availability snapshot (egress IP + per-model probe results).
+- `our-free-model/availability.json` — availability snapshot (egress IP + per-model probe results);
+- `our-free-model/stats.json` — the usage ledger.
 
-**Two files are deliberately excluded**:
+**Only one file is excluded**:
 
-- `stats.json` — the local cumulative usage ledger (`days` / `models` / `requests` / `failedRequests` / `samples`). Each machine keeps its own tally; syncing it would only **overwrite** one with the other, distorting both, and it has no restoration value after a machine switch.
-- `eac-user.json` — contains a **real login token** and the GitHub login name, i.e. credentials. Same rule as `.credentials.yaml`: it **never travels over git**; copy it yourself when needed.
+- `eac-user.json` — contains a **real login token** and the GitHub login name, i.e. credentials. Same rule as `.credentials.yaml`: it **never travels over git**; copy it yourself when needed. It is also in `NEVER_COPY`, so even if the allowlist were ever mistakenly changed to the whole `'our-free-model'` directory, that gate still holds.
+
+> **The cross-machine semantics of `stats.json` (collecting it has a cost, and that cost is known)**: it is a **machine-local cumulative tally** (`days` / `models` / `requests` / `failedRequests` / `samples`). Two machines each accumulate locally and then overwrite each other through the repo — **whichever synced last wins**. With the current implementation you cannot have "both machines complete"; all you get is "one copy follows the repo". Making both correct requires turning it into a mergeable ledger (union or max per day / per model) — **not implemented**.
 
 > The `forward.key` / `egress.url` / `chanGateway.relay.key` fields in `settings.json` are currently empty strings. If real secrets are ever filled in, the secret scan will report them and block the commit **rather than** loosening the scan rules.
 

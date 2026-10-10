@@ -415,23 +415,27 @@ console.log('\n=== 12. 额外扫描根：壁纸引擎数据目录（在 $DSH_HOM
   }
 }
 
-console.log('\n=== 13. 免费模型插件（our-free-model）：只搬配置，不搬用量账本与凭据 ===');
+console.log('\n=== 13. 免费模型插件（our-free-model）：搬配置与用量账本，不搬凭据 ===');
 {
-  const OMF = ['our-free-model/settings.json', 'our-free-model/catalog.json', 'our-free-model/availability.json'];
+  const OMF = [
+    'our-free-model/settings.json',
+    'our-free-model/catalog.json',
+    'our-free-model/availability.json',
+    // 用户明确要求跨机携带：代价是两台机器的累计量互相覆盖，只保证「有一份跟着仓库走」。
+    'our-free-model/stats.json',
+  ];
   for (const rel of OMF) {
     check(`白名单收录 ${rel}`, WHITE_LIST.includes(rel), JSON.stringify(WHITE_LIST));
     check(`★ ${rel} 不被任何一道拒绝闸拦下`, testForbidden(rel) === false);
   }
-  // 反向断言：两个必须排除的文件一个都不能被覆盖。
-  check('★ 用量账本 stats.json 不在同步范围（本机累计量，跨机会互相覆盖）',
-    !coversPath('our-free-model/stats.json'));
+  // 反向断言：唯一必须排除的凭据一个都不能被覆盖。
   check('★ 凭据 eac-user.json 不在同步范围（含真实 token）',
     !coversPath('our-free-model/eac-user.json'));
   check('★ 凭据 eac-user.json 被拒绝闸独立拦下（纵深防御：白名单被改成整目录也拦得住）',
     testForbidden('our-free-model/eac-user.json') === true);
-  // 白名单必须是三条精确文件，不是 'our-free-model' 整目录 —— 整目录会把上面两份一起带走。
-  check('★ 白名单里 our-free-model 是三条精确文件，不是整目录',
-    WHITE_LIST.filter((w) => w.startsWith('our-free-model')).length === 3,
+  // 白名单必须是四条精确文件，不是 'our-free-model' 整目录 —— 整目录会把凭据一起带走。
+  check('★ 白名单里 our-free-model 是四条精确文件，不是整目录',
+    WHITE_LIST.filter((w) => w.startsWith('our-free-model')).length === 4,
     JSON.stringify(WHITE_LIST.filter((w) => w.startsWith('our-free-model'))));
 
   const h13 = path.join(TMP, 'home13');
@@ -439,11 +443,12 @@ console.log('\n=== 13. 免费模型插件（our-free-model）：只搬配置，�
   mkdirSync(path.join(h13, 'our-free-model'), { recursive: true });
   mkdirSync(r13, { recursive: true });
   const settingsText = JSON.stringify({ enabled: true, defaultMaxTokens: 32768, forward: { enabled: false, key: '' } });
+  const statsText = '{"days":{"2026-10-10":{"requests":9}}}\n';
   writeFileSync(path.join(h13, 'our-free-model', 'settings.json'), settingsText);
   writeFileSync(path.join(h13, 'our-free-model', 'catalog.json'), '{"models":["glm-f","kimi-f"]}\n');
   writeFileSync(path.join(h13, 'our-free-model', 'availability.json'), '{"egressIp":"203.0.113.7"}\n');
-  // 两个「同目录但在范围外」的文件：真实存在，且必须原地不动。
-  writeFileSync(path.join(h13, 'our-free-model', 'stats.json'), '{"days":{"2026-10-10":{"requests":9}}}\n');
+  writeFileSync(path.join(h13, 'our-free-model', 'stats.json'), statsText);
+  // 唯一「同目录但在范围外」的文件：真实存在，且必须原地不动。
   writeFileSync(path.join(h13, 'our-free-model', 'eac-user.json'), '{"token":"SECRET-SHOULD-NOT-TRAVEL"}\n');
 
   const r13res = mod.copyToRepo(h13, { repoDir: r13 });
@@ -454,19 +459,21 @@ console.log('\n=== 13. 免费模型插件（our-free-model）：只搬配置，�
   }
   check('采集：settings.json 内容逐字一致',
     readFileSync(path.join(r13, 'our-free-model', 'settings.json'), 'utf8') === settingsText);
-  check('★ 采集：stats.json 未被搬运', !existsSync(path.join(r13, 'our-free-model', 'stats.json')));
+  check('★ 采集：stats.json 已随配置一起搬运（用户要求跨机携带）',
+    readFileSync(path.join(r13, 'our-free-model', 'stats.json'), 'utf8') === statsText);
   check('★ 采集：eac-user.json 未被搬运', !existsSync(path.join(r13, 'our-free-model', 'eac-user.json')));
-  check('★ 采集：copied 里不含 stats.json / eac-user.json',
-    !copied13.some((p) => p.endsWith('stats.json') || p.endsWith('eac-user.json')), JSON.stringify(copied13));
+  check('★ 采集：copied 里含 stats.json 但不含 eac-user.json',
+    copied13.includes('our-free-model/stats.json') && !copied13.some((p) => p.endsWith('eac-user.json')),
+    JSON.stringify(copied13));
 
-  // 差异比较：采集后两边一致。若 stats.json / eac-user.json 被误判为「本机有、仓库没有」，
-  // 这里的 added 就会是 2 —— 那正是「面板永远显示待同步 2」的病根。
-  check('★ diff：采集后待同步归零（账本与凭据不算缺口）', (() => {
+  // 差异比较：采集后两边一致。凭据是本机独有、又不在白名单里 —— 它若被算成缺口，
+  // 面板就会永远显示「待同步 1」，而任何一次同步都消不掉它。
+  check('★ diff：采集后待同步归零（凭据不算缺口）', (() => {
     const d = mod.diffHomeVsRepo(h13, { repoDir: r13 });
     return d.added.length + d.changed.length + d.removed.length === 0;
   })(), JSON.stringify(mod.diffHomeVsRepo(h13, { repoDir: r13 })));
 
-  // 还原方向：换机后这三份配置必须回到 home。
+  // 还原方向：换机后这四份必须回到 home。
   const h14 = path.join(TMP, 'home14');
   mkdirSync(h14, { recursive: true });
   const back13 = mod.copyToHome(h14, { repoDir: r13 });
@@ -477,7 +484,8 @@ console.log('\n=== 13. 免费模型插件（our-free-model）：只搬配置，�
   }
   check('还原：settings.json 内容与仓库一致',
     readFileSync(path.join(h14, 'our-free-model', 'settings.json'), 'utf8') === settingsText);
-  check('★ 还原：不凭仓库凭空造出 stats.json', !existsSync(path.join(h14, 'our-free-model', 'stats.json')));
+  check('★ 还原：stats.json 内容与仓库一致',
+    readFileSync(path.join(h14, 'our-free-model', 'stats.json'), 'utf8') === statsText);
   check('★ 还原：不凭仓库凭空造出 eac-user.json', !existsSync(path.join(h14, 'our-free-model', 'eac-user.json')));
 
   // 本机从未装过该插件时：不该凭空造出目录。
@@ -490,6 +498,94 @@ console.log('\n=== 13. 免费模型插件（our-free-model）：只搬配置，�
   check('本机没有该目录时：copied 里也不出现',
     !r15res.copied.map((p) => p.split(path.sep).join('/')).some((p) => p.startsWith('our-free-model/')),
     JSON.stringify(r15res.copied));
+}
+
+console.log('\n=== 14. 标题插件设置 + 壁纸的字体集与吉祥物（配置引用但易被漏掉的三处）===');
+{
+  // ── 14a. 标题自动刷新的用户设置 ──
+  const TITLE = 'dsh-session-title-refresh/config.json';
+  check('白名单收录 dsh-session-title-refresh/config.json', WHITE_LIST.includes(TITLE), JSON.stringify(WHITE_LIST));
+  check('★ 该路径不被任何一道拒绝闸拦下', testForbidden(TITLE) === false);
+  // 必须只点名 config.json：history.json 是本机运行记录，不该跟着走。
+  check('★ 白名单里该目录只有 config.json 一条（history.json 不进）',
+    WHITE_LIST.filter((w) => w.startsWith('dsh-session-title-refresh')).length === 1,
+    JSON.stringify(WHITE_LIST.filter((w) => w.startsWith('dsh-session-title-refresh'))));
+  check('★ 运行记录 history.json 不在同步范围', !coversPath('dsh-session-title-refresh/history.json'));
+
+  const h16 = path.join(TMP, 'home16');
+  const r16 = path.join(TMP, 'repo16');
+  mkdirSync(path.join(h16, 'dsh-session-title-refresh'), { recursive: true });
+  mkdirSync(r16, { recursive: true });
+  const titleText = JSON.stringify({ enabled: true, provider: 'hy-f', model: 'buddy/hy3', maxOutputTokens: 256 });
+  writeFileSync(path.join(h16, 'dsh-session-title-refresh', 'config.json'), titleText);
+  writeFileSync(path.join(h16, 'dsh-session-title-refresh', 'history.json'), '[{"ok":true}]\n');
+
+  const r16res = mod.copyToRepo(h16, { repoDir: r16 });
+  const copied16 = r16res.copied.map((p) => p.split(path.sep).join('/'));
+  check('采集：标题模型设置进了仓库', existsSync(path.join(r16, 'dsh-session-title-refresh', 'config.json')));
+  check('采集：内容逐字一致',
+    readFileSync(path.join(r16, 'dsh-session-title-refresh', 'config.json'), 'utf8') === titleText);
+  check('★ 采集：history.json 未被搬运', !existsSync(path.join(r16, 'dsh-session-title-refresh', 'history.json')));
+  check('★ 采集：copied 里不含 history.json', !copied16.some((p) => p.endsWith('history.json')), JSON.stringify(copied16));
+
+  const h17 = path.join(TMP, 'home17');
+  mkdirSync(h17, { recursive: true });
+  const back16 = mod.copyToHome(h17, { repoDir: r16 });
+  check('还原：标题模型设置回到本机',
+    readFileSync(path.join(h17, 'dsh-session-title-refresh', 'config.json'), 'utf8') === titleText,
+    JSON.stringify((back16.copied ?? []).map((p) => p.split(path.sep).join('/'))));
+
+  // ── 14b. 壁纸的字体集与吉祥物：config.json 引用它们，素材本身必须一起走 ──
+  for (const rel of ['wallpaper-engine/fontsets', 'wallpaper-engine/mascot']) {
+    check(`白名单收录 ${rel}`, WHITE_LIST.includes(rel), JSON.stringify(WHITE_LIST));
+    check(`★ ${rel} 下的文件被覆盖`, coversPath(`${rel}/x.json`));
+    check(`★ ${rel} 里的 .bak 仍被拒`, testForbidden(`${rel}/x.json.bak-1`) === true);
+  }
+
+  const h18 = path.join(TMP, 'home18');
+  const r18 = path.join(TMP, 'repo18');
+  const we18 = path.join(TMP, 'we18');
+  const prevWe18 = process.env.DSH_WE_DATA_DIR;
+  process.env.DSH_WE_DATA_DIR = we18;
+  try {
+    mkdirSync(path.join(h18, 'skills'), { recursive: true });
+    mkdirSync(path.join(we18, 'fontsets'), { recursive: true });
+    mkdirSync(path.join(we18, 'mascot'), { recursive: true });
+    mkdirSync(path.join(we18, 'cache'), { recursive: true });
+    mkdirSync(r18, { recursive: true });
+    writeFileSync(path.join(h18, 'skills', 'core-rules.md'), '# rules\n');
+    // config.json 的根字段 fontSetId 指向 fontsets/default.json，mascotImage 指向 mascot/*.webp
+    writeFileSync(path.join(we18, 'config.json'), '{"fontSetId":"default","settings":{"mascotImage":"mascot-x.webp"}}\n');
+    const fontsetText = '{"id":"default","values":{"globalFamily":""}}\n';
+    writeFileSync(path.join(we18, 'fontsets', 'default.json'), fontsetText);
+    const mascotText = 'RIFFxxxxWEBP\n';
+    writeFileSync(path.join(we18, 'mascot', 'mascot-x.webp'), mascotText);
+    writeFileSync(path.join(we18, 'cache', 'fs_x.mp4'), 'binary\n');
+
+    const r18res = mod.copyToRepo(h18, { repoDir: r18 });
+    const copied18 = r18res.copied.map((p) => p.split(path.sep).join('/'));
+    check('★ 采集：字体集随配置一起进仓库',
+      readFileSync(path.join(r18, 'wallpaper-engine', 'fontsets', 'default.json'), 'utf8') === fontsetText,
+      JSON.stringify(copied18));
+    check('★ 采集：吉祥物图随配置一起进仓库',
+      readFileSync(path.join(r18, 'wallpaper-engine', 'mascot', 'mascot-x.webp'), 'utf8') === mascotText);
+    check('★ 采集：cache/ 仍不进仓库', !existsSync(path.join(r18, 'wallpaper-engine', 'cache')));
+    check('★ diff：采集后待同步归零', (() => {
+      const d = mod.diffHomeVsRepo(h18, { repoDir: r18 });
+      return d.added.length + d.changed.length + d.removed.length === 0;
+    })(), JSON.stringify(mod.diffHomeVsRepo(h18, { repoDir: r18 })));
+
+    const h19 = path.join(TMP, 'home19');
+    mkdirSync(h19, { recursive: true });
+    mod.copyToHome(h19, { repoDir: r18 });
+    check('★ 还原：字体集回到额外根',
+      readFileSync(path.join(we18, 'fontsets', 'default.json'), 'utf8') === fontsetText);
+    check('★ 还原：吉祥物回到额外根',
+      readFileSync(path.join(we18, 'mascot', 'mascot-x.webp'), 'utf8') === mascotText);
+  } finally {
+    if (prevWe18 === undefined) delete process.env.DSH_WE_DATA_DIR;
+    else process.env.DSH_WE_DATA_DIR = prevWe18;
+  }
 }
 
 rmSync(TMP, { recursive: true, force: true });

@@ -21,6 +21,12 @@ const check = (label, cond, extra = '') => {
 const git = (cwd, args) => execFileSync('git', args, { cwd, encoding: 'utf8', windowsHide: true }).trim();
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dsh-pushretry-'));
+// 壁纸引擎的额外扫描根默认落在 **~/.dsh-wallpaper-engine**（与 $DSH_HOME 同级），
+// 它的位置不受 DSH_HOME 影响。不隔离的话这里会读到真机那份：下面断言的是
+// 「fixture home 故意留空 ⇒ 采集 0 个文件」，一旦读到真机 config.json / 预设 /
+// 字体集 / 吉祥物，采集数就不再是 0，提交与推送的断言跟着全错。
+// 这是壁纸引擎自己也遵守的同一套测试隔离约定（见其 lib/index.js 的注释）。
+process.env.DSH_WE_DATA_DIR = path.join(TMP, 'we-isolated');
 try {
   // ── 造环境 ────────────────────────────────────────────────────────────
   const home = path.join(TMP, 'home');

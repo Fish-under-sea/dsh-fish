@@ -99,9 +99,11 @@ dsh plugin --profile <profile> add "file:<仓库路径>/packages/dsh-git-sync"
 | `task-board/scheduler-v2.json` | 看板调度器状态 |
 | `dsh-usage/` | 用量账本 |
 | `dsh-settings-nav-order/state.json` | 设置导航顺序偏好（详见下方专节） |
+| `dsh-session-title-refresh/config.json` | 标题自动刷新的用户设置：**用哪个模型起标题**（`provider` / `model`）与全部调参（首轮轮次、间隔、窗口、输出预算、超时、目标字数、是否跳过子代理会话）。同目录的 `history.json` 是本机运行记录，**不进白名单** |
 | `our-free-model/settings.json` | 免费模型插件（`dsh-our-free-model`）的用户设置：开关、探测间隔、转发、出口、渠道网关、默认 maxTokens（详见下方专节） |
 | `our-free-model/catalog.json` | 免费模型目录快照（模型 id 列表 + 时间戳），无密钥 |
 | `our-free-model/availability.json` | 免费模型可用性快照（出口 IP + 各模型探测结果），无密钥 |
+| `our-free-model/stats.json` | 免费模型用量统计账本（详见下方专节，含跨机覆盖说明） |
 | `profiles/<profile>/package.json` | 装了什么插件 + bundle 层顺序 |
 | `profiles/<profile>/cordis.patch.yml` | **每个插件是否启用**（`disabled:` 行）+ 配置覆盖 |
 | `profiles/<profile>/cordis.patch.yml.bak-plugin-manager` | 插件管理器写的配置备份（精确整路径放行，其它 `*.bak*` 仍一律拒绝） |
@@ -109,6 +111,8 @@ dsh plugin --profile <profile> add "file:<仓库路径>/packages/dsh-git-sync"
 | `profiles/<profile>/pnpm-workspace.yaml` | pnpm 配置 |
 | `wallpaper-engine/config.json` | 壁纸引擎全部设置（额外扫描根，详见下方专节） |
 | `wallpaper-engine/glass-presets/` | 用户保存的玻璃预设（目录级收录，按额外扫描根） |
+| `wallpaper-engine/fontsets/` | 字体集（目录级收录，按额外扫描根）。**这是 `config.json` 引用的配置，不是派生物**——详见下方专节 |
+| `wallpaper-engine/mascot/` | 自定义吉祥物图（目录级收录，按额外扫描根）。`config.json` 的 `mascotImage` 指向这里 |
 
 > **`<profile>` 按目录动态枚举**：本机 `profiles/` 下每个 profile 目录都会被覆盖，桌面版是 `desktop`、Web 版是 `web`。写死 profile 名会漏掉「装了什么插件 / 每个插件是否启用 / 精确版本」这最要紧的三样——0.2.0 桌面版踩过这个坑：profile 改名后白名单一条都命中不了，仓库里只剩 0.1.x 的 `profiles/web` 快照。
 
@@ -116,35 +120,62 @@ dsh plugin --profile <profile> add "file:<仓库路径>/packages/dsh-git-sync"
 
 设置菜单的顺序与隐藏项**真正生效的地方是浏览器 `localStorage`**（键 `dsh-settings-nav-order/v1`），本插件在宿主进程里够不着它。[`dsh-settings-nav-order`](https://github.com/Fish-under-sea/dsh-fish/tree/main/packages/dsh-settings-nav-order) 的宿主半区因此把它镜像成 `$DSH_HOME/dsh-settings-nav-order/state.json`——用户每次保存时用自己那条同源路由写入，本插件只负责按相对路径搬运。少了这一条，换机后设置菜单的顺序与隐藏项就复原不了（剩下的都能复原）。
 
+### 标题自动刷新设置
+
+[`dsh-session-title-refresh`](https://github.com/Fish-under-sea/dsh-fish/tree/main/packages/dsh-session-title-refresh) 的用户设置落成 `$DSH_HOME/dsh-session-title-refresh/config.json`——里面是**用哪个模型起标题**（`provider` / `model`）与整套调参（首轮轮次、间隔、窗口、输出预算、超时、目标字数、是否跳过子代理会话）。少了这一条，换机后要把标题模型和这套参数**在原界面上重设一遍**。
+
+同目录的 `history.json` 是**本机运行记录**（每次刷新的成败与会话 id），只增不减、跨机互相覆盖且没有复原价值，所以**只点名 `config.json`**，不写整目录。
+
 ### 额外扫描根（0.3.0 新增）
 
 白名单的口径是「相对 `$DSH_HOME` 的路径」，但 `dsh-plugin-wallpaper-engine`（壁纸引擎）把全部设置与素材放在 `~/.dsh-wallpaper-engine`——那是 `$DSH_HOME` 的**同级**目录，普通白名单条目无论怎么写都够不到它。
 
 0.3.0 引入**额外扫描根**：白名单条目可以用「根前缀」指向额外根，仓库里落成同名子目录。代码里是一张 `EXTRA_ROOTS` 表，当前只有 `wallpaper-engine` 一项，可被环境变量 `DSH_WE_DATA_DIR` 覆盖，未设时落到 `~/.dsh-wallpaper-engine`。
 
-本版收录两条：
+本版收录四条：
 
 - `wallpaper-engine/config.json` —— 壁纸引擎全部设置（外观、扩展、播放、壁纸库的隐藏与轮播）；
-- `wallpaper-engine/glass-presets/` —— 用户保存的玻璃预设，按**目录**收录，以后新存的自动跟着走。
+- `wallpaper-engine/glass-presets/` —— 用户保存的玻璃预设，按**目录**收录，以后新存的自动跟着走；
+- `wallpaper-engine/fontsets/` —— **字体集**，按目录收录，见下方「配置与素材分离」；
+- `wallpaper-engine/mascot/` —— **自定义吉祥物图**，按目录收录，见下方「配置与素材分离」。
 
 之所以「加扫描根」而不是「把文件搬进 home」：壁纸引擎的默认数据目录是**跨插件读契约**（皮肤中心靠 `<该目录>/config.json` 的 `settings.id` 预判「壁纸在台」），搬走会让皮肤侧首帧先闪一下。加扫描根完全不动生产路径。
 
-明确**不**收录：壁纸引擎的 `cache/`（约 2.8 GB 派生缓存）、`ffmpeg/` 二进制、`bin/`、`diag/`、`avatars/`。
+明确**不**收录：壁纸引擎的 `cache/`（约 2.8 GB 派生缓存）、`ffmpeg/` 二进制、`bin/`、`diag/`、`avatars/`（当前为空）。
 
 > **实现要点**：0.3.0 同时把原来散在五处（采集 / 还原 / 差异比较 / 密钥体检 / 面板统计）的白名单循环收敛成**唯一入口** `entriesOf(base, side)` ——否则「新增一种扫描口径只在其中一两处生效」是必然结局；本项目已经因为「多层防御各自为政」踩过两次（见 `isBakAllowed` 与 `.gitignore` 的注释），所以额外扫描根这件事必须只有一个落点。
 
+### 配置与素材分离：字体集与吉祥物（0.3.2 新增）
+
+壁纸引擎有两处**「设置文件里只留一个指针，真身在旁边另存」**的设计，只同步 `config.json` 会得到「设置指着一个不存在的文件」：
+
+**字体集 `fontsets/<id>.json`**。`config.json` 的**根字段** `fontSetId` 就是活动字体集的 id；而字体键（`themeColors` / `themeSize` / `themeWeight` / `themeFamily` / `globalFamily` / `componentFonts`）**已从 settings 键集里退出，只住在这个文件里**。插件分两层：
+
+| 层 | 位置 | 内容 |
+| --- | --- | --- |
+| 随包层 | 插件内 `lib/fontsets/` | 出厂预设（本机只有 `compact.json`） |
+| 用户层 | `<数据目录>/fontsets/` | 导入、覆盖、以及**一次性迁移的产物** |
+
+用户层优先。本机的 `default` 正是「六个内联字体键」那次迁移的产物（`FONTSET_MIGRATED_ID`），随包层**没有** `default`，所以用户层那份是该 id 的**唯一真源** —— 不同步它，换机后设置过去了、字体值没过去，打开就是默认外观。
+
+**吉祥物 `mascot/<文件名>`**。`config.json` 里写着 `mascotImage: "<文件名>"` 与 `mascotImageBox`，图本身不在 `config.json` 里。只搬 `config.json` 就会指向一张不存在的图。
+
+两条都按**目录**收录，所以以后导入 / 新建的字体集、换过的吉祥物自动跟着走。
+
 ### 免费模型插件（`our-free-model`）
 
-`dsh-our-free-model` 的配置目录 `$DSH_HOME/our-free-model/` 在 home **之内**，所以按普通相对路径点名，不需要额外扫描根。收录三份：
+`dsh-our-free-model` 的配置目录 `$DSH_HOME/our-free-model/` 在 home **之内**，所以按普通相对路径点名，不需要额外扫描根。收录四份：
 
 - `our-free-model/settings.json` —— 用户设置：启用开关、探测间隔、转发、出口、渠道网关、默认 maxTokens；
 - `our-free-model/catalog.json` —— 模型目录快照（模型 id 列表 + 时间戳）；
-- `our-free-model/availability.json` —— 可用性快照（出口 IP + 各模型探测结果）。
+- `our-free-model/availability.json` —— 可用性快照（出口 IP + 各模型探测结果）；
+- `our-free-model/stats.json` —— 用量统计账本。
 
-**刻意排除两份**：
+**只排除一份**：
 
-- `stats.json` —— 本机累计用量账本（`days` / `models` / `requests` / `failedRequests` / `samples`）。两台机器各记各的，同步过去只会**互相覆盖**，两边统计都失真，且换机后没有复原价值。
-- `eac-user.json` —— 含**真实登录 token** 与 GitHub 登录名，属凭据。与 `.credentials.yaml` 同理：**不走 git**，需要时自行拷贝。
+- `eac-user.json` —— 含**真实登录 token** 与 GitHub 登录名，属凭据。与 `.credentials.yaml` 同理：**不走 git**，需要时自行拷贝。它同时进了 `NEVER_COPY`，所以即使白名单哪天被误改成 `'our-free-model'` 整目录，这道闸仍然拦得住。
+
+> **`stats.json` 的跨机语义（收录它是有代价的，这个代价是知道的）**：它是**本机累计量**（`days` / `models` / `requests` / `failedRequests` / `samples`），两台机器各自累加后经仓库互相覆盖，**最后同步的那台会盖掉另一台的计数**。「两边都完整」用当前实现做不到，只能保证「有一份跟着仓库走」。要两边都准，得把它改成合并式账本（按天 / 按模型取并集或取最大值）——**尚未实现**。
 
 > `settings.json` 里的 `forward.key` / `egress.url` / `chanGateway.relay.key` 目前是空串。将来真填了密钥，由「密钥体检」如实报出并拦下提交，**而不是**放宽体检规则。
 
