@@ -79,6 +79,25 @@ const WHITE_LIST = [
   // 文件（用户每次保存时用自己那条同源路由写入），本插件只负责按相对路径搬运。
   // 少了这一条，换机后设置菜单的顺序与隐藏项就复原不了（剩下的都能复原）。
   'dsh-settings-nav-order/state.json',
+  // ── our-free-model（omf）的配置面 ──
+  //
+  // 该目录在 $DSH_HOME **之内**（`$DSH_HOME/our-free-model/`），所以按普通相对路径点名即可，
+  // 不需要往 EXTRA_ROOTS 加根。
+  //
+  // 只点名下面三个文件，**绝不写 'our-free-model' 整目录**：同目录下另有两个文件必须排除 ——
+  //   - `stats.json`     用量统计账本（days / models / requests / failedRequests / samples）。
+  //                      它是**本机累计量**，两台机器各自累加后互相覆盖，两边的统计都会失真，
+  //                      换机后也没有复原价值，所以明确排除。
+  //   - `eac-user.json`  含一个**真实的登录 token** 与 GitHub 登录名，属凭据。
+  //                      凭据一律不进配置仓（`.credentials.yaml` 同理，由用户用 U 盘手工拷贝）。
+  //
+  // 收录的三个都是纯配置 / 快照，不含密钥：
+  // 注意：settings.json 里 `forward.key` / `egress` / `chanGateway.relay.key` 三个字段目前是
+  // **空串**（字段存在、值为空），所以能过下方 SECRET_PATTERNS 的内容级体检；将来真填了密钥，
+  // 「体检」动作会如实报出来 —— 那时该由用户决定是走 U 盘还是别的办法，而不是放宽体检。
+  'our-free-model/settings.json',     // 用户设置：开关、探测间隔、转发、出口、渠道网关、默认 maxTokens
+  'our-free-model/catalog.json',      // 模型目录快照（模型 id 列表 + 时间戳），无密钥
+  'our-free-model/availability.json', // 模型可用性快照（出口 IP + 各模型探测结果），无密钥
   // ── 额外扫描根（见上方 EXTRA_ROOTS）：前缀就是根的键，不是 $DSH_HOME 下的路径 ──
   // 壁纸引擎（dsh-plugin-wallpaper-engine）的**全部设置**都在这一个文件里：外观
   //（配色 / 边框 / 雾化 / 玻璃颜色与透明度 / 保真度 / 思考块与左侧栏液态玻璃）、
@@ -128,6 +147,11 @@ const NEVER_COPY = new Set([
   '.env', 'node_modules', '.pnpm', '.git', 'session_projcache',
   '.anonymous-user-id', '.dshw-size.json', '.dshw-usage.json',
   'cordis.yml', 'workspace-local-paths.json',
+  // our-free-model（omf）的登录凭据：含真实 token 与 GitHub 登录名。
+  // 它**本来就不在白名单里**，这里再拦一道是纵深防御 —— 白名单哪天被改成
+  // `'our-free-model'` 整目录（注释里明确警告过不要这么做），这道闸仍然拦得住。
+  // 与 `.credentials.yaml` 同理：凭据只走 U 盘，永不进配置仓。
+  'eac-user.json',
 ]);
 
 const SECRET_NAME_RE = /(^|[\\/])(\.credentials|\.env|credentials\.|.*\.pem$|.*\.key$|.*\.bak)/i;

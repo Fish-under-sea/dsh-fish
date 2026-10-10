@@ -415,6 +415,83 @@ console.log('\n=== 12. 额外扫描根：壁纸引擎数据目录（在 $DSH_HOM
   }
 }
 
+console.log('\n=== 13. 免费模型插件（our-free-model）：只搬配置，不搬用量账本与凭据 ===');
+{
+  const OMF = ['our-free-model/settings.json', 'our-free-model/catalog.json', 'our-free-model/availability.json'];
+  for (const rel of OMF) {
+    check(`白名单收录 ${rel}`, WHITE_LIST.includes(rel), JSON.stringify(WHITE_LIST));
+    check(`★ ${rel} 不被任何一道拒绝闸拦下`, testForbidden(rel) === false);
+  }
+  // 反向断言：两个必须排除的文件一个都不能被覆盖。
+  check('★ 用量账本 stats.json 不在同步范围（本机累计量，跨机会互相覆盖）',
+    !coversPath('our-free-model/stats.json'));
+  check('★ 凭据 eac-user.json 不在同步范围（含真实 token）',
+    !coversPath('our-free-model/eac-user.json'));
+  check('★ 凭据 eac-user.json 被拒绝闸独立拦下（纵深防御：白名单被改成整目录也拦得住）',
+    testForbidden('our-free-model/eac-user.json') === true);
+  // 白名单必须是三条精确文件，不是 'our-free-model' 整目录 —— 整目录会把上面两份一起带走。
+  check('★ 白名单里 our-free-model 是三条精确文件，不是整目录',
+    WHITE_LIST.filter((w) => w.startsWith('our-free-model')).length === 3,
+    JSON.stringify(WHITE_LIST.filter((w) => w.startsWith('our-free-model'))));
+
+  const h13 = path.join(TMP, 'home13');
+  const r13 = path.join(TMP, 'repo13');
+  mkdirSync(path.join(h13, 'our-free-model'), { recursive: true });
+  mkdirSync(r13, { recursive: true });
+  const settingsText = JSON.stringify({ enabled: true, defaultMaxTokens: 32768, forward: { enabled: false, key: '' } });
+  writeFileSync(path.join(h13, 'our-free-model', 'settings.json'), settingsText);
+  writeFileSync(path.join(h13, 'our-free-model', 'catalog.json'), '{"models":["glm-f","kimi-f"]}\n');
+  writeFileSync(path.join(h13, 'our-free-model', 'availability.json'), '{"egressIp":"203.0.113.7"}\n');
+  // 两个「同目录但在范围外」的文件：真实存在，且必须原地不动。
+  writeFileSync(path.join(h13, 'our-free-model', 'stats.json'), '{"days":{"2026-10-10":{"requests":9}}}\n');
+  writeFileSync(path.join(h13, 'our-free-model', 'eac-user.json'), '{"token":"SECRET-SHOULD-NOT-TRAVEL"}\n');
+
+  const r13res = mod.copyToRepo(h13, { repoDir: r13 });
+  const copied13 = r13res.copied.map((p) => p.split(path.sep).join('/'));
+  for (const rel of OMF) {
+    check(`采集：${rel} 进了仓库`, existsSync(path.join(r13, ...rel.split('/'))));
+    check(`采集：copied 里含 ${rel}`, copied13.includes(rel), JSON.stringify(copied13));
+  }
+  check('采集：settings.json 内容逐字一致',
+    readFileSync(path.join(r13, 'our-free-model', 'settings.json'), 'utf8') === settingsText);
+  check('★ 采集：stats.json 未被搬运', !existsSync(path.join(r13, 'our-free-model', 'stats.json')));
+  check('★ 采集：eac-user.json 未被搬运', !existsSync(path.join(r13, 'our-free-model', 'eac-user.json')));
+  check('★ 采集：copied 里不含 stats.json / eac-user.json',
+    !copied13.some((p) => p.endsWith('stats.json') || p.endsWith('eac-user.json')), JSON.stringify(copied13));
+
+  // 差异比较：采集后两边一致。若 stats.json / eac-user.json 被误判为「本机有、仓库没有」，
+  // 这里的 added 就会是 2 —— 那正是「面板永远显示待同步 2」的病根。
+  check('★ diff：采集后待同步归零（账本与凭据不算缺口）', (() => {
+    const d = mod.diffHomeVsRepo(h13, { repoDir: r13 });
+    return d.added.length + d.changed.length + d.removed.length === 0;
+  })(), JSON.stringify(mod.diffHomeVsRepo(h13, { repoDir: r13 })));
+
+  // 还原方向：换机后这三份配置必须回到 home。
+  const h14 = path.join(TMP, 'home14');
+  mkdirSync(h14, { recursive: true });
+  const back13 = mod.copyToHome(h14, { repoDir: r13 });
+  const backRel13 = (back13.copied ?? []).map((p) => p.split(path.sep).join('/'));
+  for (const rel of OMF) {
+    check(`还原：${rel} 回到本机 home`, existsSync(path.join(h14, ...rel.split('/'))));
+    check(`还原：copied 里含 ${rel}`, backRel13.includes(rel), JSON.stringify(backRel13));
+  }
+  check('还原：settings.json 内容与仓库一致',
+    readFileSync(path.join(h14, 'our-free-model', 'settings.json'), 'utf8') === settingsText);
+  check('★ 还原：不凭仓库凭空造出 stats.json', !existsSync(path.join(h14, 'our-free-model', 'stats.json')));
+  check('★ 还原：不凭仓库凭空造出 eac-user.json', !existsSync(path.join(h14, 'our-free-model', 'eac-user.json')));
+
+  // 本机从未装过该插件时：不该凭空造出目录。
+  const h15 = path.join(TMP, 'home15');
+  const r15 = path.join(TMP, 'repo15');
+  mkdirSync(h15, { recursive: true });
+  mkdirSync(r15, { recursive: true });
+  const r15res = mod.copyToRepo(h15, { repoDir: r15 });
+  check('本机没有该目录时：不造空目录、不写空文件', !existsSync(path.join(r15, 'our-free-model')));
+  check('本机没有该目录时：copied 里也不出现',
+    !r15res.copied.map((p) => p.split(path.sep).join('/')).some((p) => p.startsWith('our-free-model/')),
+    JSON.stringify(r15res.copied));
+}
+
 rmSync(TMP, { recursive: true, force: true });
 console.log(`\n────────────  通过 ${pass} / 失败 ${fail}  ───────────`);
 process.exit(fail ? 1 : 0);

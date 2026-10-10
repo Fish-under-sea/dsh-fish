@@ -99,6 +99,9 @@ dsh plugin --profile <profile> add "file:<仓库路径>/packages/dsh-git-sync"
 | `task-board/scheduler-v2.json` | 看板调度器状态 |
 | `dsh-usage/` | 用量账本 |
 | `dsh-settings-nav-order/state.json` | 设置导航顺序偏好（详见下方专节） |
+| `our-free-model/settings.json` | 免费模型插件（`dsh-our-free-model`）的用户设置：开关、探测间隔、转发、出口、渠道网关、默认 maxTokens（详见下方专节） |
+| `our-free-model/catalog.json` | 免费模型目录快照（模型 id 列表 + 时间戳），无密钥 |
+| `our-free-model/availability.json` | 免费模型可用性快照（出口 IP + 各模型探测结果），无密钥 |
 | `profiles/<profile>/package.json` | 装了什么插件 + bundle 层顺序 |
 | `profiles/<profile>/cordis.patch.yml` | **每个插件是否启用**（`disabled:` 行）+ 配置覆盖 |
 | `profiles/<profile>/cordis.patch.yml.bak-plugin-manager` | 插件管理器写的配置备份（精确整路径放行，其它 `*.bak*` 仍一律拒绝） |
@@ -129,6 +132,21 @@ dsh plugin --profile <profile> add "file:<仓库路径>/packages/dsh-git-sync"
 明确**不**收录：壁纸引擎的 `cache/`（约 2.8 GB 派生缓存）、`ffmpeg/` 二进制、`bin/`、`diag/`、`avatars/`。
 
 > **实现要点**：0.3.0 同时把原来散在五处（采集 / 还原 / 差异比较 / 密钥体检 / 面板统计）的白名单循环收敛成**唯一入口** `entriesOf(base, side)` ——否则「新增一种扫描口径只在其中一两处生效」是必然结局；本项目已经因为「多层防御各自为政」踩过两次（见 `isBakAllowed` 与 `.gitignore` 的注释），所以额外扫描根这件事必须只有一个落点。
+
+### 免费模型插件（`our-free-model`）
+
+`dsh-our-free-model` 的配置目录 `$DSH_HOME/our-free-model/` 在 home **之内**，所以按普通相对路径点名，不需要额外扫描根。收录三份：
+
+- `our-free-model/settings.json` —— 用户设置：启用开关、探测间隔、转发、出口、渠道网关、默认 maxTokens；
+- `our-free-model/catalog.json` —— 模型目录快照（模型 id 列表 + 时间戳）；
+- `our-free-model/availability.json` —— 可用性快照（出口 IP + 各模型探测结果）。
+
+**刻意排除两份**：
+
+- `stats.json` —— 本机累计用量账本（`days` / `models` / `requests` / `failedRequests` / `samples`）。两台机器各记各的，同步过去只会**互相覆盖**，两边统计都失真，且换机后没有复原价值。
+- `eac-user.json` —— 含**真实登录 token** 与 GitHub 登录名，属凭据。与 `.credentials.yaml` 同理：**不走 git**，需要时自行拷贝。
+
+> `settings.json` 里的 `forward.key` / `egress.url` / `chanGateway.relay.key` 目前是空串。将来真填了密钥，由「密钥体检」如实报出并拦下提交，**而不是**放宽体检规则。
 
 ### Skill 位置
 

@@ -99,6 +99,9 @@ The allowlist lists paths relative to `$DSH_HOME`. `<profile>` is enumerated dyn
 | `task-board/scheduler-v2.json` | Task-board scheduler state |
 | `dsh-usage/` | Usage ledger |
 | `dsh-settings-nav-order/state.json` | Settings navigation order preference (see dedicated section below) |
+| `our-free-model/settings.json` | Free-model plugin (`dsh-our-free-model`) user settings: enable switch, probe interval, forwarding, egress, channel gateway, default maxTokens (see dedicated section below) |
+| `our-free-model/catalog.json` | Free-model catalog snapshot (model id list + timestamp), no secrets |
+| `our-free-model/availability.json` | Free-model availability snapshot (egress IP + per-model probe results), no secrets |
 | `profiles/<profile>/package.json` | Which plugins are installed + bundle-layer order |
 | `profiles/<profile>/cordis.patch.yml` | **Per-plugin enable/disable** (`disabled:` lines) + config overrides |
 | `profiles/<profile>/cordis.patch.yml.bak-plugin-manager` | Config backup written by the plugin manager (exact-path allow; all other `*.bak*` remain denied) |
@@ -129,6 +132,21 @@ Why "add a scan root" instead of "move the files into home": the wallpaper engin
 Explicitly **not** collected: the wallpaper engine's `cache/` (~2.8 GB of derived cache), `ffmpeg/` binaries, `bin/`, `diag/`, `avatars/`.
 
 > **Implementation note**: 0.3.0 also consolidates the allowlist loop that was previously scattered across five places (collect / restore / diff / secret scan / panel stats) into a **single entry point**, `entriesOf(base, side)` — otherwise "a new scan scope taking effect in only one or two of those places" would be an inevitable outcome; this project has already been bitten twice by "multiple defense layers drifting apart" (see the `isBakAllowed` and `.gitignore` comments), so the extra scan root must have exactly one place to land.
+
+### Free-model plugin (`our-free-model`)
+
+`dsh-our-free-model`'s config directory `$DSH_HOME/our-free-model/` lives **inside** home, so it is named by an ordinary relative path and needs no extra scan root. Three files are collected:
+
+- `our-free-model/settings.json` — user settings: enable switch, probe interval, forwarding, egress, channel gateway, default maxTokens;
+- `our-free-model/catalog.json` — model catalog snapshot (model id list + timestamp);
+- `our-free-model/availability.json` — availability snapshot (egress IP + per-model probe results).
+
+**Two files are deliberately excluded**:
+
+- `stats.json` — the local cumulative usage ledger (`days` / `models` / `requests` / `failedRequests` / `samples`). Each machine keeps its own tally; syncing it would only **overwrite** one with the other, distorting both, and it has no restoration value after a machine switch.
+- `eac-user.json` — contains a **real login token** and the GitHub login name, i.e. credentials. Same rule as `.credentials.yaml`: it **never travels over git**; copy it yourself when needed.
+
+> The `forward.key` / `egress.url` / `chanGateway.relay.key` fields in `settings.json` are currently empty strings. If real secrets are ever filled in, the secret scan will report them and block the commit **rather than** loosening the scan rules.
 
 ### Skill location
 
