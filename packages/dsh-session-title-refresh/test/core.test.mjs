@@ -12,6 +12,7 @@ import * as coreNs from '../lib/core.js';
 
 import {
   DEFAULTS,
+  HARD_BOUNDS,
   PRESETS,
   assembleStreamText,
   cleanTitle,
@@ -86,6 +87,14 @@ test('PRESETS 里恰好有一个推荐档位，且默认值就是它', () => {
   assert.equal(recommended.length, 1);
   assert.equal(recommended[0].firstRound, DEFAULTS.firstRound);
   assert.equal(recommended[0].interval, DEFAULTS.interval);
+});
+
+test('默认输出预算给思考型标题模型留出余量', () => {
+  // 回归（0.3.1）：64 token 的预算会被思考型模型的 reasoning 吃光，流以
+  // max-tokens 收尾且正文为空。默认值必须明显高于「只装一条标题」所需的量。
+  assert.ok(DEFAULTS.maxOutputTokens >= 256, `默认输出预算应 ≥ 256，实际 ${DEFAULTS.maxOutputTokens}`);
+  assert.ok(DEFAULTS.maxOutputTokens <= HARD_BOUNDS.maxOutputTokens[1], '默认值必须落在硬边界内');
+  assert.equal(normalizeConfig({}).maxOutputTokens, DEFAULTS.maxOutputTokens);
 });
 
 test('eligibleUserMessageOf：只认人类纯文本消息', () => {

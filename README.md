@@ -16,6 +16,8 @@
 
 ---
 
+> **🆕 0.6.9（2026-10-10）**：`@fish-under-sea/dsh-session-title-refresh` **0.3.1**（依赖范围 `^0.3.0` → **`^0.3.1`**）—— **修掉「每一次自动命名都报 max-tokens」**。症状：所有会话的自动命名与手动刷新全部失败，记录里清一色 `标题模型结束原因异常（max-tokens）`。根因是三层叠加：① 标题调用**没有显式关思考**（官方 provider 在 `purpose === 'session-title'` 时会强制 `effort='off'`，本插件自己发起的辅助调用漏了这一层）；② 输出预算默认只有 **64** token，思考型标题模型的 reasoning 直接把它吃光；③ 装配层对结束原因**一刀切**——`finish !== 'stop'` 就抛错保留旧标题，于是「预算撞顶」被当成「模型异常」。0.3.1 三处一起修：标题调用显式传 `reasoningEffort: 'off'`；默认输出预算 64 → **256**；`max-tokens` 收尾时**有正文就接受截断结果**（标题短，截断通常只影响尾部标点 / 空白），只有正文为空才判失败。core 19 + host 20 + client 13 = 52 用例全通过（新增 3 条回归：必须传 `reasoningEffort`、有正文的 `max-tokens` 要接受、默认预算 ≥ 256）。
+>
 > **🆕 0.6.8（2026-10-08）**：七份 README 全部**中英双语化 + 统一美化**（居中标徽章块、固定章节顺序、去 emoji 章节前缀、语言切换行）；各子包 `files` 均纳入 `README.en.md`。
 >
 > `@fish-under-sea/dsh-git-sync` **0.3.0**：新增**额外扫描根**——白名单条目可用根前缀指向 `$DSH_HOME` 之外的目录，本版收录壁纸引擎的 `config.json` 与玻璃预设（取自 `~/.dsh-wallpaper-engine`，与 DSH home **同级**）；同时把原来散在五处（采集 / 还原 / 差异比较 / 密钥体检 / 面板统计）的白名单循环收敛为唯一入口 `entriesOf()`。同步引擎 120 用例、设置页客户端 37 用例全通过。
@@ -81,7 +83,7 @@ Fish 自建 [DSH](https://github.com/Fish-under-sea/DSH)（DeepSeek Harness）�
 | 子包 | 版本 | 说明 |
 |------|:----:|------|
 | [`dsh-approval-guide`](packages/dsh-approval-guide) | 0.2.2 | 在审批弹窗里追加**中文说明**：这次审批会做什么、有什么风险、依据是什么 |
-| [`dsh-session-title-refresh`](packages/dsh-session-title-refresh) | 0.3.0 | **会话标题自动刷新**：第 N 轮起总结命名，此后每 M 轮刷新一次；设置页新增「标题模型（可选）」下拉，与官方「模型」页同源 |
+| [`dsh-session-title-refresh`](packages/dsh-session-title-refresh) | 0.3.1 | **会话标题自动刷新**：第 N 轮起总结命名，此后每 M 轮刷新一次；设置页「标题模型（可选）」下拉与官方「模型」页同源；标题调用**显式关思考**、默认输出预算 256、`max-tokens` 有正文即接受截断结果 |
 | [`dsh-git-sync`](packages/dsh-git-sync) | 0.3.0 | **一键 Git 同步**：把插件清单、启用状态、本地设置、Skills、看板/用量账本与设置导航顺序偏好同步到自己的私有仓库；支持**额外扫描根**，白名单条目可用根前缀指向 `$DSH_HOME` 之外的目录 |
 | [`dsh-settings-nav-order`](packages/dsh-settings-nav-order) | 0.1.5 | **设置导航重排**：把设置面板左侧菜单排成自己要的顺序、把不想看的项收起来；偏好随 Git 同步插件**跨机复原** |
 | [`dsh-visual-companion`](packages/dsh-visual-companion) | 0.1.7 | **视觉伴侣唤醒**：网页上看原型 / 比布局，点选 + 备注后按「提交给助手」，会话自动收到一条用户消息并起一轮 —— 不必回终端复述；**点选过程静默，只有提交才唤醒一次**（0.1.7 起加载日志的版本号从 `package.json` 现读，不再写死） |

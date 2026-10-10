@@ -281,6 +281,10 @@ test('提供方：取样首条+最近若干条、用会话当前路由、清洗�
   assert.equal(call.provider, 'deepseek-official');
   assert.equal(call.model, 'deepseek-flash');
   assert.equal(call.purpose, 'session-title');
+  // 回归（0.3.1）：官方 provider 在 `purpose === 'session-title'` 时会强制关思考，
+  // 本插件自己发起的辅助调用必须显式表态——否则思考型标题模型把输出预算全花在
+  // reasoning 上，流以 max-tokens 收尾、正文为空，每一次自动命名都失败。
+  assert.equal(call.reasoningEffort, 'off', '标题调用必须显式关闭思考');
   assert.equal(call.sessionId, 'session-gen');
   assert.match(call.system, /overall direction/);
   assert.match(call.messages[0].content[0].text, /JSON array/);
@@ -310,7 +314,7 @@ test('提供方：没有可用路由时抛错（保留旧标题）', async () =>
   );
 });
 
-test('提供方：工具调用或超长结束原因都判为失败', async () => {
+test('提供方：工具调用判为失败，超长结束原因区分有没有正文', async () => {
   const sessions = new Map();
   const { ctx, api } = makeCtx(sessions);
   apply(ctx, {});
@@ -323,11 +327,19 @@ test('提供方：工具调用或超长结束原因都判为失败', async () =>
   ];
   await assert.rejects(() => api.provider.generate(request), /text only|tool/);
 
+  // 回归（0.3.1）：思考型标题模型会带着正文撞输出上限。`max-tokens` 是预算撞顶
+  // 而不是失败，只要正文可用就必须接受这份截断结果——曾经这里一律抛
+  // 「标题模型结束原因异常（max-tokens）」，把每一次自动命名都作废了。
   api.streamScript = () => [
-    { type: 'text-delta', index: 0, text: '半截' },
+    { type: 'text-delta', index: 0, text: '半截标题' },
     { type: 'finish', reason: { kind: 'max-tokens' } },
   ];
-  await assert.rejects(() => api.provider.generate(request), /max-tokens/);
+  const truncated = await api.provider.generate(request);
+  assert.equal(truncated.title, '半截标题', '有正文的 max-tokens 应当被接受');
+
+  // 思考把预算吃光（没有任何正文）时仍判失败，保留旧标题。
+  api.streamScript = () => [{ type: 'finish', reason: { kind: 'max-tokens' } }];
+  await assert.rejects(() => api.provider.generate(request), /没有产出文本/);
 
   api.streamScript = () => [{ type: 'finish', reason: { kind: 'stop' } }];
   await assert.rejects(() => api.provider.generate(request), /没有产出文本/);

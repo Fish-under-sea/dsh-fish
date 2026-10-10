@@ -20,7 +20,9 @@ export const DEFAULTS = {
   maxInterval: 20,
   windowSize: 8,
   maxInputBytes: 4096,
-  maxOutputTokens: 64,
+  // 64 太小：思考型标题模型会把整个预算花在 reasoning 上，流以 max-tokens 收尾、
+  // 正文为空。标题本身只需要几十 token，余量留给「关不掉思考」的通道。
+  maxOutputTokens: 256,
   timeoutMs: 60000,
   targetWords: 5,
   targetCjkCharacters: 10,

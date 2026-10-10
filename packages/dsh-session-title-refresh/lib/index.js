@@ -55,6 +55,9 @@ const TITLE_MAX_BYTES = 512;
 /** 标题提供的结束原因（不认识的原因一律判失败，保留旧标题）。 */
 const FINISH_STOP = 'stop';
 
+/** 输出预算撞顶的结束原因：有正文则接受截断结果，无正文才判失败。 */
+const FINISH_MAX_TOKENS = 'max-tokens';
+
 /** 界面记录里"这一条是谁产生的"——重启后靠它分辨是哪一版的行为。 */
 const VERSION = readPluginVersion();
 
@@ -272,6 +275,11 @@ export function createProvider(ctx, state) {
           provider: route.provider,
           model: route.model,
           purpose: 'session-title',
+          // 与官方 provider 口径一致（`dsh-llm-deepseek` 在 purpose 为 session-title
+          // 时强制 effort='off'）：标题调用必须显式关思考。否则思考型标题模型会把
+          // 输出预算全花在 reasoning 上，流以 max-tokens 收尾、正文为空，每一次
+          // 自动命名都失败。不支持该档位的通道会退化成自己的默认档，不会报错。
+          reasoningEffort: 'off',
           sessionId: request.session.id,
           messages: [{ role: 'user', content: [{ type: 'text', text: prompt }], source: { kind: 'plugin:dsh-session-title-refresh' } }],
           system,
@@ -284,7 +292,10 @@ export function createProvider(ctx, state) {
         deadline.signal.throwIfAborted();
 
         const assembled = assembleStreamText(chunks);
-        if (assembled.finish !== FINISH_STOP) {
+        // `max-tokens` 是输出预算撞顶，不是失败：只要已经产出可用正文就接受这份
+        // 截断结果（标题本来就短，被截断时多半只是尾部多余标点 / 空白）。只有正文
+        // 为空的 max-tokens（思考把预算吃光）才继续判失败、保留旧标题。
+        if (assembled.finish !== FINISH_STOP && assembled.finish !== FINISH_MAX_TOKENS) {
           const detail = assembled.failure?.message ? `：${assembled.failure.message}` : '';
           const code = assembled.failure?.code ? `（${assembled.failure.code}）` : '';
           throw new Error(`dsh-session-title-refresh: 标题模型结束原因异常（${String(assembled.finish ?? '无结束块')}）${detail}${code}`);

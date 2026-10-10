@@ -101,7 +101,7 @@ Config file path: `$DSH_HOME/dsh-session-title-refresh/config.json`. It is not s
 | Refresh interval | 5 turns | 1 – adjustable cap (default 20) |
 | Sample window | 8 | 2 – 40 |
 | Input byte budget | 4096 | 256 – 65536 |
-| Output token limit | 64 | 16 – 512 |
+| Output token limit | 256 | 16 – 512 |
 | Timeout | 60 s | 5 – 300 s |
 | Target length | 5 words / 10 CJK characters | 1 – 20 words / 2 – 40 characters |
 | Route | Follow session's current model | Pick a fixed combination from the **Title model** dropdown, or enter provider + model manually via **Custom…** |
@@ -114,11 +114,13 @@ Config file path: `$DSH_HOME/dsh-session-title-refresh/config.json`. It is not s
 - The active session list comes from the **current process**: sessions restored after a DSH restart reappear only after they emit another human message (the titles themselves are persistent and remain in the session log).
 - Generating a title on the first turn requires the session to have recorded a main-request route at least once. In the rare case of "refresh title immediately after creating a session", it may fail because no route is available — pin a provider/model in the **Title model** dropdown to work around this. When the model catalog cannot be read (the llm service is not ready), the card shows the reason and keeps the manual entry path available; the settings page stays functional.
 - **`FinishReason` is an object, not a string** (`{ kind: 'stop' }`). The assembler parses by `kind`; `error` / `aborted` carry `failure.message` and `failure.code` into the error text. Test fakes must also feed objects — the 0.1.0 fakes fed the string `'stop'`, which masked this defect and caused all real-session auto-naming to fail with "abnormal finish reason ([object Object])" (fixed in 0.1.1).
+- **The title call explicitly disables thinking** (`reasoningEffort: 'off'`), matching the official provider's behaviour when `purpose === 'session-title'`. Channels that do not support that rung fall back to their own default instead of erroring.
+- **A `max-tokens` finish reason is no longer an automatic failure**: as long as the stream produced usable text, the truncated result is accepted (titles are short, so truncation usually only affects trailing punctuation or whitespace). Only an empty body — thinking consumed the whole budget — still fails and preserves the old title. Version 0.3.0 rejected every `max-tokens` outcome outright; combined with the then-default 64-token budget, a thinking title model made **every** auto-naming attempt fail with "title model abnormal finish reason (max-tokens)" (fixed in 0.3.1).
 
 ## Development and testing
 
 ```sh
-# Run all tests (core 18 + host 20 + client 13 = 51 cases)
+# Run all tests (core 19 + host 20 + client 13 = 52 cases)
 node test/run-all.mjs
 
 # Or run a single file
