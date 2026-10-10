@@ -4,6 +4,10 @@
 
 ---
 
+> **0.7.3（2026-10-10）**：`dsh-agent-teams-fish` **0.4.2 → 0.4.3**（依赖范围 `^0.4.2` → **`^0.4.3`**）—— **纯文档修正，二进制与 0.4.2 等价**。[0.4.2](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.4.2.md) 修了「队长头像跟随路由」，但 README 的「已知限制」表里漏改了「队长不跟随模型路由」那一行，同一份文档里新旧说法并存，而那句「想自动跟随需给快照加字段」描述的正是 0.4.2 已做完的事。代码没有问题，问题在于 **npm 包内 README 在 `npm publish` 那一刻就冻结、事后无法修改** —— 所以只能补发一版把正确文案带上 npm。本版 `lib/` 运行时代码与 0.4.2 逐字节相同，升上来只是为了让 npm 页面上的文档不再自相矛盾。详见 [v0.4.3](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.4.3.md)。
+
+---
+
 > **0.7.2（2026-10-10）**：两个成员同时升级 —— `@fish-under-sea/dsh-session-title-refresh` **0.3.2**（依赖范围 `^0.3.1` → **`^0.3.2`**）与 `dsh-agent-teams-fish` **0.4.2**（依赖范围 `^0.4.0` → **`^0.4.2`**）。
 >
 > **① `session-title-refresh` 0.3.2 —— 修掉「标题模型不支持 off 档时，每一次自动命名都报 UNSUPPORTED_REASONING_EFFORT」**。症状：`provider "hy-f" model "buddy/hy3" does not support reasoning effort "off"`，标题功能整个失效。根因是 0.3.1 的修复引入了新缺陷：为了修「思考吃光输出预算」而**无条件**传 `reasoningEffort: 'off'`，但 **DSH 核心对显式档位是硬校验、不做任何降级**（`dsh-llm` 的 `resolveCallWithInfo`：模型没声明该档位就直接抛；模型连 reasoning 元数据都没有时传任何档位同样抛），而 `dsh-llm-pi-ai` 会把**未声明的档位一律钉成不支持**。0.3.1 那行代码的注释写着「不支持该档位的通道会退化成自己的默认档，不会报错」——**这句是错的**。用真实配置复现：58 个模型里 **33 个**（gpt / claude / kimi / glm / hy3 / minimax / mimo 等）在 0.3.1 下每一次命名都必然失败。0.3.2 改为**先探测再表态**：调 `ctx.llm.resolveModelInfo()`（与派发校验同源）读该模型真实档位，能关思考就传 `off`、关不掉退到它支持的**最低**档、连元数据都没有才完全不传该字段；探测结果按 provider/model 缓存，探测失败也只退回不传档位。同时纠正一处事实：`purpose: 'session-title'` **只有**官方 `dsh-llm-deepseek` 消费，`dsh-llm-pi-ai` 完全不看它——所以在 pi-ai 通道上不传档位等于放任思考吃掉预算，这正是必须显式表态的原因。core 25 + host 25 + client 13 = **63** 用例全通过（新增 core 6 条 + host 5 条回归）。
