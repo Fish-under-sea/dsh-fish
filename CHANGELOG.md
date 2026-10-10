@@ -4,6 +4,18 @@
 
 ---
 
+> **0.7.4（2026-10-11）**：`dsh-agent-teams-fish` **0.4.3 → 0.5.0**（依赖范围 `^0.4.3` → **`^0.5.0`**）—— **第三轮厂商素材**。厂商命名空间 **15 → 17**，新增 **StepFun（阶跃星辰）** 与 **Jev（TypeSafe System One）**，随包素材 **280 → 286 个文件 / 约 29.3 MB**。
+>
+> **① 档位**：两家都只有「厂商通用图 + 立绘高清」，与既有 `meta` / `mistral` / `rwkv` / `seed` / `ernie` 同档。成员请求 `member-<vendor>-<role>-v2.png` 时第 1 跳落空、**第 2 跳命中岗位通用图** —— 头像照常显示、不破图。本机暂无这两家的 Q 版岗位图，属于预期的兜底行为，不是缺素材事故。
+>
+> **② 识别规则**：`stepfun` 同时认 provider 名、`step-<数字>` 模型族与中文「阶跃」。**模型族那一条是必需的**：本机三条 Step 路由（[模型配置清单](模型配置清单.md) 的 S1 / S2 / S3）的 provider 段是 `cn-f/cline/cline-free` 这类，**没有一个字母是 stepfun**，而 model 是 `step-5-preview`，只认 provider 名会让整队掉兜底头像 —— 与 [0.4.1](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.4.1.md) 修掉的 `hunyuan3` / `rwkv7` / `seed1.6` 是**同一类病根**。`jev` 认 `jev` / `typesafe` / `type-safe`，两者都保留词边界，`stepper` / `steps` / `stepstone` / `jevons` 一类普通词不会被误吞（单测钉住）。
+>
+> **③ ⚠️ `brand-jev.svg` 是占位字标，不是官方商标**：TypeSafe / Jev 无公开商标（simple-icons 与 LobeHub icons 均 404），而插件门禁 `every vendor ships its own artwork tier` **强制每个厂商必须有 `brand-<vendor>.svg`**。故按既有归一化口径（墨迹框最大边缩到 0.84×24、居中）自制「J」字标并注入品牌色；拿到官方素材后直接替换同名文件即可。`brand-stepfun.svg` 取自 LobeHub icons 官方单色 path，无此问题。
+>
+> 详见 [dsh-agent-teams-fish v0.5.0](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.5.0.md)。
+
+---
+
 > **0.7.3（2026-10-10）**：`dsh-agent-teams-fish` **0.4.2 → 0.4.3**（依赖范围 `^0.4.2` → **`^0.4.3`**）—— **纯文档修正，二进制与 0.4.2 等价**。[0.4.2](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.4.2.md) 修了「队长头像跟随路由」，但 README 的「已知限制」表里漏改了「队长不跟随模型路由」那一行，同一份文档里新旧说法并存，而那句「想自动跟随需给快照加字段」描述的正是 0.4.2 已做完的事。代码没有问题，问题在于 **npm 包内 README 在 `npm publish` 那一刻就冻结、事后无法修改** —— 所以只能补发一版把正确文案带上 npm。本版 `lib/` 运行时代码与 0.4.2 逐字节相同，升上来只是为了让 npm 页面上的文档不再自相矛盾。详见 [v0.4.3](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.4.3.md)。
 
 ---

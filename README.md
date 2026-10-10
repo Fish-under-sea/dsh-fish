@@ -16,7 +16,16 @@
 
 ---
 
-> **🆕 0.7.3（2026-10-10）**：`dsh-agent-teams-fish` **0.4.2 → 0.4.3**（依赖范围 `^0.4.2` → **`^0.4.3`**）—— **纯文档修正，二进制与 0.4.2 等价**。0.4.2 修了「队长头像跟随路由」，但 README 的「已知限制」表里漏改了「队长不跟随模型路由」那一行，同一份文档里新旧说法并存。代码没问题，**npm 包内 README 在 publish 那一刻就冻结、事后无法修改**，所以只能补发一版把正确文案带上 npm。本版 `lib/` 运行时代码与 0.4.2 逐字节相同，升上来只是为了让 npm 页面上的文档不再自相矛盾。详见 [dsh-agent-teams-fish v0.4.3](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.4.3.md)。
+> **🆕 0.7.4（2026-10-11）**：`dsh-agent-teams-fish` **0.4.3 → 0.5.0**（依赖范围 `^0.4.3` → **`^0.5.0`**）—— **第三轮厂商素材**：厂商命名空间 **15 → 17**，新增 **StepFun（阶跃星辰）** 与 **Jev（TypeSafe System One）**，随包素材 **280 → 286 个文件**。
+>
+> - **档位**：两家都只有「厂商通用图 + 立绘高清」，与既有 `meta` / `mistral` / `rwkv` / `seed` / `ernie` 同档。成员请求 `member-<vendor>-<role>-v2.png` 时第 1 跳落空、**第 2 跳命中岗位通用图**，头像照常显示、不破图（本机暂无这两家的 Q 版岗位图）。
+> - **识别规则**：`stepfun` 同时认 provider 名、`step-<数字>` 模型族与中文「阶跃」。**模型族那一条是必需的**：本机三条 Step 路由（[模型配置清单](模型配置清单.md) 的 S1 / S2 / S3）的 provider 段是 `cn-f/cline/cline-free` 这类，**没有 stepfun 字样**而 model 是 `step-5-preview`，只认 provider 名会让整队掉兜底头像。`jev` 认 `jev` / `typesafe` / `type-safe`，两者都保留词边界（`stepper` / `steps` / `jevons` 不会被误吞）。
+> - ⚠️ **`brand-jev.svg` 是占位字标，不是官方商标**：TypeSafe / Jev 无公开商标（simple-icons 与 LobeHub icons 均无收录），而插件门禁强制每个厂商必须有 `brand-<vendor>.svg`，故按既有归一化口径自制「J」字标。拿到官方素材后直接替换该文件即可。
+> - 详见 [dsh-agent-teams-fish v0.5.0](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.5.0.md)。
+
+---
+
+> **0.7.3（2026-10-10）**：`dsh-agent-teams-fish` **0.4.2 → 0.4.3**（依赖范围 `^0.4.2` → **`^0.4.3`**）—— **纯文档修正，二进制与 0.4.2 等价**。0.4.2 修了「队长头像跟随路由」，但 README 的「已知限制」表里漏改了「队长不跟随模型路由」那一行，同一份文档里新旧说法并存。代码没问题，**npm 包内 README 在 publish 那一刻就冻结、事后无法修改**，所以只能补发一版把正确文案带上 npm。本版 `lib/` 运行时代码与 0.4.2 逐字节相同，升上来只是为了让 npm 页面上的文档不再自相矛盾。详见 [dsh-agent-teams-fish v0.4.3](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.4.3.md)。
 
 ---
 
@@ -49,7 +58,7 @@ Fish 自建 [DSH](https://github.com/Fish-under-sea/DSH)（DeepSeek Harness）�
 | [`dsh-git-sync`](packages/dsh-git-sync) | 0.3.2 | **一键 Git 同步**：把插件清单、启用状态、本地设置、Skills、看板/用量账本、设置导航顺序偏好、**标题自动刷新设置**与**免费模型插件配置及用量账本**同步到自己的私有仓库；支持**额外扫描根**，白名单条目可用根前缀指向 `$DSH_HOME` 之外的目录（壁纸引擎的设置、玻璃预设、字体集与吉祥物素材都走这条路） |
 | [`dsh-settings-nav-order`](packages/dsh-settings-nav-order) | 0.1.5 | **设置导航重排**：把设置面板左侧菜单排成自己要的顺序、把不想看的项收起来；偏好随 Git 同步插件**跨机复原** |
 | [`dsh-visual-companion`](packages/dsh-visual-companion) | 0.1.7 | **视觉伴侣唤醒**：网页上看原型 / 比布局，点选 + 备注后按「提交给助手」，会话自动收到一条用户消息并起一轮 —— 不必回终端复述；**点选过程静默，只有提交才唤醒一次**（0.1.7 起加载日志的版本号从 `package.json` 现读，不再写死） |
-| [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) | 0.4.3 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；**厂商头像素材随包分发**（15 厂商 × 10 岗位 + 厂商通用图 + 立绘 + 队长 + 商标 SVG，280 个文件 / 约 28.6 MB，含 1024×1024 高清 WebP 族），装完即有，跨机不再依赖 `artworkDir`；自定义目录仍可整套覆盖；商标 SVG 按扩展名送达；**队长头像跟随队长自己的模型路由**（0.4.2 修，此前写死成 DeepSeek 那张，其余 9 张永远不可达） |
+| [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) | 0.5.0 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；**厂商头像素材随包分发**（**17 厂商** × 10 岗位 + 厂商通用图 + 立绘 + 队长 + 商标 SVG，**286 个文件 / 约 29.3 MB**，含 1024×1024 高清 WebP 族），装完即有，跨机不再依赖 `artworkDir`；自定义目录仍可整套覆盖；商标 SVG 按扩展名送达；**队长头像跟随队长自己的模型路由**（0.4.2 修，此前写死成 DeepSeek 那张，其余 9 张永远不可达）；**0.5.0 新增 StepFun（阶跃星辰）与 Jev（TypeSafe）**，两家只有通用图与立绘档，岗位请求走降级链兜底 |
 | [`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish) | 0.5.7 | **思考强度与输入模态**（上游 [HaoyueQin/dsh-better-reasoning-effort](https://github.com/HaoyueQin/dsh-better-reasoning-effort) 的**Fork**）：在官方「模型」页编辑卡里直接编辑每模型的 `reasoningEfforts` 与 `input` 声明，并支持一键自动适配；本 Fork 把 `settings.models.provider-card` 席位完整让给模型能力面板 |
 | [`dsh-our-free-model`](https://github.com/Fish-under-sea/Our-Free-Mode-fish) | 2.0.0 | **免费模型与渠道聚合**（上游 [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 的**Fork**）：把 13 个免费渠道（CodeArts / CodeBuddy / Loomy / Raccoon / MiniMax / Gemini 等）与免费模型并入官方模型选择器，并自带渠道网关供其它本地 harness 反代。本 Fork 新增「**隐藏渠道模型分组**」总开关 —— 渠道分组会与你自己配的 provider 混在一起把选择器撑长，打开即一次收起 13 组；**只影响展示不影响路由**（网关请求走 `resolveModelInfo()`，被隐藏的模型照常收发），渠道设置页的「显示列表 / 关闭全部」读 `listAllModels()` 也不受影响；默认关闭，升级不会静默改变你看到的列表 |
 

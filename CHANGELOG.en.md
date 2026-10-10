@@ -4,6 +4,18 @@
 
 ---
 
+> **0.7.4 (2026-10-11):** `dsh-agent-teams-fish` **0.4.3 → 0.5.0** (dependency range `^0.4.3` → **`^0.5.0`**) — the **third round of vendor artwork**. The vendor namespace goes **15 → 17**, adding **StepFun** and **Jev** (TypeSafe System One); in-package assets go **280 → 286 files / ~29.3 MB**.
+>
+> **① Tier**: both ship only a generic vendor portrait + HD portrait, the same tier as `meta` / `mistral` / `rwkv` / `seed` / `ernie`. A member request for `member-<vendor>-<role>-v2.png` misses hop 1 and lands on the **role-generic** image at hop 2 — avatars keep rendering with no broken images. This machine has no chibi role art for either vendor; that is the intended fallback, not a missing-asset incident.
+>
+> **② Recognition**: `stepfun` matches the provider name, the `step-<digit>` model family, and 阶跃. **The model-family clause is required**: this machine's three Step routes (S1 / S2 / S3) use `cn-f/cline/cline-free`-style provider segments that contain **no "stepfun" at all** while the model is `step-5-preview`, so matching the provider alone would drop the whole team to fallback avatars — **the same class of defect** fixed for `hunyuan3` / `rwkv7` / `seed1.6` in [0.4.1](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.4.1.md). `jev` matches `jev` / `typesafe` / `type-safe`; both keep word boundaries, so `stepper` / `steps` / `stepstone` / `jevons` are not swallowed (pinned by unit tests).
+>
+> **③ ⚠️ `brand-jev.svg` is a placeholder monogram, not an official mark**: TypeSafe / Jev has no public logo (both simple-icons and LobeHub icons return 404), while the plugin gate `every vendor ships its own artwork tier` **requires a `brand-<vendor>.svg` for every vendor**. A minimal "J" mark was therefore drawn under the existing normalization contract (ink box max edge scaled to 0.84×24, centred) with the brand colour applied; replace that file once an official mark exists. `brand-stepfun.svg` does not have this problem — it comes from LobeHub icons' official monochrome path.
+>
+> See [dsh-agent-teams-fish v0.5.0](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.5.0.md).
+
+---
+
 > **0.7.3 (2026-10-10):** `dsh-agent-teams-fish` **0.4.2 → 0.4.3** (dependency range `^0.4.2` → **`^0.4.3`**) — a **documentation-only release, binary-equivalent to 0.4.2**. [0.4.2](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.4.2.md) fixed "the captain avatar follows the route" but missed the "Captain does not follow model routing" line in the known-limitations table, leaving the same document asserting both — and that line's "automatic following would require adding a field to the snapshot" described exactly what 0.4.2 had already done. The code was fine; the problem is that **an npm package's README is frozen at `npm publish` time and cannot be edited afterwards**, so the corrected text could only reach npm through another release. This version's `lib/` runtime code is byte-identical to 0.4.2 — upgrading only removes the self-contradiction from the npm page. See [v0.4.3](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.4.3.md).
 
 ---
