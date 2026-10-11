@@ -16,6 +16,17 @@
 
 ---
 
+> **🆕 0.7.7（2026-10-11）**：三个上游 fork 同步到最新上游 —— `dsh-agent-teams-fish` **0.5.1 → 0.6.0**、`dsh-better-reasoning-effort-fish` **0.5.7 → 0.5.8**、`dsh-our-free-model` **2.0.0 → 2.1.0**（依赖范围分别提到 **`^0.6.0`** / **`^0.5.8`** / **`^2.1.0`**）。
+>
+> - **`dsh-agent-teams-fish` 0.6.0**：并入上游 v0.1.23（37 个提交）—— **成员工具策略**（可为成员配策略 ID，四个必需协调工具始终保留；只控工具可用性，不是操作系统沙箱）、**质量门契约与修订绑定**（verdict 绑定实际产物字节与完整修复 lineage）、**修复契约保留与失效源告警**（不在失败依赖上死锁）、**越界 finding 升级**（带理由升级，而非造不可能完成的修复任务）、**lineage 身份沿 fork 链**、**工作区审计**、**损坏 `team.json` 降级读取**。三处冲突按「两侧并存」融合，Fish 自建的美术目录解析、客户端降级链与队长头像跟随路由完整保留。
+> - **`dsh-better-reasoning-effort-fish` 0.5.8**：并入上游三条安装路线说明（24 小时 `minimum-release-age` 下写明版本号可立即安装、release 附带的 tarball 路线、GitHub 源码安装）。**0.5.7 已发布过**，本仓库 HEAD 比它多一个 README 提交，故版本提到 0.5.8。
+> - **`dsh-our-free-model` 2.1.0**：并入上游 v2.1.0（17 个提交）—— **combos 组合链**、**token-saver**、**原生 Anthropic 网关**、`standalone` 拆分、渠道包与 Kilo 渠道、升级器 snapshot SHA 修复。Fish 自建的**隐藏渠道模型分组**总开关与**按面积计价**完整保留。
+> - ⚠️ **仓库改名**：`dsh-our-free-model` 的仓库已从 `Our-Free-Mode-fish` 迁到 [`dsh-our-free-model-fish`](https://github.com/Fish-under-sea/dsh-our-free-model-fish)（旧名已失效），本 README 中英双语的 4 处链接与安装示例已同步。
+> - ⚠️ **`dsh-our-free-model` 的应用内一键升级暂不可用**：它的自升级器按 Ed25519 签名校验 `feed/manifest.json`，而重签需要上游发布私钥（本机没有）。**npm 安装不受影响**（该包无 `prepublishOnly`，且 `feed/`、`catalog/` 不在 `files` 里）。
+> - **测试**：at-fork 美术与质量门测试全绿（自定义美术 21/21、岗位匹配 41/41、质量门修订 9/9，另加五套上游新门禁）；ofm 的 `channel-visibility` 与 `image-pricing` 测试通过；brf typecheck 通过。
+
+---
+
 > **🆕 0.7.6（2026-10-11）**：`@fish-under-sea/dsh-git-sync` **0.3.2 → 0.3.3**（依赖范围 `^0.3.2` → **`^0.3.3`**）—— **壁纸引擎采集范围四条收敛为一条**。
 >
 > - **为什么收敛**：壁纸引擎（`dsh-plugin-wallpaper-engine`）的 ADR-0011 把「预设」从**玻璃子集快照**升为**整机配置快照**，并新增导入 / 导出。面板点「导出预设…」得到的那份文件（本机 `$DSH_HOME/FISH.json`）**就是**它的配置面 —— 实测 `values` 116 键与 `config.json.settings` 132 键的**差集恰好是 12 个硬排除键 + 4 个资产指针**（当前壁纸 / 隐藏清单 / 轮播列表 / `userProps` 本机绝对路径摘要 / 运行期失败记忆 / 版本号），且 `assets` 段**内嵌字体与吉祥物资产本体**。⇒ 原先四条（`wallpaper-engine/config.json` + `glass-presets/` + `fontsets/` + `mascot/`，走额外扫描根）全部冗余。
@@ -77,9 +88,9 @@ Fish 自建 [DSH](https://github.com/Fish-under-sea/DSH)（DeepSeek Harness）�
 | [`dsh-git-sync`](packages/dsh-git-sync) | 0.3.3 | **一键 Git 同步**：把插件清单、启用状态、本地设置、Skills、看板/用量账本、设置导航顺序偏好、**标题自动刷新设置**、**免费模型插件配置及用量账本**与**壁纸引擎整机配置快照**（`$DSH_HOME/FISH.json`，资产本体已内嵌）同步到自己的私有仓库。0.3.3 把壁纸引擎原先的四条（`config.json` + 三个素材目录，走额外扫描根）**收敛成一条** —— 那个插件已支持一键导出整机快照；顺带修掉目录级条目「仓库多出」的残留（实测 `4 个差异（新增 0 · 变更 1 · 仓库多出 3）` → 归零）。额外扫描根机制保留、当前表为空 |
 | [`dsh-settings-nav-order`](packages/dsh-settings-nav-order) | 0.1.5 | **设置导航重排**：把设置面板左侧菜单排成自己要的顺序、把不想看的项收起来；偏好随 Git 同步插件**跨机复原** |
 | [`dsh-visual-companion`](packages/dsh-visual-companion) | 0.1.7 | **视觉伴侣唤醒**：网页上看原型 / 比布局，点选 + 备注后按「提交给助手」，会话自动收到一条用户消息并起一轮 —— 不必回终端复述；**点选过程静默，只有提交才唤醒一次**（0.1.7 起加载日志的版本号从 `package.json` 现读，不再写死） |
-| [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) | 0.5.1 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；**厂商头像素材随包分发**（**17 厂商** × 10 岗位 + 厂商通用图 + 立绘 + 队长 + 商标 SVG，**286 个文件 / 约 29.3 MB**，含 1024×1024 高清 WebP 族），装完即有，跨机不再依赖 `artworkDir`；自定义目录仍可整套覆盖；商标 SVG 按扩展名送达；**队长头像跟随队长自己的模型路由**（0.4.2 修，此前写死成 DeepSeek 那张，其余 9 张永远不可达）；**0.5.1 修掉降级链序** —— 此前厂商那一跳被岗位通用图永久挡住，只有通用图的 7 家厂商角色与 17 张厂商立绘全部不可达（症状：徽标是 StepFun、头像是通用鲸鱼），现链序为 `厂商+岗位 → 厂商 → 岗位` |
-| [`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish) | 0.5.7 | **思考强度与输入模态**（上游 [HaoyueQin/dsh-better-reasoning-effort](https://github.com/HaoyueQin/dsh-better-reasoning-effort) 的**Fork**）：在官方「模型」页编辑卡里直接编辑每模型的 `reasoningEfforts` 与 `input` 声明，并支持一键自动适配；本 Fork 把 `settings.models.provider-card` 席位完整让给模型能力面板 |
-| [`dsh-our-free-model`](https://github.com/Fish-under-sea/Our-Free-Mode-fish) | 2.0.0 | **免费模型与渠道聚合**（上游 [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 的**Fork**）：把 13 个免费渠道（CodeArts / CodeBuddy / Loomy / Raccoon / MiniMax / Gemini 等）与免费模型并入官方模型选择器，并自带渠道网关供其它本地 harness 反代。本 Fork 新增「**隐藏渠道模型分组**」总开关 —— 渠道分组会与你自己配的 provider 混在一起把选择器撑长，打开即一次收起 13 组；**只影响展示不影响路由**（网关请求走 `resolveModelInfo()`，被隐藏的模型照常收发），渠道设置页的「显示列表 / 关闭全部」读 `listAllModels()` 也不受影响；默认关闭，升级不会静默改变你看到的列表 |
+| [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) | 0.6.0 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；**厂商头像素材随包分发**（**17 厂商** × 10 岗位 + 厂商通用图 + 立绘 + 队长 + 商标 SVG，**286 个文件 / 约 29.3 MB**，含 1024×1024 高清 WebP 族），装完即有，跨机不再依赖 `artworkDir`；自定义目录仍可整套覆盖；商标 SVG 按扩展名送达；**队长头像跟随队长自己的模型路由**（0.4.2 修）；**0.5.1 修掉降级链序**（现链序为 `厂商+岗位 → 厂商 → 岗位`）；**0.6.0 并入上游 v0.1.23** —— 成员工具策略、质量门契约与修订绑定、修复契约保留与失效源告警、越界 finding 升级、lineage 身份沿 fork 链、工作区审计、损坏 `team.json` 降级读取，Fish 自建的美术目录解析与降级链完整保留 |
+| [`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish) | 0.5.8 | **思考强度与输入模态**（上游 [HaoyueQin/dsh-better-reasoning-effort](https://github.com/HaoyueQin/dsh-better-reasoning-effort) 的**Fork**）：在官方「模型」页编辑卡里直接编辑每模型的 `reasoningEfforts` 与 `input` 声明，并支持一键自动适配；本 Fork 把 `settings.models.provider-card` 席位完整让给模型能力面板；0.5.8 并入上游三条安装路线说明（冷静期下写明版本号、release tarball 路线、GitHub 源码安装） |
+| [`dsh-our-free-model`](https://github.com/Fish-under-sea/dsh-our-free-model-fish) | 2.1.0 | **免费模型与渠道聚合**（上游 [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 的**Fork**）：把 13 个免费渠道（CodeArts / CodeBuddy / Loomy / Raccoon / MiniMax / Gemini 等）与免费模型并入官方模型选择器，并自带渠道网关供其它本地 harness 反代。本 Fork 新增「**隐藏渠道模型分组**」总开关 —— 渠道分组会与你自己配的 provider 混在一起把选择器撑长，打开即一次收起 13 组；**只影响展示不影响路由**（网关请求走 `resolveModelInfo()`，被隐藏的模型照常收发），渠道设置页的「显示列表 / 关闭全部」读 `listAllModels()` 也不受影响；默认关闭，升级不会静默改变你看到的列表。**2.1.0 并入上游 v2.1.0** —— combos 组合链、token-saver 省 token、原生 Anthropic 网关、`standalone` 拆分、渠道包与 Kilo 渠道、升级器 snapshot SHA 修复；Fish 自建的隐藏渠道分组与按面积计价完整保留 |
 
 ## 本包会停用一个 DSH 内置插件
 
@@ -142,11 +153,11 @@ dsh plugin --profile <profile> add @fish-under-sea/dsh-fish
   "@fish-under-sea/dsh-visual-companion": "github:Fish-under-sea/dsh-fish#path:packages/dsh-visual-companion",
   "dsh-agent-teams-fish": "github:Fish-under-sea/dsh-agent-teams-fish",
   "dsh-better-reasoning-effort-fish": "github:Fish-under-sea/dsh-better-reasoning-effort-fish",
-  "dsh-our-free-model": "github:Fish-under-sea/Our-Free-Mode-fish"
+  "dsh-our-free-model": "github:Fish-under-sea/dsh-our-free-model-fish"
 }
 ```
 
-`#path:` 是 pnpm 的子目录语法，让一个仓库同时提供多个包 —— 五个子包指向本仓库；三个外部补充版指向各自仓库：[`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish)、[`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish) 与 [`dsh-our-free-model`](https://github.com/Fish-under-sea/Our-Free-Mode-fish)（三者包都在各自仓库根目录，无需 `#path:`）；换机 `pnpm install` 后直接从仓库下载，**不依赖任何本机绝对路径**。`bundles` 里只需列 `"@fish-under-sea/dsh-fish"`（它的 patch 负责插入八行）。
+`#path:` 是 pnpm 的子目录语法，让一个仓库同时提供多个包 —— 五个子包指向本仓库；三个外部补充版指向各自仓库：[`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish)、[`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish) 与 [`dsh-our-free-model`](https://github.com/Fish-under-sea/dsh-our-free-model-fish)（三者包都在各自仓库根目录，无需 `#path:`）；换机 `pnpm install` 后直接从仓库下载，**不依赖任何本机绝对路径**。`bundles` 里只需列 `"@fish-under-sea/dsh-fish"`（它的 patch 负责插入八行）。
 
 ### 方式三：本地开发安装（改源码即时生效）
 
@@ -163,7 +174,7 @@ dsh plugin --profile <profile> add @fish-under-sea/dsh-fish
   "@fish-under-sea/dsh-visual-companion": "link:<本仓库路径>/packages/dsh-visual-companion",
   "dsh-agent-teams-fish": "link:<dsh-agent-teams-fish 仓库路径>",
   "dsh-better-reasoning-effort-fish": "link:<dsh-better-reasoning-effort-fish 仓库路径>",
-  "dsh-our-free-model": "link:<Our-Free-Mode-fish 仓库路径>"
+  "dsh-our-free-model": "link:<dsh-our-free-model-fish 仓库路径>"
 }
 ```
 
@@ -256,7 +267,7 @@ dsh-fish/                 # 仓库目录名（npm 包名是 @fish-under-sea/dsh-
     └── dsh-visual-companion/
 ```
 
-> 三个外部补充版 **不在** `packages/` 下 —— `dsh-agent-teams-fish` 的源码在[它自己的仓库](https://github.com/Fish-under-sea/dsh-agent-teams-fish)，`dsh-better-reasoning-effort-fish` 在[另一个仓库](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish)，`dsh-our-free-model` 在[第三个仓库](https://github.com/Fish-under-sea/Our-Free-Mode-fish)；三者都以 **npm 依赖**的形式随聚合包装到 profile 顶层。
+> 三个外部补充版 **不在** `packages/` 下 —— `dsh-agent-teams-fish` 的源码在[它自己的仓库](https://github.com/Fish-under-sea/dsh-agent-teams-fish)，`dsh-better-reasoning-effort-fish` 在[另一个仓库](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish)，`dsh-our-free-model` 在[第三个仓库](https://github.com/Fish-under-sea/dsh-our-free-model-fish)；三者都以 **npm 依赖**的形式随聚合包装到 profile 顶层。
 
 > **子包为什么不在聚合包的 `files` 里被打包进来**：聚合包只携带 `lib/`、`cordis.patch.yml` 与 `README*.md`，五个子包与三个外部补充版都以 **npm 依赖**的形式被装到 profile 顶层（见方式一）。只有在「一个仓库同时提供多个包、从 GitHub 安装」时才需要在安装方 profile 里用 `#path:` 显式声明（见方式二）。
 
@@ -293,7 +304,7 @@ node packages/dsh-visual-companion/test/visual-companion.test.mjs
 
 好消息：四个带浏览器半区的子包的客户端测试都断言了这一点，而且断言**读的是 `package.json` 的 `name`** 而不是硬编码字符串 —— 以后再改名漏改，**会被测试直接抓住**。
 
-**外部补充版同理**：`dsh-agent-teams-fish`（[仓库](https://github.com/Fish-under-sea/dsh-agent-teams-fish)）、`dsh-better-reasoning-effort-fish`（[仓库](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish)）与 `dsh-our-free-model`（[仓库](https://github.com/Fish-under-sea/Our-Free-Mode-fish)）都来自独立仓库，改包名时同样要同步 `package.json` 的 `name` / `cordis.patch.yml` 的行 `name` / `lib/client.js` 的注册 `id` 三处 —— 前者的美术路由链测试断言「注册名 = `package.json` 的 `name`」，后者的常量 `PLUGIN_ID` 也等于包名（`src/constants.ts`），改名漏改同样会被抓住。
+**外部补充版同理**：`dsh-agent-teams-fish`（[仓库](https://github.com/Fish-under-sea/dsh-agent-teams-fish)）、`dsh-better-reasoning-effort-fish`（[仓库](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish)）与 `dsh-our-free-model`（[仓库](https://github.com/Fish-under-sea/dsh-our-free-model-fish)）都来自独立仓库，改包名时同样要同步 `package.json` 的 `name` / `cordis.patch.yml` 的行 `name` / `lib/client.js` 的注册 `id` 三处 —— 前者的美术路由链测试断言「注册名 = `package.json` 的 `name`」，后者的常量 `PLUGIN_ID` 也等于包名（`src/constants.ts`），改名漏改同样会被抓住。
 
 ## 许可
 
@@ -311,4 +322,4 @@ node packages/dsh-visual-companion/test/visual-companion.test.mjs
 
 ---
 
-<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.7.6 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
+<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.7.7 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>

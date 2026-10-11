@@ -4,6 +4,22 @@
 
 ---
 
+> **0.7.7（2026-10-11）**：三个上游 fork 同步到最新上游 —— `dsh-agent-teams-fish` **0.5.1 → 0.6.0**、`dsh-better-reasoning-effort-fish` **0.5.7 → 0.5.8**、`dsh-our-free-model` **2.0.0 → 2.1.0**（依赖范围分别提到 **`^0.6.0`** / **`^0.5.8`** / **`^2.1.0`**）。
+>
+> **① `dsh-agent-teams-fish` 0.6.0**：并入上游 v0.1.23（37 个提交）—— **成员工具策略**（可为成员配策略 ID，四个必需协调工具始终保留；只控工具可用性，不是操作系统沙箱）、**质量门契约与修订绑定**（verdict 绑定实际产物字节与完整修复 lineage）、**修复契约保留与失效源告警**（不在失败依赖上死锁）、**越界 finding 升级**（带理由升级，而非造不可能完成的修复任务）、**lineage 身份沿 fork 链**、**工作区审计**、**损坏 `team.json` 降级读取**、会话来源元数据与非破坏性历史恢复。三处冲突（`src/snapshot.ts` 的 import 块与函数体、`src/tools.ts` 的 `add_member`）均按「两侧并存」融合；Fish 自建的 `src/artwork-source.ts`、`src/client/artwork.ts` 降级链、`captainRouteOf` 队长头像跟随路由与 286 个随包素材零改动保留。`lib/` 为提交进仓库的产物，已随源码重建（77 个文件）。
+>
+> **② `dsh-better-reasoning-effort-fish` 0.5.8**：并入上游三条安装路线说明（24 小时 `minimum-release-age` 下写明版本号可立即安装、release 页面附带的 tarball 路线、GitHub 源码安装）。⚠️ **0.5.7 已发布过**，而本仓库 HEAD 比它多一个 README 提交，同版本号发不上去，故版本提到 0.5.8 —— 本次为纯文档变更，运行时代码与 0.5.7 等价。该仓库与上游**无共同祖先**，本次是**逐处移植**而非 merge。
+>
+> **③ `dsh-our-free-model` 2.1.0**：并入上游 v2.1.0（17 个提交，真 merge，双父）—— **combos 组合链**、**token-saver**、**原生 Anthropic 网关**、`standalone` 拆分（`packages/standalone/`）、渠道包与 Kilo 渠道、升级器 snapshot SHA 修复。两处冲突取舍：`package.json` 取上游 2.1.0 但**保持本版已移除 `private`**（本包要发 npm）；`src/adapter.js` 的 import 两侧符号并存、计价钩子保留本版 `PIXEL_IMAGE_PRICING`。Fish 自建的 `src/channel-visibility.js`（108 行，隐藏渠道模型分组）与 `src/image-pricing.js`（75 行，按面积计价）与合并前 diff 为 0 行。
+>
+> **④ ⚠️ 仓库改名**：`dsh-our-free-model` 的仓库已从 `Our-Free-Mode-fish` 迁到 [`dsh-our-free-model-fish`](https://github.com/Fish-under-sea/dsh-our-free-model-fish)（**旧名已 404**）。本 README 与 CHANGELOG 中英双语里指向旧名的链接、`github:` 安装示例与 `link:` 路径占位已全部同步。
+>
+> **⑤ ⚠️ `dsh-our-free-model` 的应用内一键升级暂不可用**：它的自升级器按 Ed25519 签名校验 `feed/manifest.json`（`src/updater.js` 里 pin 了上游公钥），而重签需要上游发布私钥 —— **本机没有**，`node scripts/build-manifest.mjs --check` 实测 rc=1（`src/channel-visibility.js` 不在清单、`src/image-pricing.js` 从上游精简版换成本版完整版）。**npm 安装不受影响**：该包**无 `prepublishOnly` / `prepack` / `prepare`**，且 `feed/` 与 `catalog/` **不在 `files` 清单里**，所以 `npm publish` 不会被签名卡住，受影响的只是应用内自升级通道。按用户决定**不修改** `src/feed.js` / `src/updater.js` 里写死的上游 `REPO` 常量（改成自建仓库只会拉到与 fork 文件不符的上游签名清单，校验照样失败）。
+>
+> **⑥ 测试**：at-fork 美术与质量门测试全绿（自定义美术 21/21、岗位匹配 41/41、质量门修订 9/9），另有五套上游新门禁通过（tool-policies 13/13、lineage-identity 9/9、corrupt-teamjson 6/6、issue-203-card 13/13、member-spawn-recovery 10/10）；ofm 的 `channel-visibility` 与 `image-pricing` 测试通过、`tsc --noEmit` 通过；brf `tsc --noEmit` 通过、vitest 452/452 全绿。
+
+---
+
 > **0.7.6（2026-10-11）**：`@fish-under-sea/dsh-git-sync` **0.3.2 → 0.3.3**（依赖范围 `^0.3.2` → **`^0.3.3`**）—— **壁纸引擎采集范围四条收敛为一条**。
 >
 > **① 为什么收敛**：壁纸引擎（`dsh-plugin-wallpaper-engine`）的 ADR-0011 把「预设」从**玻璃子集快照**升为**整机配置快照**，并新增了导入 / 导出。面板里点「导出预设…」得到的那份文件（本机 `$DSH_HOME/FISH.json`）**就是**这个插件的配置面 —— 实测 `values` 116 键与 `config.json.settings` 132 键的**差集恰好是 12 个硬排除键 + 4 个资产指针**（硬排除的是当前壁纸 / 隐藏清单 / 轮播列表 / `userProps` 本机绝对路径摘要 / 运行期失败记忆 / 版本号），且 `assets` 段**内嵌了字体与吉祥物资产本体**。⇒ 原先的四条（`wallpaper-engine/config.json` + `glass-presets/` + `fontsets/` + `mascot/`，走额外扫描根）全部冗余。
@@ -56,13 +72,13 @@
 
 ---
 
-> **0.7.1（2026-10-10）**：**修掉「第八个成员装不上」** —— `dsh-our-free-model` 已发布到 npm **官方源**（`2.0.0`），本包对它的依赖由 `github:Fish-under-sea/Our-Free-Mode-fish` 改为 **`^2.0.0`**。根因：pnpm 11 **默认启用** `blockExoticSubdeps`，**禁止子依赖使用 git / file / link 协议**，于是 0.7.0 在任何默认配置的机器上都以 `ERR_PNPM_EXOTIC_SUBDEP` 失败 —— 只有让用户关掉 `blockExoticSubdeps` 才能装。改用 registry 版本后不再触发该保护，**不需要用户放宽任何安全设置**。功能零变化：0.7.0 相对 0.6.11 的唯一改动就是新增这个成员。
+> **0.7.1（2026-10-10）**：**修掉「第八个成员装不上」** —— `dsh-our-free-model` 已发布到 npm **官方源**（`2.0.0`），本包对它的依赖由 `github:Fish-under-sea/dsh-our-free-model-fish` 改为 **`^2.0.0`**。根因：pnpm 11 **默认启用** `blockExoticSubdeps`，**禁止子依赖使用 git / file / link 协议**，于是 0.7.0 在任何默认配置的机器上都以 `ERR_PNPM_EXOTIC_SUBDEP` 失败 —— 只有让用户关掉 `blockExoticSubdeps` 才能装。改用 registry 版本后不再触发该保护，**不需要用户放宽任何安全设置**。功能零变化：0.7.0 相对 0.6.11 的唯一改动就是新增这个成员。
 >
 > 同步更新：`dsh-our-free-model` 的 `package.json` 移除 `private: true`（它只用于拦误发布，不影响清单内容）；本仓库 `package.json`（0.7.0 → **0.7.1**、依赖改 `^2.0.0`）；README 中英双语（安装说明、`[NOT_FOUND]` 镜像同步清单、版本号）。
 
 ---
 
-> **0.7.0（2026-10-10）**：新增**第八个成员** —— `dsh-our-free-model`（上游 [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 的 **Fork**，仓库 [Fish-under-sea/Our-Free-Mode-fish](https://github.com/Fish-under-sea/Our-Free-Mode-fish)，依赖 `github:Fish-under-sea/Our-Free-Mode-fish`）。本 Fork 新增「**隐藏渠道模型分组**」总开关：渠道包向模型选择器贡献 13 个 provider 分组（CodeArts / CodeBuddy / Loomy / Raccoon / MiniMax / Gemini 等），与用户自己在 profile 里配的 provider 混在一起把选择器撑长 —— 打开开关即一次收起 13 组。**只影响展示、不影响路由**：网关请求走 `resolveModelInfo()`，被隐藏的模型照常收发；渠道设置页的「显示列表」「关闭全部」读 `listAllModels()`，同样不受影响；默认**关闭**，升级不会静默改变用户看到的列表。开关位置：设置 → 免费模型 → 偏好（`our-free-model/settings.json` 的 `hideChannelModels`，该文件已在 `git-sync` 白名单里，跨机复原）。上游 contributor 模式 36/37 通过（`upgrade-ui` 在改动前即失败）。
+> **0.7.0（2026-10-10）**：新增**第八个成员** —— `dsh-our-free-model`（上游 [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 的 **Fork**，仓库 [Fish-under-sea/dsh-our-free-model-fish](https://github.com/Fish-under-sea/dsh-our-free-model-fish)，依赖 `github:Fish-under-sea/dsh-our-free-model-fish`）。本 Fork 新增「**隐藏渠道模型分组**」总开关：渠道包向模型选择器贡献 13 个 provider 分组（CodeArts / CodeBuddy / Loomy / Raccoon / MiniMax / Gemini 等），与用户自己在 profile 里配的 provider 混在一起把选择器撑长 —— 打开开关即一次收起 13 组。**只影响展示、不影响路由**：网关请求走 `resolveModelInfo()`，被隐藏的模型照常收发；渠道设置页的「显示列表」「关闭全部」读 `listAllModels()`，同样不受影响；默认**关闭**，升级不会静默改变用户看到的列表。开关位置：设置 → 免费模型 → 偏好（`our-free-model/settings.json` 的 `hideChannelModels`，该文件已在 `git-sync` 白名单里，跨机复原）。上游 contributor 模式 36/37 通过（`upgrade-ui` 在改动前即失败）。
 >
 > ⚠️ **升级注意（必须改一处 profile）**：本包现在插入 `id: our-free-model` 行，而 `dsh-our-free-model` 自己的 bundle 层插入的是**同一个 id** —— `composeEntries` 只做 `push`、**不去重**，两边都生效即**重复挂载、启动失败**。所以升级到 0.7.0 时必须把该包从 profile 的 `dsh.profile.bundles` 移走（或从 `dependencies` 挪到 `devDependencies`）。本仓库既有约定本就要求子包写在 `devDependencies`，这一条对第八个成员尤其要紧。
 >
