@@ -4,9 +4,21 @@
 
 ---
 
+> **0.7.5 (2026-10-11):** `dsh-agent-teams-fish` **0.5.0 → 0.5.1** (dependency range `^0.5.0` → **`^0.5.1`**) — **degradation-chain fix + refined vendor matching**.
+>
+> **① The chain defect (the headline of this release)**: the chain used to be `vendor+role → role → vendor`, and since a role-generic image (the 8 packaged whales) exists for **every** role, the *role* hop always won and the *vendor* hop was dead code. The symptom on screen was exactly "**the badge in the avatar's corner already shows the StepFun mark, yet the avatar itself is the generic role whale**" — vendor detection was fine; the chain order was wrong. Two consequences: the vendor character was permanently unreachable for the **7 vendors** that ship only a generic portrait (`meta` / `mistral` / `rwkv` / `seed` / `ernie` / `stepfun` / `jev`); and `member-<vendor>-full-v2.webp` (**17 vendor portraits**) could never win, so click-to-enlarge only produced a 256px role avatar. 0.5.1 changes the chain to **`vendor+role → vendor → role`**: vendor identity is the point of this art system, so vendor wins, while the role image stays at the tail as the fallback.
+>
+> **② Why the gate missed it**: it only pinned **hop 1** (`vendor+role` must resolve to its own file), while the accident happened at hop 2. 0.5.1 adds three assertions: hop 2 must reach the vendor's own `member-<vendor>-v2.png`, the **vendor hop index must precede the role hop** (across all 17 vendors × 10 roles), and the `-full` chain must prefer the vendor portrait.
+>
+> **③ Recognition refinements (misses closed against each vendor's official docs)**: `stepfun` gains its **letter families** (`step-asr` / `step-tts-mini` / `step-r1-v-mini` / `step-video-t2v`) and `stepaudio-*` — the old `step[-_.]?\d` required a **digit** after `step`, so these official IDs were all missed; `glm` gains `charglm` / `codegeex` / `cogview` / `cogvideo` plus the platform name `bigmodel`; `qwen` gains `dashscope` / `aliyun`; `gemini` gains `palm-<digit>` / `bison` / `gecko` / `vertex`; `seed` gains `byteplus` / `skylark`; `minimax` gains `speech-<digit>`; and `\bern` is **tightened** to `\bernie` so `ernest` / `ernestine` are no longer judged as ERNIE. `stepper` / `steps` / `stepstone` / `palmyra-x5` / `metaphor-3` / `jevons` and friends remain deliberately unmatched, pinned by unit tests.
+>
+> See [dsh-agent-teams-fish v0.5.1](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.5.1.md).
+
+---
+
 > **0.7.4 (2026-10-11):** `dsh-agent-teams-fish` **0.4.3 → 0.5.0** (dependency range `^0.4.3` → **`^0.5.0`**) — the **third round of vendor artwork**. The vendor namespace goes **15 → 17**, adding **StepFun** and **Jev** (TypeSafe System One); in-package assets go **280 → 286 files / ~29.3 MB**.
 >
-> **① Tier**: both ship only a generic vendor portrait + HD portrait, the same tier as `meta` / `mistral` / `rwkv` / `seed` / `ernie`. A member request for `member-<vendor>-<role>-v2.png` misses hop 1 and lands on the **role-generic** image at hop 2 — avatars keep rendering with no broken images. This machine has no chibi role art for either vendor; that is the intended fallback, not a missing-asset incident.
+> **① Tier**: both ship only a generic vendor portrait + HD portrait, the same tier as `meta` / `mistral` / `rwkv` / `seed` / `ernie`. A member request for `member-<vendor>-<role>-v2.png` misses hop 1, and [0.5.1](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.5.1.md) then made hop 2 land on **the vendor's own character** (0.5.0 itself mistakenly landed on the role-generic image — that was precisely the chain defect 0.5.1 fixed). This machine has no chibi role art for either vendor; that is the intended fallback, not a missing-asset incident.
 >
 > **② Recognition**: `stepfun` matches the provider name, the `step-<digit>` model family, and 阶跃. **The model-family clause is required**: this machine's three Step routes (S1 / S2 / S3) use `cn-f/cline/cline-free`-style provider segments that contain **no "stepfun" at all** while the model is `step-5-preview`, so matching the provider alone would drop the whole team to fallback avatars — **the same class of defect** fixed for `hunyuan3` / `rwkv7` / `seed1.6` in [0.4.1](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.4.1.md). `jev` matches `jev` / `typesafe` / `type-safe`; both keep word boundaries, so `stepper` / `steps` / `stepstone` / `jevons` are not swallowed (pinned by unit tests).
 >

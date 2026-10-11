@@ -4,9 +4,21 @@
 
 ---
 
+> **0.7.5（2026-10-11）**：`dsh-agent-teams-fish` **0.5.0 → 0.5.1**（依赖范围 `^0.5.0` → **`^0.5.1`**）—— **降级链修正 + 厂商识别细化**。
+>
+> **① 降级链缺陷（本版重点）**：原链是 `vendor+role → role → vendor`，而岗位通用图（随包 8 张鲸鱼）对**每一个**岗位都存在，所以「岗位」那一跳**永远**抢先命中，「厂商」那一跳是死代码。现场症状正是「**头像右下角徽标已是 StepFun 商标，头像本体却是通用岗位鲸鱼**」—— 厂商识别本身没错，坏的是链序。后果两条：只有厂商通用图的 **7 家**（`meta` / `mistral` / `rwkv` / `seed` / `ernie` / `stepfun` / `jev`）厂商角色**永久不可达**；`member-<vendor>-full-v2.webp`（**17 张**厂商立绘）永远轮不到，点击放大只拿到 256 岗位头像。0.5.1 改为 **`vendor+role → vendor → role`**：厂商身份是这套头像的主诉求，厂商优先，岗位图仍留链尾兜底。
+>
+> **② 门禁为何没抓到**：当时只钉了**第 1 跳**（`vendor+role` 必须命中自己那张），而事故发生在第 2 跳。0.5.1 补 3 条断言：第 2 跳必须落自家 `member-<vendor>-v2.png`、**厂商跳下标必须小于岗位跳**（覆盖全部 17 厂商 × 10 岗位）、`-full` 链必须优先厂商立绘。
+>
+> **③ 识别细化（按各厂商官方文档补漏命中）**：`stepfun` 补**字母家族**（`step-asr` / `step-tts-mini` / `step-r1-v-mini` / `step-video-t2v`）与 `stepaudio-*` —— 旧规则 `step[-_.]?\d` 要求 step 后跟**数字**，这些官方 ID 整片漏；`glm` 补 `charglm` / `codegeex` / `cogview` / `cogvideo` 与平台名 `bigmodel`；`qwen` 补 `dashscope` / `aliyun`；`gemini` 补 `palm-<数字>` / `bison` / `gecko` / `vertex`；`seed` 补 `byteplus` / `skylark`；`minimax` 补 `speech-<数字>`；并把 `\bern` **收紧**为 `\bernie`，避免把 `ernest` / `ernestine` 判成文心一言。刻意不吞 `stepper` / `steps` / `stepstone` / `palmyra-x5` / `metaphor-3` / `jevons` 等，均有单测钉住。
+>
+> 详见 [dsh-agent-teams-fish v0.5.1](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.5.1.md)。
+
+---
+
 > **0.7.4（2026-10-11）**：`dsh-agent-teams-fish` **0.4.3 → 0.5.0**（依赖范围 `^0.4.3` → **`^0.5.0`**）—— **第三轮厂商素材**。厂商命名空间 **15 → 17**，新增 **StepFun（阶跃星辰）** 与 **Jev（TypeSafe System One）**，随包素材 **280 → 286 个文件 / 约 29.3 MB**。
 >
-> **① 档位**：两家都只有「厂商通用图 + 立绘高清」，与既有 `meta` / `mistral` / `rwkv` / `seed` / `ernie` 同档。成员请求 `member-<vendor>-<role>-v2.png` 时第 1 跳落空、**第 2 跳命中岗位通用图** —— 头像照常显示、不破图。本机暂无这两家的 Q 版岗位图，属于预期的兜底行为，不是缺素材事故。
+> **① 档位**：两家都只有「厂商通用图 + 立绘高清」，与既有 `meta` / `mistral` / `rwkv` / `seed` / `ernie` 同档。成员请求 `member-<vendor>-<role>-v2.png` 时第 1 跳落空，随后由 [0.5.1](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.5.1.md) 修正为**第 2 跳命中自家厂商角色**（0.5.0 当时误落岗位通用图 —— 那正是 0.5.1 修掉的链序缺陷）。本机暂无这两家的 Q 版岗位图，属预期兜底，不是缺素材事故。
 >
 > **② 识别规则**：`stepfun` 同时认 provider 名、`step-<数字>` 模型族与中文「阶跃」。**模型族那一条是必需的**：本机三条 Step 路由（[模型配置清单](模型配置清单.md) 的 S1 / S2 / S3）的 provider 段是 `cn-f/cline/cline-free` 这类，**没有一个字母是 stepfun**，而 model 是 `step-5-preview`，只认 provider 名会让整队掉兜底头像 —— 与 [0.4.1](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.4.1.md) 修掉的 `hunyuan3` / `rwkv7` / `seed1.6` 是**同一类病根**。`jev` 认 `jev` / `typesafe` / `type-safe`，两者都保留词边界，`stepper` / `steps` / `stepstone` / `jevons` 一类普通词不会被误吞（单测钉住）。
 >
