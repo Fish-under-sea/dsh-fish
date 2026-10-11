@@ -16,7 +16,17 @@
 
 ---
 
-> **🆕 0.7.5（2026-10-11）**：`dsh-agent-teams-fish` **0.5.0 → 0.5.1**（依赖范围 `^0.5.0` → **`^0.5.1`**）—— **降级链修正 + 厂商识别细化**。
+> **🆕 0.7.6（2026-10-11）**：`@fish-under-sea/dsh-git-sync` **0.3.2 → 0.3.3**（依赖范围 `^0.3.2` → **`^0.3.3`**）—— **壁纸引擎采集范围四条收敛为一条**。
+>
+> - **为什么收敛**：壁纸引擎（`dsh-plugin-wallpaper-engine`）的 ADR-0011 把「预设」从**玻璃子集快照**升为**整机配置快照**，并新增导入 / 导出。面板点「导出预设…」得到的那份文件（本机 `$DSH_HOME/FISH.json`）**就是**它的配置面 —— 实测 `values` 116 键与 `config.json.settings` 132 键的**差集恰好是 12 个硬排除键 + 4 个资产指针**（当前壁纸 / 隐藏清单 / 轮播列表 / `userProps` 本机绝对路径摘要 / 运行期失败记忆 / 版本号），且 `assets` 段**内嵌字体与吉祥物资产本体**。⇒ 原先四条（`wallpaper-engine/config.json` + `glass-presets/` + `fontsets/` + `mascot/`，走额外扫描根）全部冗余。
+> - **顺带修掉一个真实缺陷**：采集是**单向拷贝**，白名单**目录**里本机删掉的文件会**永远留在仓库**，被算成「仓库多出 N」。本机面板当时正是 `4 个文件有差异（新增 0 · 变更 1 · 仓库多出 3）`——多出的 3 个全在被撤下的目录里（两份旧格式玻璃预设 + 一张旧立绘，来历正是 ADR-0011 那次旧预设作废），撤下后**归零**。⚠️ 只治了壁纸引擎这一处，`skills/` 等目录级条目仍有只增不减特性。
+> - **额外扫描根保留、当前表为空**：`EXTRA_ROOTS` 是「插件把数据放在 `$DSH_HOME` 之外」的通用落点，不再有消费者但有意留着（表空时行为与「没有这套机制」逐字等价）。
+> - **⚠️ 还原不是全自动**：`dsh-git-sync` 只把文件搬回 `$DSH_HOME/FISH.json`，**真正生效要在壁纸引擎面板点「导入预设…」选中它、再在列表里点一下**（导入 ≠ 应用）。少这两步，新机器上壁纸引擎是出厂状态而「待同步」却显示 0 —— 属**静默失败**。配置仓 README 与 AGENT-GUIDE.md 已补专节。
+> - **测试**：同步引擎 178 → **188** 用例全通过（新增「本机删掉快照后仓库那份如实算成 removed」回归；原「字体集 / 吉祥物随配置走」改为「资产已内嵌、素材目录不再采集」）。同时把配置仓 `dsh-sync.ps1` 白名单对齐到 0.3.3，并补上此前落后的 0.2.7～0.3.2 条目。
+
+---
+
+> **0.7.5（2026-10-11）**：`dsh-agent-teams-fish` **0.5.0 → 0.5.1**（依赖范围 `^0.5.0` → **`^0.5.1`**）—— **降级链修正 + 厂商识别细化**。
 >
 > - **链序缺陷（本版重点）**：原链 `vendor+role → role → vendor` 里，岗位通用图（随包 8 张鲸鱼）对**每一个**岗位都存在，故「岗位」那一跳**永远**抢先命中、「厂商」那一跳是死代码。现场症状就是「**徽标已是 StepFun 商标，头像却是通用岗位鲸鱼**」—— 厂商识别没错，坏的是链序。后果：只有厂商通用图的 **7 家**（`meta` / `mistral` / `rwkv` / `seed` / `ernie` / `stepfun` / `jev`）厂商角色**永久不可达**，`member-<vendor>-full-v2.webp`（**17 张**厂商立绘）也永远轮不到（点击放大只拿到 256 岗位头像）。现改为 **`vendor+role → vendor → role`**，厂商优先、岗位图仍留链尾兜底。
 > - **门禁为何没抓到**：当时只钉**第 1 跳**，而事故发生在第 2 跳。0.5.1 补 3 条断言（第 2 跳可达、厂商跳下标 < 岗位跳、`-full` 优先厂商立绘）。
@@ -64,7 +74,7 @@ Fish 自建 [DSH](https://github.com/Fish-under-sea/DSH)（DeepSeek Harness）�
 |------|:----:|------|
 | [`dsh-approval-guide`](packages/dsh-approval-guide) | 0.2.2 | 在审批弹窗里追加**中文说明**：这次审批会做什么、有什么风险、依据是什么 |
 | [`dsh-session-title-refresh`](packages/dsh-session-title-refresh) | 0.3.2 | **会话标题自动刷新**：第 N 轮起总结命名，此后每 M 轮刷新一次；设置页「标题模型（可选）」下拉与官方「模型」页同源；标题调用的**思考档位按模型真实能力挑**（能关就关、关不掉退最低档、无元数据不传），默认输出预算 256、`max-tokens` 有正文即接受截断结果 |
-| [`dsh-git-sync`](packages/dsh-git-sync) | 0.3.2 | **一键 Git 同步**：把插件清单、启用状态、本地设置、Skills、看板/用量账本、设置导航顺序偏好、**标题自动刷新设置**与**免费模型插件配置及用量账本**同步到自己的私有仓库；支持**额外扫描根**，白名单条目可用根前缀指向 `$DSH_HOME` 之外的目录（壁纸引擎的设置、玻璃预设、字体集与吉祥物素材都走这条路） |
+| [`dsh-git-sync`](packages/dsh-git-sync) | 0.3.3 | **一键 Git 同步**：把插件清单、启用状态、本地设置、Skills、看板/用量账本、设置导航顺序偏好、**标题自动刷新设置**、**免费模型插件配置及用量账本**与**壁纸引擎整机配置快照**（`$DSH_HOME/FISH.json`，资产本体已内嵌）同步到自己的私有仓库。0.3.3 把壁纸引擎原先的四条（`config.json` + 三个素材目录，走额外扫描根）**收敛成一条** —— 那个插件已支持一键导出整机快照；顺带修掉目录级条目「仓库多出」的残留（实测 `4 个差异（新增 0 · 变更 1 · 仓库多出 3）` → 归零）。额外扫描根机制保留、当前表为空 |
 | [`dsh-settings-nav-order`](packages/dsh-settings-nav-order) | 0.1.5 | **设置导航重排**：把设置面板左侧菜单排成自己要的顺序、把不想看的项收起来；偏好随 Git 同步插件**跨机复原** |
 | [`dsh-visual-companion`](packages/dsh-visual-companion) | 0.1.7 | **视觉伴侣唤醒**：网页上看原型 / 比布局，点选 + 备注后按「提交给助手」，会话自动收到一条用户消息并起一轮 —— 不必回终端复述；**点选过程静默，只有提交才唤醒一次**（0.1.7 起加载日志的版本号从 `package.json` 现读，不再写死） |
 | [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) | 0.5.1 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；**厂商头像素材随包分发**（**17 厂商** × 10 岗位 + 厂商通用图 + 立绘 + 队长 + 商标 SVG，**286 个文件 / 约 29.3 MB**，含 1024×1024 高清 WebP 族），装完即有，跨机不再依赖 `artworkDir`；自定义目录仍可整套覆盖；商标 SVG 按扩展名送达；**队长头像跟随队长自己的模型路由**（0.4.2 修，此前写死成 DeepSeek 那张，其余 9 张永远不可达）；**0.5.1 修掉降级链序** —— 此前厂商那一跳被岗位通用图永久挡住，只有通用图的 7 家厂商角色与 17 张厂商立绘全部不可达（症状：徽标是 StepFun、头像是通用鲸鱼），现链序为 `厂商+岗位 → 厂商 → 岗位` |
@@ -231,7 +241,7 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 
 ```text
 dsh-fish/                 # 仓库目录名（npm 包名是 @fish-under-sea/dsh-fish）
-├── package.json          # 聚合包清单（version 0.7.3，dsh.bundle.patch 指向 cordis.patch.yml）
+├── package.json          # 聚合包清单（version 0.7.6，dsh.bundle.patch 指向 cordis.patch.yml）
 ├── cordis.patch.yml      # bundle 层：停用内置标题插件 + 插入八个插件的插件行
 ├── CHANGELOG.md          # 完整版本记录（README 顶部只留最近一版）
 ├── pnpm-workspace.yaml   # workspace 声明（仅本地开发用）
@@ -301,4 +311,4 @@ node packages/dsh-visual-companion/test/visual-companion.test.mjs
 
 ---
 
-<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.7.3 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
+<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.7.6 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
