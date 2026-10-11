@@ -111,30 +111,41 @@ const WHITE_LIST = [
   // 累加后互相覆盖，最后同步的那台会盖掉另一台的计数 —— 「两边都完整」做不到，
   // 只能保证「有一份跟着仓库走」。真要两边都准，得改成合并式账本（未做）。
   'our-free-model/stats.json',
-  // ── 额外扫描根（见上方 EXTRA_ROOTS）：前缀就是根的键，不是 $DSH_HOME 下的路径 ──
-  // 壁纸引擎（dsh-plugin-wallpaper-engine）的**全部设置**都在这一个文件里：外观
-  //（配色 / 边框 / 雾化 / 玻璃颜色与透明度 / 保真度 / 思考块与左侧栏液态玻璃）、
-  // 扩展（自定义会话头像开关与尺寸、点击与拖尾效果）、播放与系统、壁纸库的隐藏与轮播。
-  // 它落在 `~/.dsh-wallpaper-engine`，与 $DSH_HOME 同级，普通白名单条目够不到。
-  'wallpaper-engine/config.json',
-  // 用户保存的玻璃预设（本机是「FISH」）。按**目录**收录而不是点名某个文件：
-  // 以后新存的预设自动跟着走；隐藏出厂预设的墓碑标记也是同目录的同名形态文件。
-  'wallpaper-engine/glass-presets',
-  // 字体集（`fontsets/<id>.json`）。**这是 `config.json` 引用的配置，不是派生物**：
-  //   · `config.json` 的**根字段** `fontSetId` 就是活动字体集的 id；
-  //   · 字体键（themeColors / themeSize / themeWeight / themeFamily / globalFamily /
-  //     componentFonts）已从 settings 白名单里退出，**只住在这个文件里**；
-  //   · 用户层是 `<数据目录>/fontsets/`，随包层才是插件里的 `lib/fontsets/`——本机的
-  //     `default` 是当年「六个内联字体键」那次一次性迁移的产物（`FONTSET_MIGRATED_ID`），
-  //     而随包层只有 `compact.json`、**没有 default**，所以它是该 id 的唯一真源。
-  // 不同步的后果很具体：设置过去了、字体值没过去，打开就是默认外观。
-  // 按**目录**收录，以后导入 / 新建的字体集自动跟着走。
-  'wallpaper-engine/fontsets',
-  // 自定义吉祥物图（本机是 mascot-mv1377ack6tl.webp）。
-  // `config.json` 里写着 `mascotImage: "<文件名>"` 与 `mascotImageBox`，但图本身不在
-  // config.json 里 —— 只同步 config.json 会得到「设置指着一张不存在的图」，
-  // 正是这个插件最容易踩的「配置与素材分离」缺口，所以按目录一起搬。
-  'wallpaper-engine/mascot',
+  // ── 壁纸引擎（dsh-plugin-wallpaper-engine）：只收一份**整机配置快照** ──
+  //
+  // 2026-10-11（0.3.3）**四条收敛为一条**。原先收的是「`~/.dsh-wallpaper-engine` 下的
+  // config.json + glass-presets/ + fontsets/ + mascot/」，走额外扫描根（见下方 EXTRA_ROOTS）。
+  // 改单条的理由是那个插件自己变了一次语义：
+  //
+  //   ADR-0011 把「预设」从**玻璃子集快照**升为**整机配置快照**，并新增了导入 / 导出。
+  //   导出的那份文件就是本条目 —— 本机是 `$DSH_HOME/FISH.json`，形如
+  //   `{ $schema: 'dsh-we/profile-preset@1', id, name, values, assets }`。
+  //   实测（2026-10-11）它与 `config.json` 的键集关系是**严格相等**：
+  //     `FISH.json` 的 `values` 有 116 键；`config.json.settings` 有 132 键；
+  //     差集恰好是 12 个 `PRESET_EXCLUDED_KEYS`（当前壁纸 / 隐藏清单 / 轮播列表 /
+  //     `userProps` 的本机绝对路径摘要 / 运行期失败记忆 / 版本号）+ 4 个资产指针。
+  //   ⇒ 它**就是**这个插件的配置面，不多不少。
+  //
+  // 为什么能顺带撤下那三个素材目录：`assets` 段**内嵌了资产本体**（字体段的 `values`、
+  // 吉祥物段的 base64 `data`）。原先单收 `fontsets/` 与 `mascot/` 是为了补「配置引用了但
+  // 素材在别处」那个缺口（见 0.3.2 的注释）—— 现在本体已经在快照里，那两个目录连同
+  // `config.json` 一起变成冗余。
+  //
+  // 为什么是「一条路径」而不是「四条」：本项目的实测教训是**手抄的清单必然漂**
+  //（见 `isBakAllowed` 与 `entriesOf` 的注释）。四条 = 四个漂移点；一条 = 一个。
+  //
+  // ⚠️ 撤下三个目录还**顺带修掉一个真实缺陷**：采集是**单向拷贝**（`copyToRepo` 只从
+  // home 往仓库复制，从不删仓库侧），所以白名单目录里本机删掉的文件会**永远留在仓库**，
+  // 被差异引擎如实算成「仓库多出 N」。实测本机当时正是
+  // `4 个文件有差异（新增 0 · 变更 1 · 仓库多出 3）`——多出的 3 个全在被撤下的目录里
+  //（两份旧格式玻璃预设 + 一张旧立绘）。撤下目录后这一类残留不再产生。
+  // ⚠️ 这只治了壁纸引擎这一处；`skills/` 等**目录级**条目仍有同样的只增不减特性。
+  //
+  // ⚠️ 还原**不是**全自动：本条目是「导出文件」，dsh-git-sync 只负责把它搬回
+  // `$DSH_HOME/FISH.json`；真正生效要在壁纸引擎面板里点「导入预设…」选中它
+  //（导入 ≠ 立即应用，还要在列表里点一下那份预设）。README 与配置仓的
+  // AGENT-GUIDE.md 都写了这一步，别指望它自己生效。
+  'FISH.json',
   // `profiles/<profile>/` 下的配置面不在这里写死，见下方 PROFILE_FILES + activeList()。
   //
   // 曾经的写法是 'profiles/web/package.json' 这类字面量：0.2.0 桌面版把 profile
@@ -291,27 +302,25 @@ function listProfileDirs(root) {
 /**
  * 额外扫描根：白名单里以 `<key>/` 开头的条目**不来自** $DSH_HOME，而来自这些目录。
  *
- * 为什么需要它：`dsh-plugin-wallpaper-engine`（壁纸引擎）把全部设置与素材放在
+ * ⚠️ **当前为空表（2026-10-11，0.3.3）** —— 唯一的消费者已撤下，见下。
+ *
+ * 为什么当初需要它：`dsh-plugin-wallpaper-engine`（壁纸引擎）把全部设置与素材放在
  * `~/.dsh-wallpaper-engine` —— 那是 $DSH_HOME 的**同级**目录，而白名单的口径是
  * 「相对 DSH home 的路径」，所以无论往白名单里写什么都够不到它。
  *
- * 为什么用「加扫描根」而不是「把文件搬进 home」：壁纸引擎的默认数据目录是**跨插件读
- * 契约**（皮肤中心在出文档之前同步读 `<该目录>/config.json` 的 `settings.id` 来预判
- * 「壁纸在台」），把它挪走会让皮肤侧的首帧先闪一下。加扫描根则完全不动生产路径。
+ * 为什么现在不需要了：那个插件 ADR-0011 把「预设」升为**整机配置快照**并新增了导出，
+ * 导出的那份文件落在 `$DSH_HOME/FISH.json` —— **在 home 之内**，普通相对路径点名即可。
+ * 于是壁纸引擎的四条额外根条目收敛成一条普通条目，本表随之清空。
+ *
+ * **表空 ≠ 机制死**：这是给「插件把数据放在 $DSH_HOME 之外」这类情况的通用落点，
+ * 保留它是有意的 —— 再加一个根只要两步：在表里补一行，然后往 WHITE_LIST 加
+ * `<key>/…` 条目。表空时 `extraRootKeyOf()` 恒返回 undefined，全部条目走 DSH home，
+ * 行为与「没有这套机制」逐字等价（见下方 `entriesOf` 的三元判断）。
  *
  * 仓库里的落点就是同名子目录（`<repoDir>/<key>/…`），所以额外根在 git 侧只是一个普通
  * 文件夹，`.gitignore` 与提交前复查都按它看待。
- *
- * 再加一个根：在表里补一行，然后往 WHITE_LIST 加 `<key>/…` 条目即可。
  */
-const EXTRA_ROOTS = {
-  'wallpaper-engine': () => {
-    const override = process.env.DSH_WE_DATA_DIR;
-    return override && override.trim()
-      ? path.resolve(override.trim())
-      : path.join(os.homedir(), '.dsh-wallpaper-engine');
-  },
-};
+const EXTRA_ROOTS = {};
 
 /** 一条白名单条目属于哪个额外根；不属于任何额外根时返回 undefined（= 走 DSH home）。 */
 function extraRootKeyOf(rel) {

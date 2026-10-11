@@ -18,7 +18,7 @@
 
 ## What problem does this solve
 
-DSH keeps all user state in a single home directory (`$DSH_HOME`, `~/.dsh` by default). Syncing it by hand means remembering a string of paths — and making sure you never push a secret. This plugin turns the whole thing into a few buttons under **Settings → Git Sync**: collect your DSH environment (installed plugins, per-plugin enable/disable, plugin config, local settings, Skills, task-board ledger, wallpaper-engine settings) into your own **private** Git repo and push, or restore it on a new machine with one click.
+DSH keeps all user state in a single home directory (`$DSH_HOME`, `~/.dsh` by default). Syncing it by hand means remembering a string of paths — and making sure you never push a secret. This plugin turns the whole thing into a few buttons under **Settings → Git Sync**: collect your DSH environment (installed plugins, per-plugin enable/disable, plugin config, local settings, Skills, task-board ledger, the wallpaper engine's whole-machine snapshot) into your own **private** Git repo and push, or restore it on a new machine with one click.
 
 ## Highlights
 
@@ -27,7 +27,7 @@ DSH keeps all user state in a single home directory (`$DSH_HOME`, `~/.dsh` by de
 - **Remote merge**: before every collect / push, `git fetch` runs first. If the remote is ahead and the local side has no commits, it fast-forwards; if both sides have commits, it rebases automatically; on conflict it rolls back and reports the error — no half-merged state is ever left behind.
 - **Retry-push semantics**: whether to push is decided by "is the local side ahead of the remote", not "did this run produce a new commit". After a push failure, just click **One-click sync** again.
 - **Per-file fault tolerance**: a single unreadable file (locked, permission denied, or rejected by the file policy) is skipped and logged — the rest of the sync continues.
-- **Extra scan roots** (0.3.0): allowlist entries can use a "root prefix" to point at directories outside `$DSH_HOME` (currently used by the wallpaper engine); they land as same-named subdirectories in the repo.
+- **Extra scan roots** (0.3.0, **table empty as of 0.3.3**): allowlist entries can use a "root prefix" to point at directories outside `$DSH_HOME`, landing as same-named subdirectories in the repo. Its only consumer (the wallpaper engine) collapsed into the single in-home `FISH.json` entry in 0.3.3, so the table is currently empty — the mechanism is kept for plugins that store data outside home.
 - **Zero npm dependencies**: only `node:` built-in modules.
 
 ## Installation
@@ -109,10 +109,7 @@ The allowlist lists paths relative to `$DSH_HOME`. `<profile>` is enumerated dyn
 | `profiles/<profile>/cordis.patch.yml.bak-plugin-manager` | Config backup written by the plugin manager (exact-path allow; all other `*.bak*` remain denied) |
 | `profiles/<profile>/pnpm-lock.yaml` | Exact versions for reproducibility |
 | `profiles/<profile>/pnpm-workspace.yaml` | pnpm configuration |
-| `wallpaper-engine/config.json` | Wallpaper engine full settings (extra scan root — see dedicated section below) |
-| `wallpaper-engine/glass-presets/` | User-saved glass presets (directory-level collection, via extra scan root) |
-| `wallpaper-engine/fontsets/` | Font sets (directory-level collection, via extra scan root). **These are configuration `config.json` references, not derived data** — see the dedicated section below |
-| `wallpaper-engine/mascot/` | Custom mascot image (directory-level collection, via extra scan root). `config.json`'s `mascotImage` points here |
+| `FISH.json` | **Wallpaper engine's whole-machine configuration snapshot** (new in 0.3.3 — see the dedicated section below). This is the file produced by the wallpaper engine's "Export preset": all look-and-behaviour settings, with font and mascot asset payloads embedded |
 
 > **`<profile>` is enumerated dynamically**: every profile directory under the local `profiles/` is covered — `desktop` for the desktop app, `web` for the web app. Hard-coding a profile name would miss the three most important things — "which plugins are installed / which are enabled / exact versions". The 0.2.0 desktop edition learned this the hard way: after the profile was renamed, not a single allowlist entry matched, and the repo was left with only a 0.1.x `profiles/web` snapshot.
 
@@ -126,41 +123,42 @@ The settings menu order and hidden items **actually take effect in the browser's
 
 The sibling `history.json` is a **machine-local run log** (per-refresh success/failure and session ids). It only grows, it overwrites its counterpart across machines, and it has no restoration value — so the allowlist names **only `config.json`** and never the directory.
 
-### Extra scan roots (new in 0.3.0)
+### Wallpaper engine: a single whole-machine snapshot (collapsed in 0.3.3)
 
-The allowlist's frame of reference is "paths relative to `$DSH_HOME`", but `dsh-plugin-wallpaper-engine` (the wallpaper engine) keeps all its settings and assets in `~/.dsh-wallpaper-engine` — a **sibling** directory of `$DSH_HOME` that no ordinary allowlist entry can ever reach.
+`dsh-plugin-wallpaper-engine` keeps its data directory at `~/.dsh-wallpaper-engine`, a **sibling** of `$DSH_HOME`. Since 0.3.0 this plugin used **extra scan roots** to collect its `config.json` plus three asset directories.
 
-0.3.0 introduces **extra scan roots**: allowlist entries can use a "root prefix" to point at an additional root, landing as a same-named subdirectory in the repo. In code, this is an `EXTRA_ROOTS` table — currently with only the `wallpaper-engine` entry — overridable via the `DSH_WE_DATA_DIR` environment variable, falling back to `~/.dsh-wallpaper-engine` when unset.
+**As of 0.3.3 those four entries collapse into one**: `FISH.json` — which lives **inside** `$DSH_HOME`, so an ordinary relative path reaches it.
 
-This version collects four entries:
+The reason lies on the wallpaper engine's side: its ADR-0011 promoted "presets" from a **glass-subset snapshot** to a **whole-machine configuration snapshot**, and added import / export. Clicking "Export preset…" in its panel produces exactly this file:
 
-- `wallpaper-engine/config.json` — all wallpaper engine settings (appearance, extensions, playback, wallpaper library hiding and rotation);
-- `wallpaper-engine/glass-presets/` — user-saved glass presets, collected at the **directory** level so that newly saved presets are picked up automatically;
-- `wallpaper-engine/fontsets/` — **font sets**, collected at the directory level; see "Configuration and assets travel apart" below;
-- `wallpaper-engine/mascot/` — the **custom mascot image**, collected at the directory level; see "Configuration and assets travel apart" below.
+```jsonc
+{
+  "$schema": "dsh-we/profile-preset@1",
+  "id": "preset-mv3uxy23-hemr",
+  "name": "FISH",
+  "values": { /* 116 keys: every look-and-behaviour setting */ },
+  "assets": {
+    "font":   { "name": "默认", "values": { /* font set body */ } },
+    "mascot": { "file": "mascot-….webp", "box": "96x96", "data": "<base64 image payload>" }
+  }
+}
+```
 
-Why "add a scan root" instead of "move the files into home": the wallpaper engine's default data directory is a **cross-plugin read contract** (the skin center reads `<that directory>/config.json`'s `settings.id` to predict "wallpaper is on stage"); moving it would cause a first-frame flicker on the skin side. Adding a scan root leaves the production path untouched.
+**Why one file is enough** (measured 2026-10-11): `FISH.json`'s `values` has 116 keys, `config.json.settings` has 132, and the **difference is exactly the 12 hard-excluded keys plus 4 asset pointers** — the exclusions being the current wallpaper / hidden list / rotation list / `userProps` (digests of machine-local absolute paths) / runtime failure memory / version number. Those describe "which wallpaper is on right now", not "how this plugin is configured", and they are supposed to go stale across machines. ⇒ The snapshot's settings segment is **exactly equal** to this plugin's configuration surface.
 
-Explicitly **not** collected: the wallpaper engine's `cache/` (~2.8 GB of derived cache), `ffmpeg/` binaries, `bin/`, `diag/`, and `avatars/` (currently empty).
+**Why the three asset directories can be dropped**: the `assets` segment **embeds the asset payloads**. Collecting `fontsets/` and `mascot/` separately in 0.3.2 existed to close the "settings file keeps only a pointer, the real thing is stored alongside" gap — now the payloads are inside the snapshot, so those directories, along with `config.json`, are redundant.
 
-> **Implementation note**: 0.3.0 also consolidates the allowlist loop that was previously scattered across five places (collect / restore / diff / secret scan / panel stats) into a **single entry point**, `entriesOf(base, side)` — otherwise "a new scan scope taking effect in only one or two of those places" would be an inevitable outcome; this project has already been bitten twice by "multiple defense layers drifting apart" (see the `isBakAllowed` and `.gitignore` comments), so the extra scan root must have exactly one place to land.
+**Why "one entry" rather than "four"**: this project's hard-won lesson is that **a hand-copied list inevitably drifts** (see the `isBakAllowed` and `entriesOf` comments). Four entries = four drift points; one entry = one.
 
-### Configuration and assets travel apart: font sets and mascot (new in 0.3.2)
+**⚠️ Dropping the directories also fixes a real defect**: collection is a **one-way copy** (home → repo only, never deleting on the repo side), so files you delete locally inside an allowlisted **directory** stay in the repo forever and are honestly reported as "extra in repo N". Measured on this machine at the time: `4 files differ (added 0 · changed 1 · extra in repo 3)` — all 3 extras sat inside the dropped directories (two old-format glass presets plus an old mascot). Dropping the directories stops that class of residue. **Note this only cures the wallpaper-engine spot**: directory-level entries such as `skills/` still grow-only.
 
-The wallpaper engine has two designs where **the settings file keeps only a pointer while the real thing is stored alongside it**. Syncing `config.json` alone therefore yields "the setting points at a file that does not exist":
+**⚠️ Restore is not automatic — this step is manual**: this plugin only carries the file back to `$DSH_HOME/FISH.json`; **it takes effect when you click "Import preset…" in the wallpaper engine's panel and pick it**. And "imported ≠ applied" — you still have to click that preset in the preset list to apply it. An `assets` segment that is **absent** from the snapshot (say you did not tick avatars when exporting) **leaves the receiving machine's current values untouched** on apply — it does not fall back to defaults.
 
-**Font sets, `fontsets/<id>.json`.** `config.json`'s **root field** `fontSetId` is the active font set's id, and the font keys (`themeColors` / `themeSize` / `themeWeight` / `themeFamily` / `globalFamily` / `componentFonts`) have **left the settings key set and now live only in that file**. The plugin has two layers:
+**Extra scan roots (0.3.0) today**: the mechanism is kept but **the table is currently empty**. Allowlist entries may still use a "root prefix" to point outside `$DSH_HOME` (an `EXTRA_ROOTS` table in code); the wallpaper engine simply no longer needs it. Adding a root takes two steps: add a row to the table, then add `<key>/…` entries to `WHITE_LIST`.
 
-| Layer | Location | Contents |
-| --- | --- | --- |
-| Packaged | `lib/fontsets/` inside the plugin | Factory presets (this machine ships only `compact.json`) |
-| User | `<data directory>/fontsets/` | Imports, overrides, and **one-time migration output** |
+Explicitly **not** collected: the wallpaper engine's `cache/` (~2.8 GB of derived cache), `ffmpeg/` binaries, `bin/`, `diag/`, `avatars/`, `config.json`, `fontsets/`, `glass-presets/`, and `mascot/` (the last four are covered by `FISH.json`).
 
-The user layer wins. This machine's `default` is exactly the output of the "six inline font keys" migration (`FONTSET_MIGRATED_ID`), and the packaged layer has **no** `default` — so the user-layer file is the **only source** for that id. Without it, a machine switch moves the setting but not the font values, and the panel opens with the default appearance.
-
-**Mascot, `mascot/<filename>`.** `config.json` carries `mascotImage: "<filename>"` and `mascotImageBox`, but the image itself is not inside `config.json`. Syncing only `config.json` points the setting at a missing file.
-
-Both are collected at the **directory** level, so font sets you import or create later, and a mascot you replace, travel automatically.
+> **Implementation note**: 0.3.0 consolidates the allowlist loop that was previously scattered across five places (collect / restore / diff / secret scan / panel stats) into a **single entry point**, `entriesOf(base, side)` — otherwise "a new scan scope taking effect in only one or two of those places" would be an inevitable outcome; this project has already been bitten twice by "multiple defense layers drifting apart" (see the `isBakAllowed` and `.gitignore` comments), so the scan scope must have exactly one place to land. The 0.3.3 collapse leans on exactly that: the change lands in `WHITE_LIST` alone and all five consumers follow automatically.
 
 ### Free-model plugin (`our-free-model`)
 
