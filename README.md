@@ -18,7 +18,12 @@
 
 ---
 
-> **🆕 0.8.0（2026-10-12）**：**并入 6 个上游全家桶插件（Fork）+ 1 个自建插件，成员数 7 → 14**。
+> **🆕 0.8.1（2026-10-12）**：**三个子包功能更新**（聚合包本身只升依赖范围）。
+>
+> - **`dsh-skill-lens-fish` 0.1.0 → 0.1.1**：修掉依赖图「文件名显示与点击打开」两个现场问题。① 节点名从完整路径改为**文件名** —— 原先按 24 字截断，`skill-refs/ai-asset-forge/...` 一类路径会被截成同一串，同目录多个节点看起来像重复；完整路径仍在悬停提示里。② **引用资源与扁平技能本体现在可以点开**：新增只读预览对话框（支持关闭、Escape、读取失败提示），原先 `clickable` 硬排除这两类节点，点了没反应。技能目录内的文件仍跳「文件」页签编辑。
+> - **`dsh-usage` 0.4.6 → 0.4.7**：Token 银行新增**官方价目表假设行** —— 按当前 Flash 价目表对 **DeepSeek 官方家族** token 重算两次，分别假设全部调用落在高峰 / 空闲时段，给出两个金额作为假设成本上下界。明确标注**不是实际扣费**，只计官方家族（MiMo 与其它渠道无官方价目表、不计入），也不复用折叠时刻的 `cost`。
+> - **`dsh-agent-teams-fish` 0.6.1 → 0.7.0**：厂商命名空间 **17 → 18**，新增 **MiMo（小米 MiMo）**，与 `stepfun` / `jev` 同档（只有厂商通用图 + 立绘高清）。识别规则 `mimo` / `mimo-*` / `xiaomi` / 小米，**边界**要求 `mimo` 后是词边界或分隔符 —— 既避免吞掉 `minimax` / `mistral`，也避免误吞 `mimosa` 这类普通英文词。
+>> **🆕 0.8.0（2026-10-12）**：**并入 6 个上游全家桶插件（Fork）+ 1 个自建插件，成员数 7 → 14**。
 >
 > - **新增 6 个上游 Fork**：把 [zhu1090093659/dsh-web](https://github.com/zhu1090093659/dsh-web)（Apache-2.0）的**任务看板、Git 图谱、模型能力、SSH、用量统计、会话归档**六个插件 fork 进本仓库 `packages/`，以 `@fish-under-sea/*` 自主发布。
 >   - **为什么 fork 而不只是引用**：上游这些包把 npm scope 与包名一起烧进了客户端 bundle 的模块注册 id，内核按 `package.json` 的 `name` 认领包 —— 两者不一致时浏览器半区（设置页 / 面板）整个不加载。所以必须改源码、重建 bundle，才能自主发版与后续跟随内核演进。
@@ -47,14 +52,14 @@ Fish 自建 [DSH](https://github.com/Fish-under-sea/DSH)（DeepSeek Harness）�
 | [`dsh-git-sync`](packages/dsh-git-sync) | 0.4.0 | **一键 Git 同步**：把插件清单、启用状态、本地设置、Skills、看板/用量账本、设置导航顺序偏好、**免费模型插件配置及用量账本**与**壁纸引擎整机配置快照**（`$DSH_HOME/FISH.json`，资产本体已内嵌）同步到自己的私有仓库。**0.4.0 新增「导出私钥配置」**：把带凭据的几份配置（`channel-pack/` 的花名册 / 签到 / 账本、`.credentials.yaml`、`our-free-model/eac-user.json`）**纯本机**拷到指定目录（默认桌面）下的 `DSH私钥配置` 文件夹，并附一份说明 README —— 不碰 git、不发任何网络请求，凭据内容也不进日志；**这条通路与 git 同步完全分开**，因为凭据在同步硬黑名单里、永远不会随仓库走 |
 | [`dsh-settings-nav-order`](packages/dsh-settings-nav-order) | 0.1.5 | **设置导航重排**：把设置面板左侧菜单排成自己要的顺序、把不想看的项收起来；偏好随 Git 同步插件**跨机复原** |
 | [`dsh-visual-companion`](packages/dsh-visual-companion) | 0.1.7 | **视觉伴侣唤醒**：网页上看原型 / 比布局，点选 + 备注后按「提交给助手」，会话自动收到一条用户消息并起一轮 —— 不必回终端复述；**点选过程静默，只有提交才唤醒一次**（0.1.7 起加载日志的版本号从 `package.json` 现读，不再写死） |
-| [`dsh-skill-lens-fish`](packages/dsh-skill-lens-fish) | 0.1.0 | **技能中枢 Skill Lens（Fish 版）**：在会话页签里浏览本机全部 Agent Skill。基于 [x-feichen/dsh-skill-lens](https://github.com/x-feichen/dsh-skill-lens)（MIT）改造：上游只认 `<名称>/SKILL.md` 且把全局根写死 `~/.dsh`（本机 DSH_HOME 是 `~/.dsh-beta`，扫描恒为空）；本版跟随 `$DSH_HOME`、识别扁平 `<名称>.md`，并把技能对 `skill-refs/` 等目录外共享资源的引用解析成真实路径、单列为依赖图的「引用资源」分类 |
+| [`dsh-skill-lens-fish`](packages/dsh-skill-lens-fish) | 0.1.1 | **技能中枢 Skill Lens（Fish 版）**：在会话页签里浏览本机全部 Agent Skill。基于 [x-feichen/dsh-skill-lens](https://github.com/x-feichen/dsh-skill-lens)（MIT）改造：上游只认 `<名称>/SKILL.md` 且把全局根写死 `~/.dsh`（本机 DSH_HOME 是 `~/.dsh-beta`，扫描恒为空）；本版跟随 `$DSH_HOME`、识别扁平 `<名称>.md`，并把技能对 `skill-refs/` 等目录外共享资源的引用解析成真实路径、单列为依赖图的「引用资源」分类 |
 | [`dsh-client-ui-task-board`](packages/dsh-client-ui-task-board) | 0.4.6 | **任务看板**（上游 `@linxin666/dsh-client-ui-task-board@0.4.6` 的 **Fork**，Apache-2.0）：Host 权威账本、五列看板（可拖拽/按状态切换）、子任务树级联执行、Host cron 定时、**执行前的验收门**（goal 形态，A/B 双轮判分）、Agent Team 团队执行、标签与「续接卡片」冻结快照、执行权限确认门。**已移除安装遥测** |
 | [`dsh-client-ui-git-graph`](packages/dsh-client-ui-git-graph) | 0.4.6 | **Git 图谱与分支切换**（上游 `@linxin666/dsh-client-ui-git-graph@0.4.6` 的 **Fork**，Apache-2.0）：交互式提交图谱 + 空白会话里的分支选择胶囊（宿主侧真跑 `git switch`），带 Worktree 冲突守卫与可读报错；opt-in 的 `git_worktree` 模型工具作用于 `$DSH_HOME/worktrees/` 托管目录。**已移除安装遥测** |
 | [`dsh-client-ui-model-capabilities`](packages/dsh-client-ui-model-capabilities) | 0.4.6 | **模型能力声明**（上游 `@linxin666/dsh-client-ui-model-capabilities@0.4.6` 的 **Fork**，Apache-2.0）：在官方「模型」页的提供方卡片里直接编辑**逐模型推理档位**（off→max 与发送值）与**图像输入声明**，写官方 `llm-pi-ai` 设置命名空间；提供方一键禁用/启用（存档后下线路由，密钥不受影响） |
 | [`dsh-ssh`](packages/dsh-ssh) | 0.4.6 | **SSH 运维**（上游 `@linxin666/dsh-ssh@0.4.6` 的 **Fork**，Apache-2.0）：主机库（可一键导入 `~/.ssh/config`）、持久连接池与多级跳板机、exec 执行、xterm Web 终端、SFTP 上传下载、本地端口转发、集群执行；另带 `ssh_list` / `ssh_exec` / `ssh_upload` / `ssh_download` / `ssh_tunnel` / `ssh_cluster` 六个模型工具。主机配置存 `$DSH_HOME/dsh-ssh.json`。**已移除安装遥测** |
-| [`dsh-usage`](packages/dsh-usage) | 0.4.6 | **用量统计**（上游 `@linxin666/dsh-usage@0.4.6` 的 **Fork**，Apache-2.0）：分 provider / 模型的 token 台账（输入/输出/缓存读/缓存写分桶）、余额与**编程套餐配额**（Kimi / GLM / OpenCode Go / MiniMax / Codex）、DeepSeek 峰谷计价估算、「Token 银行」鲸元券，以及侧栏底部的紧凑速览卡。台账存 `$DSH_HOME/dsh-usage/` |
+| [`dsh-usage`](packages/dsh-usage) | 0.4.7 | **用量统计**（上游 `@linxin666/dsh-usage@0.4.6` 的 **Fork**，Apache-2.0）：分 provider / 模型的 token 台账（输入/输出/缓存读/缓存写分桶）、余额与**编程套餐配额**（Kimi / GLM / OpenCode Go / MiniMax / Codex）、DeepSeek 峰谷计价估算、「Token 银行」鲸元券，以及侧栏底部的紧凑速览卡。台账存 `$DSH_HOME/dsh-usage/` |
 | [`dsh-session-archive`](packages/dsh-session-archive) | 0.4.6 | **会话归档管理**（上游 `@linxin666/dsh-session-archive@0.4.6` 的 **Fork**，Apache-2.0）：全量清单（含子代理会话与无工作区会话）、筛选搜索排序、跨结果集多选、批量归档/取消归档、**物理删除（含级联与保护规则）**，以及可选的自动归档与自动清理策略。**修正了上游的依赖声明错误**（源码 import 带 scope 的 `@deepseek-ai/schemastery`，上游 dependencies 却写无 scope 的 `schemastery`，导致构建期类型解析失败） |
-| [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) | 0.6.1 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；**厂商头像素材随包分发**（**17 厂商** × 10 岗位 + 厂商通用图 + 立绘 + 队长 + 商标 SVG，**286 个文件 / 约 29.3 MB**，含 1024×1024 高清 WebP 族），装完即有，跨机不再依赖 `artworkDir`；自定义目录仍可整套覆盖；商标 SVG 按扩展名送达；**队长头像跟随队长自己的模型路由**；`0.5.1` 修掉降级链序（`厂商+岗位 → 厂商 → 岗位`）；`0.6.0` 并入上游 v0.1.23（成员工具策略、质量门契约与修订绑定、lineage 身份沿 fork 链、工作区审计、损坏 `team.json` 降级）；**⚠️ `0.6.1` 修掉「升级 DSH 到 0.2.1-alpha.2 后插件被整行禁用」** —— 该版本的宿主白名单此前未收录新运行时，DSH 判定不兼容并自动停用插件行（症状：显示「异常」、团队协作毫无反应） |
+| [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) | 0.7.0 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；**厂商头像素材随包分发**（**17 厂商** × 10 岗位 + 厂商通用图 + 立绘 + 队长 + 商标 SVG，**286 个文件 / 约 29.3 MB**，含 1024×1024 高清 WebP 族），装完即有，跨机不再依赖 `artworkDir`；自定义目录仍可整套覆盖；商标 SVG 按扩展名送达；**队长头像跟随队长自己的模型路由**；`0.5.1` 修掉降级链序（`厂商+岗位 → 厂商 → 岗位`）；`0.6.0` 并入上游 v0.1.23（成员工具策略、质量门契约与修订绑定、lineage 身份沿 fork 链、工作区审计、损坏 `team.json` 降级）；**⚠️ `0.6.1` 修掉「升级 DSH 到 0.2.1-alpha.2 后插件被整行禁用」** —— 该版本的宿主白名单此前未收录新运行时，DSH 判定不兼容并自动停用插件行（症状：显示「异常」、团队协作毫无反应） |
 | [`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish) | 0.5.8 | **思考强度与输入模态**（上游 [HaoyueQin/dsh-better-reasoning-effort](https://github.com/HaoyueQin/dsh-better-reasoning-effort) 的**Fork**）：在官方「模型」页编辑卡里直接编辑每模型的 `reasoningEfforts` 与 `input` 声明，并支持一键自动适配；本 Fork 把 `settings.models.provider-card` 席位完整让给模型能力面板；0.5.8 并入上游三条安装路线说明（冷静期下写明版本号、release tarball 路线、GitHub 源码安装） |
 | [`dsh-our-free-model`](https://github.com/Fish-under-sea/dsh-our-free-model-fish) | 2.1.0 | **免费模型与渠道聚合**（上游 [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 的**Fork**）：把 13 个免费渠道（CodeArts / CodeBuddy / Loomy / Raccoon / MiniMax / Gemini 等）与免费模型并入官方模型选择器，并自带渠道网关供其它本地 harness 反代。本 Fork 新增「**隐藏渠道模型分组**」总开关 —— 渠道分组会与你自己配的 provider 混在一起把选择器撑长，打开即一次收起 13 组；**只影响展示不影响路由**（网关请求走 `resolveModelInfo()`，被隐藏的模型照常收发），渠道设置页的「显示列表 / 关闭全部」读 `listAllModels()` 也不受影响；默认关闭，升级不会静默改变你看到的列表。**2.1.0 并入上游 v2.1.0** —— combos 组合链、token-saver 省 token、原生 Anthropic 网关、`standalone` 拆分、渠道包与 Kilo 渠道、升级器 snapshot SHA 修复；Fish 自建的隐藏渠道分组与按面积计价完整保留 |
 
@@ -274,7 +279,7 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 
 ```text
 dsh-fish/                 # 仓库目录名（npm 包名是 @fish-under-sea/dsh-fish）
-├── package.json          # 聚合包清单（version 0.8.0，dsh.bundle.patch 指向 cordis.patch.yml）
+├── package.json          # 聚合包清单（version 0.8.1，dsh.bundle.patch 指向 cordis.patch.yml）
 ├── cordis.patch.yml      # bundle 层：插入十四个插件的插件行
 ├── CHANGELOG.md          # 完整版本记录（README 顶部只留最近一版）
 ├── pnpm-workspace.yaml   # workspace 声明（仅本地开发用；并放行 esbuild 安装脚本）
@@ -353,4 +358,4 @@ pnpm --filter @fish-under-sea/dsh-client-ui-model-capabilities build
 
 ---
 
-<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.8.0 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
+<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.8.1 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>

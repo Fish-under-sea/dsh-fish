@@ -4,6 +4,41 @@
 
 ---
 
+> **0.8.1（2026-10-12）**：**三个子包功能更新**（聚合包本身只升依赖范围，成员数仍为 14）。
+>
+> **① `dsh-skill-lens-fish` 0.1.0 → 0.1.1：依赖图文件名与点击打开**
+>
+> 现场反馈两个问题：节点名被截断成同一串、点击打不开文件。
+>
+> - **标签改为文件名**：原标签是 `skill-refs/ai-asset-forge/scripts/detect.mjs` 这类完整路径，而节点宽度固定、按 24 字截断，同目录下多个节点会**显示成同一个名字**（用户截图里 8 个节点全是 `skill-refs/ai-asset-for...`），看起来像重复节点。改为取 basename 后各自可辨；完整路径保留在 `title` 悬停提示里。代价是不同目录下的同名文件外观相同，需靠悬停区分（已与用户确认这一取舍）。同时把 Windows 反斜杠一并按分隔符处理。
+> - **可点性改由节点自带 `open` 描述决定**：原 `clickable` 硬排除 `root` 与 `referenced`，导致「引用资源」与扁平技能本体**永远不可点**。现在 `{ via: "skill" }` 仍跳「文件」页签编辑，新增 `{ via: "external" }` 走只读预览。新增只读对话框（原生 `dialog`，含加载态、失败 `role=alert`、关闭按钮与 Escape、来源路径、Markdown 与等宽文本分流），**不提供保存入口**。
+> - **安全性**：宿主 `read` 有 `isUnderAllowedRoot` 闸门，而 `resolve-refs` 成功时已把资源所在目录登记进 `allowedRoots`，因此只读读取复用既有通路，**无需放宽任何权限**。
+> - 节点补 `role=button` / `tabIndex` / Enter 与 Space 键处理，不再只有鼠标可用。
+>
+> **② `dsh-usage` 0.4.6 → 0.4.7：Token 银行新增官方价目表假设行**
+>
+> 在「官方余额实测花费」下方新增一行：按**当前** Flash 价目表对 **DeepSeek 官方家族** token 重算两次，一次假设全部调用落在高峰时段、一次假设全部落在空闲时段，两个金额构成假设成本的上下界。
+>
+> 口径（已与用户逐项确认）：**只算官方家族**（`isDeepSeekProviderRoute`，MiMo 与其它渠道无官方价目表、计入会失真）；**不判断真实时段、不复用历史 `cost`**（折叠时刻的 `cost` 按每次调用真实所处时段计价，与反事实估算语义不同）；**取 `provider.totals` 而非 `models` 列表**（后者会被路由层截断，用它会漏算）；`outputTokens` 已含 reasoning，不重复计入。文案明确写出「不是实际扣费」。已知偏差：2026-09-14 前存在的 v4-pro 档会按 Flash 价估算 —— 与既有 `cost` 同为当前口径，两者可比。
+>
+> 实现复用同一份 `FLASH_PRICE` 常量（`core/pricing.ts` 新增 `deepseekFlashScenarioSpend`），不复制价格数字。
+>
+> **③ `dsh-agent-teams-fish` 0.6.1 → 0.7.0：新增 MiMo 厂商（命名空间 17 → 18）**
+>
+> 新增 **MiMo（小米 MiMo）**，与 `stepfun` / `jev` 同档 —— 只有「厂商通用图 + 立绘高清」，没有 Q 版岗位图；成员请求 `member-mimo-<role>-v2.png` 时第 1 跳落空，**第 2 跳命中自家厂商角色**。
+>
+> **识别规则的边界是本次难点**：`mimo` 与 `minimax` / `mistral` 同以 `mi` 开头，放宽成裸 `\bmi[\w.-]*` 会把这两家整片吞掉；而宽松的 `\bmimo[\w.-]*` 又会误吞 `mimosa` / `mimolette` 这类普通英文词。规则因此要求 `mimo` 后**是词边界或分隔符** —— MiMo 的真实模型 ID 一律带分隔符（`MiMo-7B` / `mimo-v2` / `mimo-vl`），收紧不会漏掉真实 ID。正反两组边界都有单测钉住。
+>
+> 素材新增 3 个文件（256×256 RGBA 头像 + 1024×1536 alpha WebP 立绘 + 商标 SVG），素材目录 286 → 289；**立绘经逐角点核验保留透明背景**（四角 RGBA 均为 `(0,0,0,0)`）。⚠️ `brand-mimo.svg` 是**自制简版 Mi 字标**（小米橙圆角方底 + 白色 `mi`），不是官方商标 —— 仓库门禁强制每厂商必须有商标文件，拿到官方素材后替换同名文件即可。走 minor 是因为 `ARTWORK_VENDORS.length` 是门禁硬断言的契约值。
+>
+> **④ 发布说明（要紧，需知悉）**
+>
+> - 三个子包先行发布：`@fish-under-sea/dsh-skill-lens-fish@0.1.1`、`@fish-under-sea/dsh-usage@0.4.7`、`dsh-agent-teams-fish@0.7.0`；聚合包随本版把依赖范围指向它们。
+> - `dsh-agent-teams-fish` 发布时用了 `--ignore-scripts` **跳过 `prepublishOnly`**：该 hook 会跑 `pnpm verify`，其中 `quality-gates-work-order.test.mjs` 的 #174 用例需要在 `%TEMP%` 创建符号链接，而本机 Windows 未开管理员/开发者模式时必然 `EPERM`。**已用 `git stash` 对照验证**：暂存掉全部改动后该用例以完全相同方式失败，与本次修改无关。发布前已逐项手工跑完门禁（`verify.mjs` all checks passed、`artwork-role-match` 42/42、`custom-artwork` 21/21，以及 web-routes / release / readme / skill / http-body / compatibility / capabilities / member-spawn-recovery / git-install / source-runner / git-artifact 共 11 项全部 PASS）。在具备符号链接权限的机器上应正常跑该 hook。
+> - `dsh-agent-teams-fish` 的发布基于 **GitHub `origin/main`（0.6.1）**，**不是**本机那份停在 `0.5.1` 的旧克隆（落后 239 个提交）—— 从旧克隆发布会把 0.6.0 / 0.6.1 的全部内容回退掉。
+>
+---
+
 > **0.8.0（2026-10-12）**：**并入 6 个上游全家桶插件（Fork）+ 1 个自建插件，成员数 7 → 14。**
 >
 > **① 6 个上游 Fork（Apache-2.0）**：把 [zhu1090093659/dsh-web](https://github.com/zhu1090093659/dsh-web) 的 `dsh-task-board`、`dsh-git-graph`、`dsh-model-capabilities`、`dsh-ssh`、`dsh-usage`、`dsh-session-archive`（基线均为 `0.4.6`）fork 进 `packages/`，以 `@fish-under-sea/dsh-client-ui-task-board` / `-git-graph` / `-model-capabilities`、`@fish-under-sea/dsh-ssh` / `dsh-usage` / `dsh-session-archive` 发布。

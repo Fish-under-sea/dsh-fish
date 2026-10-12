@@ -4,6 +4,41 @@
 
 ---
 
+> **0.8.1 (2026-10-12):** **three sub-packages updated** (the bundle itself only widens its dependency ranges; the member count stays 14).
+>
+> **① `dsh-skill-lens-fish` 0.1.0 → 0.1.1: dependency-graph filenames and click-to-open**
+>
+> Two problems were reported from the field: node names collapsed into identical strings, and clicking a node opened nothing.
+>
+> - **Labels now show the filename**: the old label was the full path (`skill-refs/ai-asset-forge/scripts/detect.mjs`), and since node width is fixed and the text was truncated at 24 characters, several nodes in one directory rendered as **the same string** (in the user's screenshot all eight nodes read `skill-refs/ai-asset-for...`), making them look like duplicates. Taking the basename makes each distinguishable; the full path stays in the `title` tooltip. The cost is that same-named files in different directories look alike and need a hover to tell apart (a trade-off confirmed with the user). Windows backslashes are now treated as separators too.
+> - **Clickability now derives from each node's own `open` descriptor**: the old `clickable` hard-excluded `root` and `referenced`, so **referenced resources and flat-skill entries could never be clicked**. `{ via: "skill" }` still jumps to the editable file tab, while a new `{ via: "external" }` opens a read-only preview. The new dialog (native `dialog`, with loading state, a `role=alert` failure state, a close button, Escape, the source path, and Markdown vs monospace rendering) deliberately offers **no save action**.
+> - **Security**: the host's `read` is gated by `isUnderAllowedRoot`, and a successful `resolve-refs` already registers the resource directory in `allowedRoots`, so read-only access reuses the existing path and **no permission is widened**.
+> - Nodes gained `role=button` / `tabIndex` / Enter and Space handling, so they are no longer mouse-only.
+>
+> **② `dsh-usage` 0.4.6 → 0.4.7: a price-book scenario line in the Token Bank**
+>
+> Below the observed-spend line, a new line reprices the **DeepSeek official family's** tokens at the **current** Flash book twice — once assuming every call ran in peak hours and once assuming every call ran off-peak — giving two figures that bracket the hypothetical cost.
+>
+> Scope (each point confirmed with the user): **official family only** (`isDeepSeekProviderRoute`; MiMo and relay traffic have no official price book and would distort the figure); **no real-period detection and no reuse of the historical `cost`** (the fold-time `cost` is priced by the period each call actually ran in, which is a different question from a counterfactual); **`provider.totals` rather than the `models` list** (the latter is truncated by the route layer and would undercount); `outputTokens` already includes reasoning and is not double-counted. The copy states plainly that it is **not an actual charge**. Known deviation: the v4-pro tier that existed before 2026-09-14 is priced at the Flash row — the same convention the existing `cost` uses, so the two remain comparable.
+>
+> The implementation reuses the single `FLASH_PRICE` constant (`deepseekFlashScenarioSpend` added in `core/pricing.ts`) rather than duplicating any price number.
+>
+> **③ `dsh-agent-teams-fish` 0.6.1 → 0.7.0: the MiMo vendor (namespace 17 → 18)**
+>
+> Adds **MiMo (Xiaomi MiMo)** in the same tier as `stepfun` / `jev` — a vendor-generic portrait plus an HD one, with no role art; a `member-mimo-<role>-v2.png` request misses hop 1 and lands on **the vendor's own character at hop 2**.
+>
+> **Rule boundaries were the hard part**: `mimo` shares the `mi` prefix with `minimax` and `mistral`, so relaxing to a bare `\bmi[\w.-]*` would swallow both vendors wholesale, while a loose `\bmimo[\w.-]*` would swallow ordinary words such as `mimosa` / `mimolette`. The rule therefore requires a word boundary or separator after `mimo` — real MiMo model ids always carry a separator (`MiMo-7B` / `mimo-v2` / `mimo-vl`), so tightening loses no real id. Both directions are pinned by unit tests.
+>
+> Three new asset files (a 256×256 RGBA avatar, a 1024×1536 alpha WebP portrait and a brand SVG); the asset directory goes 286 → 289, and the portrait was checked corner by corner to keep its transparent background (all four corners read `(0,0,0,0)`). ⚠️ `brand-mimo.svg` is a **self-made simplified Mi monogram** (Xiaomi-orange rounded square with a white `mi`), not an official mark — the gate requires a brand file per vendor; replace the file once official art exists. Minor version because `ARTWORK_VENDORS.length` is a gate-asserted contract value.
+>
+> **④ Release notes (important)**
+>
+> - The three sub-packages were published first: `@fish-under-sea/dsh-skill-lens-fish@0.1.1`, `@fish-under-sea/dsh-usage@0.4.7`, `dsh-agent-teams-fish@0.7.0`; this bundle release points its dependency ranges at them.
+> - `dsh-agent-teams-fish` was published with `--ignore-scripts`, **skipping `prepublishOnly`**: that hook runs `pnpm verify`, whose `quality-gates-work-order.test.mjs` #174 case creates a symlink under `%TEMP%`, which necessarily fails with `EPERM` on this Windows machine without administrator/Developer Mode. **This was verified by `git stash` comparison**: with every change of this release stashed, the case fails in exactly the same way, so it is unrelated to this work. Every gate was nonetheless run by hand before publishing (`verify.mjs` all checks passed; `artwork-role-match` 42/42; `custom-artwork` 21/21; plus web-routes / release / readme / skill / http-body / compatibility / capabilities / member-spawn-recovery / git-install / source-runner / git-artifact — all 11 PASS). On a machine with symlink privilege the hook should run normally.
+> - `dsh-agent-teams-fish` was released from **GitHub `origin/main` (0.6.1)**, **not** from the local clone still sitting at `0.5.1` (239 commits behind) — releasing from the stale clone would have rolled back everything in 0.6.0 / 0.6.1.
+>
+---
+
 > **0.8.0 (2026-10-12):** **6 upstream family plugins (forked) + 1 in-house plugin merged in; member count 7 → 14.**
 >
 > **① Six upstream forks (Apache-2.0)**: `dsh-task-board`, `dsh-git-graph`, `dsh-model-capabilities`, `dsh-ssh`, `dsh-usage` and `dsh-session-archive` from [zhu1090093659/dsh-web](https://github.com/zhu1090093659/dsh-web) (all at baseline `0.4.6`) are forked into `packages/`, published as `@fish-under-sea/dsh-client-ui-task-board` / `-git-graph` / `-model-capabilities`, `@fish-under-sea/dsh-ssh` / `dsh-usage` / `dsh-session-archive`.
