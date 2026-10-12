@@ -1,0 +1,66 @@
+/**
+ * Local styles of the task-board settings card.
+ *
+ * The card's chrome belongs to the shared family slice
+ * (`settings-card.module.css`, generated); this file owns only the nested
+ * disclosure list and the acceptance block's quiet notes, on theme tokens
+ * instead of inline literals.
+ */
+
+.note {
+  margin: 4px 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.error {
+  margin: 4px 0;
+  font-size: 12px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.resolvedList {
+  margin: 4px 0 8px;
+  padding-left: 16px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* Live power facts plus the battery caveat, below the topic cards: quiet
+   small print that follows the disclosures instead of competing with them.
+   No rule of its own — the last topic card already closes with its border. */
+.power {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 14px;
+}
+
+/* Both the live power line and the battery caveat: secondary ink at the small
+   size the 12-13px roles use, so neither competes with the topic cards. */
+.powerLine {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.powerError {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* The nested disclosure cards of this card: the board and its runtime
+   behavior, goal acceptance, and the sections a provider extension
+   contributes. The gap keeps the stacked card
+   borders apart; an empty list draws nothing. */
+.nestedCards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}

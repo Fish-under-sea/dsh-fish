@@ -1,0 +1,618 @@
+/* dsh-usage settings section: quiet cards on the host surface tokens, no
+   framework style imports. Neutral grays follow the GUI text color so the
+   section reads on light and dark themes alike. */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: inherit;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.currentProvider {
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.refreshBtn {
+  appearance: none;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 12px;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 120ms ease, background-color 120ms ease;
+}
+
+.refreshBtn:hover:not(:disabled) {
+  opacity: 1;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+}
+
+.refreshBtn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.refreshBtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 45%, transparent);
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.tab {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 14px;
+  cursor: pointer;
+  opacity: 0.65;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tab:hover {
+  opacity: 0.9;
+}
+
+.tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 45%, transparent);
+}
+
+.tabActive {
+  opacity: 1;
+  font-weight: 600;
+  border-bottom-color: currentColor;
+}
+
+.card {
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cardTitle {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+/* Day picker: a label plus the native select, sized to the card and
+   inheriting the section's currentColor chrome. */
+.dayPicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dayPickerLabel {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.daySelect {
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.daySelect:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 45%, transparent);
+}
+
+/* A native select paints its option list itself: it does NOT inherit the
+   control's background, so an unset option background falls back to the
+   browser's own (light) list surface while the option text still inherits the
+   section's light text color — light text on a light list, unreadable on a
+   dark skin. Both the day picker and the settings-row select therefore give
+   their option list one explicit surface/label pair, read from the tokens the
+   platform and the skins ship (a skin that omits the surface token falls back
+   to the platform's, a host with no theme layer to Canvas). Text and
+   background always travel together, per theme half. */
+.daySelect option,
+.settingItem select option {
+  background-color: var(--dsw-alias-bg-multi-select, Canvas);
+  color: var(--dsw-alias-label-primary, CanvasText);
+}
+
+.statRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.statValue {
+  font-size: 18px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.statLabel {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.providerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* A long per-day figure (tokens · calls · cost) drops to its own line in a
+     narrow panel instead of running into the provider name. */
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 6px 0;
+  border-top: 1px solid color-mix(in srgb, currentColor 8%, transparent);
+  font-size: 13px;
+}
+
+.providerRow:first-of-type {
+  border-top: none;
+}
+
+.providerName {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.providerTokens {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.providerBalance {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.currentBadge {
+  font-size: 10px;
+  font-weight: 600;
+  border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-radius: 999px;
+  padding: 1px 7px;
+  opacity: 0.8;
+  flex: none;
+}
+
+/* 近 30 天提供方/模型条形图：provider 行主导（条宽按窗口内最大 provider
+   归一），模型子行缩进细条（行内归一）。 */
+.chart {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chartProvider {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.chartHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.chartTokens {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.65;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.chartBar {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  overflow: hidden;
+}
+
+.chartFill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 55%, transparent);
+  transition: width 300ms ease;
+}
+
+.chartModel {
+  display: grid;
+  grid-template-columns: minmax(80px, 180px) 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding-left: 14px;
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.chartModelName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.8;
+}
+
+.chartModelBar {
+  display: block;
+  height: 4px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 6%, transparent);
+  overflow: hidden;
+}
+
+.chartModelFill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 35%, transparent);
+  transition: width 300ms ease;
+}
+
+.trendAxis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  opacity: 0.5;
+  font-variant-numeric: tabular-nums;
+}
+
+.muted {
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+/* Token 银行：票面 canvas 按容器宽度缩放；按钮行沿用 ghost 按钮样式。 */
+.voucherPreview canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+}
+
+.buttonRow {
+  display: flex;
+  gap: 8px;
+}
+
+.errorLine {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.planCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.planHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.planName {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.windowRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.windowLabel {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  opacity: 0.8;
+  font-variant-numeric: tabular-nums;
+}
+
+.bar {
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  overflow: hidden;
+}
+
+.barFill {
+  height: 100%;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 55%, transparent);
+  transition: width 300ms ease;
+}
+
+.barWarn {
+  background: #d97706;
+}
+
+.barLow {
+  background: #dc2626;
+}
+
+.resetLine {
+  font-size: 11px;
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+}
+
+.settingsGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+}
+
+.settingItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.settingItem input[type='checkbox'] {
+  accent-color: currentColor;
+}
+
+.settingItem input[type='number'] {
+  width: 90px;
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  padding: 3px 8px;
+}
+
+.settingItem select {
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  padding: 3px 8px;
+}
+
+.settingItem input:focus-visible,
+.settingItem select:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 45%, transparent);
+}
+
+
+/* ---------------------------------------------------------------------------
+   Sidebar foot card: the compact usage glance the mount seats as the shell
+   foot area's last child, directly below the Settings row. The chrome is an
+   outer div; the content is one transparent main button (the whole card opens
+   the usage settings section) with a sibling corner chevron toggling the
+   collapsed strip — sibling buttons, since nesting buttons is invalid HTML.
+   Quiet card on the same currentColor mixes as the section cards; hidden in
+   the 56px rail (the frame carries data-sidebar-collapsed).
+   --------------------------------------------------------------------------- */
+
+/* Seated above the Settings row as a native sidebar row: the shell's row
+   radius and hover fill, with none of the card chrome that made it read as a
+   pill pasted onto the foot. Only the expanded body keeps a faint surface to
+   hold its four lines together; the collapsed strip is a plain 36px row. */
+.footCard {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 2px 0 4px;
+  border: none;
+  border-radius: 12px;
+  background: color-mix(in srgb, currentColor 4%, transparent);
+  color: inherit;
+  transition: background-color 120ms ease;
+}
+
+.footCard:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.footCardCollapsed {
+  background: transparent;
+}
+
+.footMain {
+  appearance: none;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.footMain:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 45%, transparent);
+}
+
+.footToggle {
+  appearance: none;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity 120ms ease, background-color 120ms ease;
+}
+
+.footCard:hover .footToggle {
+  opacity: 0.8;
+}
+
+.footToggle:hover {
+  opacity: 1;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.footToggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 45%, transparent);
+}
+
+.footToggle svg {
+  display: block;
+}
+
+.footHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.footTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  opacity: 0.65;
+  white-space: nowrap;
+}
+
+.footTitle svg {
+  display: block;
+  flex: none;
+}
+
+/* The headline value leaves room for the corner toggle. */
+.footValue {
+  margin-right: 18px;
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.footLine {
+  font-size: 11px;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.footMeta {
+  font-size: 10px;
+  opacity: 0.5;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Collapsed strip: tighter chrome, one horizontal line, room for the toggle. */
+.footCardCollapsed .footMain {
+  min-height: 36px;
+  padding: 7px 8px;
+}
+
+.footStrip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 20px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.footStrip svg {
+  display: block;
+  flex: none;
+  opacity: 0.65;
+}
+
+.footStripProvider {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+.footStripLabel {
+  opacity: 0.65;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.footStripValue {
+  margin-left: auto;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+:global([data-dsh-frame][data-sidebar-collapsed]) .footCard,
+:global([data-sidebar-collapsed]) .footCard {
+  display: none;
+}

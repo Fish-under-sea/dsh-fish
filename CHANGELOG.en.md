@@ -4,6 +4,29 @@
 
 ---
 
+> **0.8.0 (2026-10-12):** **6 upstream family plugins (forked) + 1 in-house plugin merged in; member count 7 → 14.**
+>
+> **① Six upstream forks (Apache-2.0)**: `dsh-task-board`, `dsh-git-graph`, `dsh-model-capabilities`, `dsh-ssh`, `dsh-usage` and `dsh-session-archive` from [zhu1090093659/dsh-web](https://github.com/zhu1090093659/dsh-web) (all at baseline `0.4.6`) are forked into `packages/`, published as `@fish-under-sea/dsh-client-ui-task-board` / `-git-graph` / `-model-capabilities`, `@fish-under-sea/dsh-ssh` / `dsh-usage` / `dsh-session-archive`.
+>
+> **Why forking was required rather than adding a dependency**: upstream bakes both the npm scope and the package name into the client bundle's **module registration id** (`window.__ModuleLoader__.load({ id: "@linxin666/…" })`), while the host's `@deepseek-ai/dsh-client-modules` claims a package by its **`package.json` `name`** in `nearestPackage()` (accepting it only when `name === expectedPackageName`). When the two disagree the claim fails and the **entire browser half (settings page, panels) does not load**. Renaming therefore requires editing sources and rebuilding the bundle — which is also the prerequisite for independent releases and for tracking the kernel going forward.
+>
+> **② What changed (scope and telemetry only; behaviour equivalent to upstream 0.4.6)**:
+> - Package names and npm scope: `@linxin666/*` → `@fish-under-sea/*`, with every reference in sources, configs and docs updated too — including the **process-wide mount guard identifier** in `mountOnce("<package name>")`, without which the fork and the upstream original would be treated as the same plugin and crowd each other out.
+> - **Install telemetry removed**: upstream's `shared/client/telemetry.ts` reports the package name to `https://dsh-market.com/api/telemetry/event` once a day. Affects `dsh-task-board`, `dsh-git-graph` and `dsh-ssh` (their `src/client/telemetry.ts` plus its import and call are gone). The other three packages never had telemetry.
+> - **Two upstream defects fixed**: `dsh-session-archive` declared the unscoped `schemastery` in `dependencies` while its sources import the scoped `@deepseek-ai/schemastery` (a TS2307 type-resolution failure at build time) — now `^3.18.4`; and the upstream typo `dsh-client-ssh` in the `@module` JSDoc of `dsh-ssh`'s `native-panel.tsx` is corrected.
+> - Each package carries a **`NOTICE`** (required by Apache-2.0 §4b): source repository, source package name and version, modifications, licence and disclaimer.
+> - **`tests/` are not carried over** (the six upstream packages hold 230 test files, ~39% of their file count): this repository maintains `src/` + `lib/` only, rebuilding with `pnpm --filter <package> build` after source changes.
+>
+> **③ Build chain**: the upstream repository-root shared build preset is ported into this repository's `shared/` (`tsdown.client.ts`, `web-platform.ts`, `types/css-modules.d.ts`), and the root `package.json` gains build devDependencies (`tsdown@0.22.2`, `typescript@~5.7.2`, `lightningcss@^1.32.0`). **Note**: `lightningcss` must be installed at the **repository root**, because the shared preset resolves its dependencies from there. `lib/` is committed, so the release flow still needs no build step.
+>
+> **④ New in-house plugin `dsh-skill-lens-fish@0.1.0`**: Skill Lens, Fish edition — based on [x-feichen/dsh-skill-lens](https://github.com/x-feichen/dsh-skill-lens) (MIT): follows `$DSH_HOME` (upstream hard-codes `~/.dsh`, so its scan is always empty under this machine's `~/.dsh-beta`), recognises flat `<name>.md` skills, and resolves skill references to out-of-directory shared resources such as `skill-refs/` into real paths, shown as a dedicated "referenced resources" group in the dependency graph; its build script reads the registration id live from `package.json` (upstream hard-coded it — exactly the trap in item 3 of "five places to update when renaming").
+>
+> **⑤ ⚠️ Coexistence with `@linxin666/dsh-web-all` (important)**: the six forks are **the same plugins** as that aggregate. Enabling both mounts them **twice** (two task boards fighting over one sidebar seat, the same host services registered twice). Entry ids do not collide (this bundle uses `ui-*` / bare names, the other uses `web-ui-*`), so the "same id inserted twice" startup failure does **not** trigger — but behaviour misbehaves. Set those six `web-ui-*` entries to `disabled: true` **in your own profile patch layer**. This bundle deliberately **does not rewrite other packages' entries** (cross-package interference creates coupling and `entry not found` warnings).
+>
+> **⑥ README / licence**: bilingual READMEs fully synced (member table +7 rows, installation lists, a new "Coexistence with dsh-web-all" section, member count 7 → 14); the six forks are **Apache-2.0** (this repository itself and its in-house sub-packages remain MIT), with copyright held by the upstream authors — see each package's `NOTICE`.
+
+---
+
 > **0.7.9 (2026-10-12):** `dsh-agent-teams-fish` **0.6.0 → 0.6.1** (dependency range `^0.6.0` → **`^0.6.1`**) — **fixes "the plugin gets its whole row disabled after upgrading DSH to 0.2.1-alpha.2"**.
 >
 > **Symptom**: after the DSH runtime moved to `0.2.1-alpha.2`, the host log showed `disabling profile plugin row "agent-teams": Plugin dsh-agent-teams-fish@0.6.0 is incompatible with dsh 0.2.1-alpha.2`, the plugin showed as broken in the panel, and **AgentTeams collaboration did nothing at all**. This is not a crash but DSH's deliberate protection: when the declaration surface has not followed the runtime, it would rather disable the plugin than risk a crash or data loss.

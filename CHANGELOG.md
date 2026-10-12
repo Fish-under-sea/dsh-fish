@@ -4,6 +4,29 @@
 
 ---
 
+> **0.8.0（2026-10-12）**：**并入 6 个上游全家桶插件（Fork）+ 1 个自建插件，成员数 7 → 14。**
+>
+> **① 6 个上游 Fork（Apache-2.0）**：把 [zhu1090093659/dsh-web](https://github.com/zhu1090093659/dsh-web) 的 `dsh-task-board`、`dsh-git-graph`、`dsh-model-capabilities`、`dsh-ssh`、`dsh-usage`、`dsh-session-archive`（基线均为 `0.4.6`）fork 进 `packages/`，以 `@fish-under-sea/dsh-client-ui-task-board` / `-git-graph` / `-model-capabilities`、`@fish-under-sea/dsh-ssh` / `dsh-usage` / `dsh-session-archive` 发布。
+>
+> **为什么必须 fork 而不是加依赖**：上游把这些包的 npm scope 与包名一起**烧进了客户端 bundle 的模块注册 id**（`window.__ModuleLoader__.load({ id: "@linxin666/…" })`），而宿主 `@deepseek-ai/dsh-client-modules` 在 `nearestPackage()` 里按 **`package.json` 的 `name`** 认领包（`name === expectedPackageName` 才接受）。两者不一致时包认领失败，**浏览器半区（设置页 / 面板）整个不加载**。因此改名必须改源码并重建 bundle，这也正是能自主发版、后续跟随内核演进的前提。
+>
+> **② 改了什么（仅 scope 与遥测，功能与上游 0.4.6 等价）**：
+> - 包名与 npm scope：`@linxin666/*` → `@fish-under-sea/*`；源码、配置、文档中的引用一并替换（含 `mountOnce("<包名>")` 的**进程级挂载守卫标识** —— 不改会让 fork 与上游原版被认作同一插件而互相排挤）。
+> - **移除安装遥测**：上游 `shared/client/telemetry.ts` 每日向 `https://dsh-market.com/api/telemetry/event` 上报一次包名。涉及 `dsh-task-board`、`dsh-git-graph`、`dsh-ssh` 三个包（删 `src/client/telemetry.ts` 与其 import/调用）。另三个包本就没有遥测。
+> - **修正两个上游自身缺陷**：`dsh-session-archive` 的 `dependencies` 写的无 scope `schemastery`，而源码 import 带 scope 的 `@deepseek-ai/schemastery`（构建期 TS2307 类型解析失败），已改为 `^3.18.4`；`dsh-ssh` 的 `native-panel.tsx` JSDoc 里 `@module` 标注的上游笔误 `dsh-client-ssh` 已修正。
+> - 各包附 **`NOTICE`**（Apache-2.0 §4b 要求）：来源仓库、来源包名与版本、修改内容、许可与免责。
+> - **不带 `tests/`**（上游 6 包共 230 个测试文件，约占其文件数 39%）：本仓库只维护 `src/` + `lib/`，改源码后跑 `pnpm --filter <包> build` 重建。
+>
+> **③ 构建链**：移植上游仓库根的共享构建预设到本仓库 `shared/`（`tsdown.client.ts`、`web-platform.ts`、`types/css-modules.d.ts`）；根 `package.json` 增加构建 devDependencies（`tsdown@0.22.2`、`typescript@~5.7.2`、`lightningcss@^1.32.0`）。**注意**：`lightningcss` 必须装在**仓库根**，因为共享预设从根目录解析依赖。`lib/` 提交进仓库，因此发布流程照旧无需构建。
+>
+> **④ 新增自建插件 `dsh-skill-lens-fish@0.1.0`**：Skill Lens Fish 版，基于 [x-feichen/dsh-skill-lens](https://github.com/x-feichen/dsh-skill-lens)（MIT）改造 —— 跟随 `$DSH_HOME`（上游写死 `~/.dsh`，在本机 `~/.dsh-beta` 下扫描恒为空）、识别扁平 `<名称>.md` 技能、把技能对 `skill-refs/` 等目录外共享资源的引用解析成真实路径并单列为依赖图的「引用资源」分类；构建脚本从 `package.json` 现读注册 id（上游硬编码，正是「改包名五处」第 3 处的坑）。
+>
+> **⑤ ⚠️ 与 `@linxin666/dsh-web-all` 共存（要紧）**：6 个 Fork 与该聚合包**同源**。两者同时启用会让这 6 个插件**被挂载两次**（两个任务看板抢同一侧栏席位、重复注册同一宿主服务）。行 id 不冲突（本包用 `ui-*` / 裸名，对方用 `web-ui-*`），**不会**触发「同 id 插两行」的启动失败，但行为异常。请在**自己 profile 的补丁层**把那 6 个 `web-ui-*` 行设为 `disabled: true`。本包**不主动改写别人的行**（跨包干预会产生耦合与 `entry not found` 告警）。
+>
+> **⑥ README / 许可**：双语 README 全量同步（成员表 +7 行、安装清单、新增「与 dsh-web-all 共存」章节、成员数 7 → 14）；6 个 Fork 为 **Apache-2.0**（本仓库自身与自建子包为 MIT），著作权归上游原作者，见各包 `NOTICE`。
+
+---
+
 > **0.7.9（2026-10-12）**：`dsh-agent-teams-fish` **0.6.0 → 0.6.1**（依赖范围 `^0.6.0` → **`^0.6.1`**）—— **修掉「升级 DSH 到 0.2.1-alpha.2 后插件被整行禁用」**。
 >
 > **症状**：DSH 运行时升到 `0.2.1-alpha.2` 后，宿主日志出现 `disabling profile plugin row "agent-teams": Plugin dsh-agent-teams-fish@0.6.0 is incompatible with dsh 0.2.1-alpha.2`，面板上插件显示「异常」，**AgentTeams 团队协作完全不工作**。这不是崩溃，而是 DSH 的主动保护：声明面没跟上运行时，它宁可停用也不冒着崩溃或数据损坏的风险加载。
