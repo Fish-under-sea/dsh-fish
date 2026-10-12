@@ -82,6 +82,9 @@
     "README.i18n.yaml",
     "icon.svg"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

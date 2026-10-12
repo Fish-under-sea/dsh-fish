@@ -31,6 +31,9 @@
     "cordis.patch.yml",
     "icon.svg"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "license": "Apache-2.0",
   "dsh": {
     "engines": {

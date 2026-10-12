@@ -97,6 +97,9 @@
     "cordis.patch.yml",
     "icon.svg"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

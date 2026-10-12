@@ -56,6 +56,9 @@
     "cordis.patch.yml",
     "icon.svg"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "license": "Apache-2.0",
   "dependencies": {
     "@deepseek-ai/schemastery": "^3.18.4"
