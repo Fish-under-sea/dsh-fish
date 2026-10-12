@@ -4,6 +4,17 @@
 
 ---
 
+> **0.7.9 (2026-10-12):** `dsh-agent-teams-fish` **0.6.0 → 0.6.1** (dependency range `^0.6.0` → **`^0.6.1`**) — **fixes "the plugin gets its whole row disabled after upgrading DSH to 0.2.1-alpha.2"**.
+>
+> **Symptom**: after the DSH runtime moved to `0.2.1-alpha.2`, the host log showed `disabling profile plugin row "agent-teams": Plugin dsh-agent-teams-fish@0.6.0 is incompatible with dsh 0.2.1-alpha.2`, the plugin showed as broken in the panel, and **AgentTeams collaboration did nothing at all**. This is not a crash but DSH's deliberate protection: when the declaration surface has not followed the runtime, it would rather disable the plugin than risk a crash or data loss.
+>
+> **Root cause**: that repository treats `compatibility.json` as the **single source of truth** and makes `scripts/compatibility.mjs` enforce that "every peer range must exactly enumerate its host versions". The runtime moved on and that enumeration did not — **the plugin code itself is not defective** (its compiled output value-imports only `@deepseek-ai/dsh-llm` and `@deepseek-ai/schemastery`, both of which still export on the new host; every other `@deepseek-ai/*` import is a type-only import erased at compile time).
+>
+> **Fix**: add `0.2.1-alpha.2` to `supportedHosts` with `track: preview`, then append it to all **21** `@deepseek-ai/dsh-*` peer ranges (the gate forces this step: change only the source of truth and it immediately reports `peer range must enumerate the supported host targets`). `recommendedHost` **stays** on the stable `0.2.0-rc.2` — an alpha must not be the ordinary-user recommendation. **No wide range**: DSH compares with `includePrerelease`, so `>=0.2.0-rc.2` would claim compatibility with every future version, contradicting that repository's stance of declaring a host only after testing it.
+>
+> **Verification**: the compatibility gate went red → green; `readme` 8/8, `release` 6/6, and the three art suites 21/21 + 41/41 + 9/9 are green; the `lib/` output did not change (the `output` digest in `git-artifact-stamp.json` is identical; only the `source` digest, which includes the version, moved). npm 0.6.1 is published and **21/21** peer ranges were confirmed to carry the new version.
+
+---
 > **0.7.8 (2026-10-12):** **`@fish-under-sea/dsh-session-title-refresh` moves out, `dsh-git-sync` gains "Export private config", and the bundle gets a custom icon.**
 >
 > **① `dsh-session-title-refresh` moves out (member count 8 → 7)**: DSH has shipped **built-in automatic session renaming since v0.2.1-alpha.2**, which overlaps with that plugin's core purpose — it is now **unmaintained** (its source stays under `packages/`, and published npm versions remain installable on their own) and the bundle no longer ships it.

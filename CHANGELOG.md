@@ -4,6 +4,17 @@
 
 ---
 
+> **0.7.9（2026-10-12）**：`dsh-agent-teams-fish` **0.6.0 → 0.6.1**（依赖范围 `^0.6.0` → **`^0.6.1`**）—— **修掉「升级 DSH 到 0.2.1-alpha.2 后插件被整行禁用」**。
+>
+> **症状**：DSH 运行时升到 `0.2.1-alpha.2` 后，宿主日志出现 `disabling profile plugin row "agent-teams": Plugin dsh-agent-teams-fish@0.6.0 is incompatible with dsh 0.2.1-alpha.2`，面板上插件显示「异常」，**AgentTeams 团队协作完全不工作**。这不是崩溃，而是 DSH 的主动保护：声明面没跟上运行时，它宁可停用也不冒着崩溃或数据损坏的风险加载。
+>
+> **根因**：该仓库以 `compatibility.json` 为**单一事实源**，并由 `scripts/compatibility.mjs` 强制「每条 peer 范围必须精确枚举其中的宿主版本」。DSH 升版后这个枚举列表没跟上 —— **插件代码本身无缺陷**（编译产物只 value-import `@deepseek-ai/dsh-llm` 与 `@deepseek-ai/schemastery`，两者在新宿主上照常导出；其余 `@deepseek-ai/*` 均为编译期擦除的类型导入）。
+>
+> **修法**：把 `0.2.1-alpha.2` 以 `track: preview` 加入 `supportedHosts`，并同步追加到全部 **21** 条 `@deepseek-ai/dsh-*` peer 白名单（门禁会强制这一步：只改事实源而漏改 peer 立即报 `peer range must enumerate the supported host targets`）。`recommendedHost` **保持**稳定版 `0.2.0-rc.2` 不动 —— alpha 不得充当普通用户推荐目标。**不改宽范围**：DSH 用 `includePrerelease` 语义比较，`>=0.2.0-rc.2` 会宣称「与所有未来版本兼容」，与该仓库「逐版本实测后再声明」的立场相悖。
+>
+> **验证**：兼容性门禁红 → 绿；`readme` 8/8、`release` 6/6、美术三套件 21/21 + 41/41 + 9/9 全绿；`lib/` 产物未变（`git-artifact-stamp.json` 的 `output` 摘要一致，仅含 version 的 `source` 摘要更新）。已发布 npm 0.6.1 并核实 **21/21** 条 peer 均含新版本。
+
+---
 > **0.7.8（2026-10-12）**：**移出 `@fish-under-sea/dsh-session-title-refresh`、`dsh-git-sync` 新增「导出私钥配置」、聚合包加上自定义图标**。
 >
 > **① 移出 `dsh-session-title-refresh`（成员数 8 → 7）**：DSH 自 **v0.2.1-alpha.2** 起**已内置会话自动重命名**，与该插件的核心用途重叠 —— 该插件因此**暂停维护更新**（源码保留在 `packages/` 下，npm 上已发布的版本仍可单独安装），本聚合包不再随附。
