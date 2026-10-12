@@ -55,6 +55,14 @@ export function SkillDetail(props: { skill: SkillEntry; onBack: () => void; onDi
   const [fileDirty, setFileDirty] = useState(false);
   const [pendingTab, setPendingTab] = useState<SubTab | null>(null);
   const [showUnsavedDialog, setShowUnsavedDialog] = useState(false);
+  /**
+   * 引用资源（技能目录外的共享文件）的只读预览。
+   *
+   * 为什么单独一个态而不复用「文件」页签：那些文件属于其它技能/共享资源目录，
+   * 本插件对它们没有编辑权，也列不出同目录的兄弟文件。所以只读展示正文 +
+   * 明确标注来源路径，不提供保存入口。
+   */
+  const [externalView, setExternalView] = useState<{ path: string; content: string | null; error: string | null } | null>(null);
   const pendingAction = useRef<"back" | "tab" | null>(null);
 
   // 脏状态同步给上层（app.tsx 用于拦截返回列表）
@@ -130,9 +138,27 @@ export function SkillDetail(props: { skill: SkillEntry; onBack: () => void; onDi
   }, [skill.dir, refs]);
 
   const entryName = entryNameOf(skill);
+  /**
+   * 扁平技能只有一个文件（就是它自己），「文件」页签与「文件数」都没有信息量，
+   * 因此对扁平技能整页隐藏；目录式技能保留（能浏览/编辑 SKILL.md 旁边的配套文件）。
+   *
+   * 声明位置在 rootOpen 之前：下面构造入口节点的打开方式要用它。
+   */
+  const isFlat = skill.kind === "file";
+  /**
+   * 入口文档怎么打开。
+   *
+   * 目录式技能：SKILL.md 就在技能目录内，用相对路径交给「文件」页签编辑。
+   * 扁平技能：`skill.dir` 本身就是那个 .md 文件的绝对路径，技能目录并不存在，
+   * 只能按绝对路径只读打开。
+   */
+  const rootOpen = useMemo(
+    () => (isFlat ? { via: "external" as const, path: skill.dir } : { via: "skill" as const }),
+    [isFlat, skill.dir],
+  );
   const graph = useMemo(
-    () => buildDependencyGraph({ references: refs, skillFiles: files, externalFiles, rootLabel: entryName }),
-    [refs, files, externalFiles, entryName],
+    () => buildDependencyGraph({ references: refs, skillFiles: files, externalFiles, rootLabel: entryName, rootOpen }),
+    [refs, files, externalFiles, entryName, rootOpen],
   );
   const constraints = useMemo<SkillConstraint[]>(() => (content === null ? [] : extractConstraints(content)), [content]);
   const [copied, setCopied] = useState(false);
@@ -147,8 +173,9 @@ export function SkillDetail(props: { skill: SkillEntry; onBack: () => void; onDi
   /**
    * 扁平技能只有一个文件（就是它自己），「文件」页签与「文件数」都没有信息量，
    * 因此对扁平技能整页隐藏；目录式技能保留（能浏览/编辑 SKILL.md 旁边的配套文件）。
+   *
+   * （isFlat 已提前声明，见上面的 rootOpen 之前。）
    */
-  const isFlat = skill.kind === "file";
 
   /** 复制 SKILL.md 完整内容到剪贴板 */
   const copyContent = useCallback(async (): Promise<void> => {
@@ -215,6 +242,40 @@ export function SkillDetail(props: { skill: SkillEntry; onBack: () => void; onDi
     }
     return normalized;
   }, [content]);
+
+  /**
+   * 打开依赖图里的一个节点。
+   *
+   * 两条通路：
+   * - `via: "skill"`：技能目录内的文件（相对路径），交给「文件」页签编辑；
+   *   扁平技能没有文件页签（只有它自己），保持原地不跳，避免跳进空页签。
+   * - `via: "external"`：技能目录外的共享资源，只能按绝对路径只读预览。
+   *
+   * host 侧 `read` 的允许根在 resolve-refs 成功时已把资源所在目录登记进去
+   * （见 src/index.ts 的 `allowedRoots.add(path.dirname(item.path))`），
+   * 所以这里直接调 read 不会被「outside scanned workspace roots」拒绝。
+   */
+  const openNode = useCallback(async (node: DepNode): Promise<void> => {
+    if (node.open === undefined) return;
+    if (node.open.via === "skill") {
+      setSelectedFile(node.id);
+      if (!isFlat) setSubTab("files");
+      return;
+    }
+    const target = node.open.path;
+    setExternalView({ path: target, content: null, error: null });
+    try {
+      const res = await api.read(target);
+      setExternalView((cur) => (cur !== null && cur.path === target
+        ? { path: target, content: res.content, error: null }
+        : cur));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setExternalView((cur) => (cur !== null && cur.path === target
+        ? { path: target, content: null, error: message }
+        : cur));
+    }
+  }, [isFlat]);
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -296,12 +357,12 @@ export function SkillDetail(props: { skill: SkillEntry; onBack: () => void; onDi
       {subTab === "deps" && (
         <DepGraphView
           graph={graph}
-          onOpenFile={(rel) => {
-            setSelectedFile(rel);
-            // 扁平技能没有「文件」页签，别往一个不存在的页签跳
-            if (!isFlat) setSubTab("files");
-          }}
+          onOpenFile={(node) => { void openNode(node); }}
         />
+      )}
+
+      {externalView !== null && (
+        <ReadOnlyPreview view={externalView} onClose={() => setExternalView(null)} />
       )}
 
       {showUnsavedDialog && (
@@ -320,9 +381,42 @@ export function SkillDetail(props: { skill: SkillEntry; onBack: () => void; onDi
   );
 }
 
+function ReadOnlyPreview(props: {
+  view: { path: string; content: string | null; error: string | null };
+  onClose: () => void;
+}): React.ReactElement {
+  const dialogRef = useRef<HTMLDialogElement | null>(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    return () => dialog?.close();
+  }, []);
+  const name = props.view.path.replace(/\\/g, "/").split("/").pop() ?? props.view.path;
+  return (
+    <dialog ref={dialogRef} aria-label={`只读预览：${name}`}
+      onCancel={(event) => { event.preventDefault(); props.onClose(); }}
+      style={{ width: "min(900px, calc(100vw - 24px))", maxHeight: "calc(100dvh - 32px)",
+        padding: 16, border: "1px solid #747980", borderRadius: 8, background: "#24262b", color: "#f1f3f5" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <strong style={{ minWidth: 0, overflowWrap: "anywhere", flex: 1 }}>{name}</strong>
+        <span className="muted">只读</span>
+        <button type="button" aria-label="关闭预览" title="关闭预览" onClick={props.onClose}>×</button>
+      </div>
+      <div className="muted" style={{ overflowWrap: "anywhere", margin: "8px 0", fontSize: 12 }}>{props.view.path}</div>
+      <div style={{ overflow: "auto", maxHeight: "calc(100dvh - 160px)", overflowWrap: "anywhere" }}>
+        {props.view.error !== null ? <p role="alert">读取失败：{props.view.error}</p>
+          : props.view.content === null ? <p role="status">加载中…</p>
+          : /\.mdx?$/i.test(props.view.path)
+            ? <div className="md-body"><ReactMarkdown remarkPlugins={[remarkGfm]}>{props.view.content}</ReactMarkdown></div>
+            : <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{props.view.content}</pre>}
+      </div>
+    </dialog>
+  );
+}
+
 function DepGraphView(props: {
   graph: ReturnType<typeof buildDependencyGraph>;
-  onOpenFile: (rel: string) => void;
+  onOpenFile: (node: DepNode) => void;
 }): React.ReactElement {
   const { graph, onOpenFile } = props;
   const { nodes, edges } = graph;
@@ -400,8 +494,10 @@ function DepGraphView(props: {
 
   if (nodes.length === 0) return <p className="muted">没有可展示的依赖。</p>;
 
-  const clickable = (n: DepNode): boolean =>
-    !n.isGroup && n.kind !== "root" && n.kind !== "referenced" && n.kind !== "external-url" && n.kind !== "env-var" && n.kind !== "external-command";
+  // 可点性完全由节点自带的 `open` 描述决定：分类节点与没有 open 的节点（URL /
+// 环境变量 / 命令）不可点；技能内文件、未引用文件、引用资源，以及扁平技能的
+// 入口节点都带 open。
+  const clickable = (n: DepNode): boolean => n.open !== undefined;
 
 
   const btnStyle: React.CSSProperties = { padding: "2px 8px", fontSize: 12 };
@@ -459,10 +555,20 @@ function DepGraphView(props: {
                 <g
                   key={n.id}
                   transform={`translate(${n.x}, ${n.y})`}
+                  role={canOpen ? "button" : undefined}
+                  tabIndex={canOpen ? 0 : undefined}
+                  aria-label={canOpen ? `打开 ${n.label}` : undefined}
+                  data-file-node={n.open !== undefined ? n.label : undefined}
+                  onKeyDown={(event) => {
+                    if (canOpen && (event.key === "Enter" || event.key === " ")) {
+                      event.preventDefault();
+                      onOpenFile(n);
+                    }
+                  }}
                   style={canOpen ? { cursor: "pointer" } : undefined}
                   onClick={() => {
                     if (dragRef.current?.moved) return; // 拖拽结束后误落在节点上不触发打开
-                    if (canOpen) onOpenFile(n.id);
+                    if (canOpen) onOpenFile(n);
                   }}
                 >
                   <rect
@@ -474,11 +580,14 @@ function DepGraphView(props: {
                   {n.isGroup && (
                     <rect width={4} height={NODE_H} rx={2} fill={NODE_COLORS[n.kind]} />
                   )}
-                  <text x={n.isGroup ? 12 : 8} y={NODE_H / 2 + 4}>
-                    {n.label.length > 24 ? n.label.slice(0, 23) + "…" : n.label}
-                  </text>
+                  <foreignObject x={n.isGroup ? 12 : 8} y={4} width={NODE_W - 24} height={NODE_H - 8}>
+                    <div style={{ height: "100%", display: "flex", alignItems: "center", fontSize: 12,
+                      lineHeight: "16px", overflowWrap: "anywhere", overflow: "hidden", pointerEvents: "none" }}>
+                      {n.label}
+                    </div>
+                  </foreignObject>
                   <title>
-                    {n.label}{n.line ? ` · L${n.line}` : ""}{canOpen ? " · 点击打开" : ""}
+                    {n.open?.via === "external" ? n.open.path : n.id}{n.line ? ` · L${n.line}` : ""}{canOpen ? " · 点击打开" : ""}
                   </title>
                 </g>
               );

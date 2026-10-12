@@ -13303,6 +13303,11 @@ function remarkGfm(options) {
 
 // src/client/deps.ts
 var SCRIPT_EXT = /\.(py|sh|bash|zsh|js|mjs|cjs|ts|tsx|rb|ps1)$/i;
+function displayName(path2) {
+  const clean = path2.replace(/\\/g, "/").replace(/\/+$/, "");
+  const last = clean.split("/").pop() ?? clean;
+  return last === "" ? clean : last;
+}
 function classify(target) {
   if (/\.mdx?$/i.test(target)) return "document";
   if (SCRIPT_EXT.test(target)) return "script";
@@ -13333,7 +13338,7 @@ function buildDependencyGraph(input) {
   const externalByTarget = /* @__PURE__ */ new Map();
   for (const file of externalFiles) externalByTarget.set(file.target, file);
   const nodes = /* @__PURE__ */ new Map([
-    [rootId, { id: rootId, label: rootId, kind: "root" }]
+    [rootId, { id: rootId, label: rootId, kind: "root", ...input.rootOpen ? { open: input.rootOpen } : {} }]
   ]);
   const edges = [];
   const ensureGroup = (id, label, kind) => {
@@ -13365,13 +13370,18 @@ function buildDependencyGraph(input) {
   }
   for (const [file, category] of fileCategory) {
     ensureGroup(GROUP_IDS[category], groupLabel(category), category);
-    nodes.set(file, { id: file, label: file, kind: category });
+    nodes.set(file, { id: file, label: displayName(file), kind: category, open: { via: "skill" } });
     edges.push({ source: GROUP_IDS[category], target: file });
   }
   if (referencedExt.size > 0) {
     ensureGroup(REF_GROUP_ID, "\u5F15\u7528\u8D44\u6E90", "referenced");
     for (const [id, external] of referencedExt) {
-      nodes.set(id, { id, label: external.label, kind: "referenced" });
+      nodes.set(id, {
+        id,
+        label: displayName(external.label),
+        kind: "referenced",
+        open: { via: "external", path: external.path }
+      });
       edges.push({ source: REF_GROUP_ID, target: id });
     }
   }
@@ -13380,7 +13390,7 @@ function buildDependencyGraph(input) {
   if (unrefFiles.length > 0) {
     ensureGroup(UNREF_ID, "\u672A\u5F15\u7528", "unref");
     for (const file of unrefFiles) {
-      nodes.set(file, { id: file, label: file, kind: "unref" });
+      nodes.set(file, { id: file, label: displayName(file), kind: "unref", open: { via: "skill" } });
       edges.push({ source: UNREF_ID, target: file });
     }
   }
@@ -13401,8 +13411,8 @@ function buildDependencyGraph(input) {
 function groupLabel(category) {
   return category === "document" ? "\u6587\u6863" : category === "script" ? "\u811A\u672C" : "\u8D44\u4EA7";
 }
-var NODE_W = 200;
-var NODE_H = 34;
+var NODE_W = 240;
+var NODE_H = 60;
 var GAP_X = 72;
 var GAP_Y = 14;
 function layoutGraph(nodes, edges, rootId = DEFAULT_ROOT_ID) {
@@ -20176,6 +20186,7 @@ function SkillDetail(props) {
   const [fileDirty, setFileDirty] = (0, import_react3.useState)(false);
   const [pendingTab, setPendingTab] = (0, import_react3.useState)(null);
   const [showUnsavedDialog, setShowUnsavedDialog] = (0, import_react3.useState)(false);
+  const [externalView, setExternalView] = (0, import_react3.useState)(null);
   const pendingAction = (0, import_react3.useRef)(null);
   (0, import_react3.useEffect)(() => {
     props.onDirtyChange?.(fileDirty);
@@ -20240,18 +20251,22 @@ function SkillDetail(props) {
     };
   }, [skill.dir, refs]);
   const entryName = entryNameOf(skill);
+  const isFlat = skill.kind === "file";
+  const rootOpen = (0, import_react3.useMemo)(
+    () => isFlat ? { via: "external", path: skill.dir } : { via: "skill" },
+    [isFlat, skill.dir]
+  );
   const graph = (0, import_react3.useMemo)(
-    () => buildDependencyGraph({ references: refs, skillFiles: files, externalFiles, rootLabel: entryName }),
-    [refs, files, externalFiles, entryName]
+    () => buildDependencyGraph({ references: refs, skillFiles: files, externalFiles, rootLabel: entryName, rootOpen }),
+    [refs, files, externalFiles, entryName, rootOpen]
   );
   const constraints = (0, import_react3.useMemo)(() => content3 === null ? [] : extractConstraints(content3), [content3]);
   const [copied, setCopied] = (0, import_react3.useState)(false);
-  const displayName = (0, import_react3.useMemo)(() => {
+  const displayName2 = (0, import_react3.useMemo)(() => {
     if (meta?.name) return meta.name;
     const last = skill.rel.split("/").pop() ?? skill.rel;
     return skill.kind === "file" ? last.replace(/\.md$/i, "") : last;
   }, [meta, skill.rel, skill.kind]);
-  const isFlat = skill.kind === "file";
   const copyContent = (0, import_react3.useCallback)(async () => {
     if (content3 === null) return;
     try {
@@ -20305,10 +20320,27 @@ function SkillDetail(props) {
     }
     return normalized;
   }, [content3]);
+  const openNode = (0, import_react3.useCallback)(async (node2) => {
+    if (node2.open === void 0) return;
+    if (node2.open.via === "skill") {
+      setSelectedFile(node2.id);
+      if (!isFlat) setSubTab("files");
+      return;
+    }
+    const target = node2.open.path;
+    setExternalView({ path: target, content: null, error: null });
+    try {
+      const res = await api.read(target);
+      setExternalView((cur) => cur !== null && cur.path === target ? { path: target, content: res.content, error: null } : cur);
+    } catch (err2) {
+      const message = err2 instanceof Error ? err2.message : String(err2);
+      setExternalView((cur) => cur !== null && cur.path === target ? { path: target, content: null, error: message } : cur);
+    }
+  }, [isFlat]);
   return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }, children: [
     /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "row", children: [
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { onClick: guardBack, children: "\u2190 \u8FD4\u56DE\u5217\u8868" }),
-      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("strong", { children: displayName }),
+      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("strong", { children: displayName2 }),
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "muted", children: skill.rel }),
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: { flex: 1 } }),
       content3 !== null && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { onClick: () => void copyContent(), style: { fontSize: 12 }, children: copied ? "\u5DF2\u590D\u5236 \u2713" : `\u590D\u5236 ${entryName}` })
@@ -20380,12 +20412,12 @@ function SkillDetail(props) {
       DepGraphView,
       {
         graph,
-        onOpenFile: (rel) => {
-          setSelectedFile(rel);
-          if (!isFlat) setSubTab("files");
+        onOpenFile: (node2) => {
+          void openNode(node2);
         }
       }
     ),
+    externalView !== null && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(ReadOnlyPreview, { view: externalView, onClose: () => setExternalView(null) }),
     showUnsavedDialog && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "dialog", onClick: cancelDiscard, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "box", onClick: (e) => e.stopPropagation(), children: [
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { children: "\u6709\u672A\u4FDD\u5B58\u7684\u66F4\u6539" }),
       /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { className: "muted", children: "\u5F53\u524D\u6587\u4EF6\u6709\u672A\u4FDD\u5B58\u7684\u4FEE\u6539\uFF0C\u79BB\u5F00\u5C06\u4E22\u5931\u8FD9\u4E9B\u66F4\u6539\u3002" }),
@@ -20395,6 +20427,47 @@ function SkillDetail(props) {
       ] })
     ] }) })
   ] });
+}
+function ReadOnlyPreview(props) {
+  const dialogRef = (0, import_react3.useRef)(null);
+  (0, import_react3.useEffect)(() => {
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    return () => dialog?.close();
+  }, []);
+  const name2 = props.view.path.replace(/\\/g, "/").split("/").pop() ?? props.view.path;
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+    "dialog",
+    {
+      ref: dialogRef,
+      "aria-label": `\u53EA\u8BFB\u9884\u89C8\uFF1A${name2}`,
+      onCancel: (event) => {
+        event.preventDefault();
+        props.onClose();
+      },
+      style: {
+        width: "min(900px, calc(100vw - 24px))",
+        maxHeight: "calc(100dvh - 32px)",
+        padding: 16,
+        border: "1px solid #747980",
+        borderRadius: 8,
+        background: "#24262b",
+        color: "#f1f3f5"
+      },
+      children: [
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { display: "flex", alignItems: "center", gap: 8 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("strong", { style: { minWidth: 0, overflowWrap: "anywhere", flex: 1 }, children: name2 }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { className: "muted", children: "\u53EA\u8BFB" }),
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("button", { type: "button", "aria-label": "\u5173\u95ED\u9884\u89C8", title: "\u5173\u95ED\u9884\u89C8", onClick: props.onClose, children: "\xD7" })
+        ] }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "muted", style: { overflowWrap: "anywhere", margin: "8px 0", fontSize: 12 }, children: props.view.path }),
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { overflow: "auto", maxHeight: "calc(100dvh - 160px)", overflowWrap: "anywhere" }, children: props.view.error !== null ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("p", { role: "alert", children: [
+          "\u8BFB\u53D6\u5931\u8D25\uFF1A",
+          props.view.error
+        ] }) : props.view.content === null ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { role: "status", children: "\u52A0\u8F7D\u4E2D\u2026" }) : /\.mdx?$/i.test(props.view.path) ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { className: "md-body", children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(Markdown, { remarkPlugins: [remarkGfm], children: props.view.content }) }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("pre", { style: { whiteSpace: "pre-wrap", overflowWrap: "anywhere" }, children: props.view.content }) })
+      ]
+    }
+  );
 }
 function DepGraphView(props) {
   const { graph, onOpenFile } = props;
@@ -20460,7 +20533,7 @@ function DepGraphView(props) {
     }, 0);
   };
   if (nodes.length === 0) return /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { className: "muted", children: "\u6CA1\u6709\u53EF\u5C55\u793A\u7684\u4F9D\u8D56\u3002" });
-  const clickable = (n) => !n.isGroup && n.kind !== "root" && n.kind !== "referenced" && n.kind !== "external-url" && n.kind !== "env-var" && n.kind !== "external-command";
+  const clickable = (n) => n.open !== void 0;
   const btnStyle = { padding: "2px 8px", fontSize: 12 };
   return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }, children: [
     /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className: "row", style: { marginBottom: 6 }, children: [
@@ -20515,10 +20588,20 @@ function DepGraphView(props) {
               "g",
               {
                 transform: `translate(${n.x}, ${n.y})`,
+                role: canOpen ? "button" : void 0,
+                tabIndex: canOpen ? 0 : void 0,
+                "aria-label": canOpen ? `\u6253\u5F00 ${n.label}` : void 0,
+                "data-file-node": n.open !== void 0 ? n.label : void 0,
+                onKeyDown: (event) => {
+                  if (canOpen && (event.key === "Enter" || event.key === " ")) {
+                    event.preventDefault();
+                    onOpenFile(n);
+                  }
+                },
                 style: canOpen ? { cursor: "pointer" } : void 0,
                 onClick: () => {
                   if (dragRef.current?.moved) return;
-                  if (canOpen) onOpenFile(n.id);
+                  if (canOpen) onOpenFile(n);
                 },
                 children: [
                   /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
@@ -20533,9 +20616,18 @@ function DepGraphView(props) {
                     }
                   ),
                   n.isGroup && /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("rect", { width: 4, height: NODE_H, rx: 2, fill: NODE_COLORS[n.kind] }),
-                  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("text", { x: n.isGroup ? 12 : 8, y: NODE_H / 2 + 4, children: n.label.length > 24 ? n.label.slice(0, 23) + "\u2026" : n.label }),
+                  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("foreignObject", { x: n.isGroup ? 12 : 8, y: 4, width: NODE_W - 24, height: NODE_H - 8, children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: {
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    fontSize: 12,
+                    lineHeight: "16px",
+                    overflowWrap: "anywhere",
+                    overflow: "hidden",
+                    pointerEvents: "none"
+                  }, children: n.label }) }),
                   /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("title", { children: [
-                    n.label,
+                    n.open?.via === "external" ? n.open.path : n.id,
                     n.line ? ` \xB7 L${n.line}` : "",
                     canOpen ? " \xB7 \u70B9\u51FB\u6253\u5F00" : ""
                   ] })

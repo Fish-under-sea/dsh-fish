@@ -24,7 +24,7 @@ Skill Lens makes both visible: it enumerates every skill, then draws each skill'
 - **Skill catalog**: recursively discovers both `<name>/SKILL.md` and `<name>.md` (skipping `node_modules`, build output and cache directories), with search filtering and a per-skill badge showing whether it came from the project or the global scan root
 - **Overview**: frontmatter metadata plus the rendered Markdown body
 - **File browser**: real collapsible tree with **edit / preview switching**; changes can be saved or discarded from the bottom-right corner
-- **Dependency graph**: entry point → category nodes → actual file leaves. Categories are **document / script / asset / unreferenced / referenced resource / external**; drag to pan, scroll to zoom, click a file node to jump to its file page
+- **Dependency graph (0.1.1)**: entry point → category → file. Nodes display filenames with wrapping and retain full paths in hover tooltips. In-directory files still open in the file browser. Flat skill entries and referenced resources open a read-only Markdown dialog with loading/error states, a close button and Escape support; no save action is offered. Categories, environment variables and commands are not opened as files.
 - **Create / import**: build a skill from scratch, or import an `.md` / `.zip` bundle into either the project `.dsh/skills` or the global skills root
 - **Delete**: directory-form skills delete the whole directory; flat-form skills delete only that one file (sibling skills in the same directory are untouched)
 

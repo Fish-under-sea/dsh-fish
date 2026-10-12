@@ -31,6 +31,14 @@ export interface DepNode {
   /** 分类节点为 true */
   isGroup?: boolean;
   line?: number;
+  /**
+   * 可点开时的目标形态：
+   * - `"skill"`：技能目录内文件，id 即 posix 相对路径，编辑视图按它定位；
+   * - `"external"`：技能目录外的共享资源（引用资源），必须用绝对路径读取。
+   *
+   * 不给这个字段的节点一律不可点（分类、根、URL/环境变量/命令）。
+   */
+  open?: { via: "skill" } | { via: "external"; path: string };
 }
 
 export interface DepEdge {
@@ -39,6 +47,24 @@ export interface DepEdge {
 }
 
 const SCRIPT_EXT = /\.(py|sh|bash|zsh|js|mjs|cjs|ts|tsx|rb|ps1)$/i;
+
+/**
+ * 依赖图节点的显示名：取路径最后一段。
+ *
+ * 为什么不再显示完整路径：卡片宽度固定（截断阈值 24 字），而引用资源标签形如
+ * `skill-refs/ai-asset-forge/scripts/detect.mjs` —— 完整路径必然被截成
+ * `skill-refs/ai-asset-for...`，同一目录下的多个节点会**显示成同一个名字**，
+ * 看上去像重复节点（用户截图现场）。取文件名后同目录节点各自可辨；完整路径仍
+ * 保留在节点的 `title` 提示里，悬停可见。
+ *
+ * 代价：不同目录下的同名文件（两个 `detect.mjs`）外观相同，同样靠 `title` 区分。
+ * 这是「只显示文件名」这一取舍的固有代价，已与用户确认。
+ */
+export function displayName(path: string): string {
+  const clean = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  const last = clean.split("/").pop() ?? clean;
+  return last === "" ? clean : last;
+}
 
 function classify(target: string): "document" | "script" | "asset" {
   if (/\.mdx?$/i.test(target)) return "document";
@@ -84,6 +110,14 @@ export function buildDependencyGraph(input: {
   externalFiles?: ExternalFile[];
   /** 入口节点名（目录式为 SKILL.md；扁平式为技能文件名） */
   rootLabel?: string;
+  /**
+   * 入口文档怎么打开：
+   * - 目录式技能给 `{ via: "skill" }`（SKILL.md 就在技能目录内，按相对路径定位）；
+   * - 扁平技能给 `{ via: "external", path }` —— 它的「技能目录」其实就是那个 .md
+   *   文件本身，只能按绝对路径读。
+   * 省略则入口节点不可点（保持向后兼容）。
+   */
+  rootOpen?: { via: "skill" } | { via: "external"; path: string };
 }): GraphResult {
   const rootId = input.rootLabel && input.rootLabel !== "" ? input.rootLabel : DEFAULT_ROOT_ID;
   const externalFiles = input.externalFiles ?? [];
@@ -91,7 +125,7 @@ export function buildDependencyGraph(input: {
   for (const file of externalFiles) externalByTarget.set(file.target, file);
 
   const nodes = new Map<string, DepNode>([
-    [rootId, { id: rootId, label: rootId, kind: "root" }],
+    [rootId, { id: rootId, label: rootId, kind: "root", ...(input.rootOpen ? { open: input.rootOpen } : {}) }],
   ]);
   const edges: DepEdge[] = [];
   const ensureGroup = (id: string, label: string, kind: NodeKind): void => {
@@ -129,7 +163,8 @@ export function buildDependencyGraph(input: {
   // 有引用的文件 → 对应分类叶子
   for (const [file, category] of fileCategory) {
     ensureGroup(GROUP_IDS[category], groupLabel(category), category);
-    nodes.set(file, { id: file, label: file, kind: category });
+    // 扁平技能只有一个文件（就是它自己），它也要能点开阅读
+    nodes.set(file, { id: file, label: displayName(file), kind: category, open: { via: "skill" } });
     edges.push({ source: GROUP_IDS[category], target: file });
   }
 
@@ -137,7 +172,13 @@ export function buildDependencyGraph(input: {
   if (referencedExt.size > 0) {
     ensureGroup(REF_GROUP_ID, "引用资源", "referenced");
     for (const [id, external] of referencedExt) {
-      nodes.set(id, { id, label: external.label, kind: "referenced" });
+      // 引用资源在技能目录之外，用 host 解析出的绝对路径只读打开
+      nodes.set(id, {
+        id,
+        label: displayName(external.label),
+        kind: "referenced",
+        open: { via: "external", path: external.path },
+      });
       edges.push({ source: REF_GROUP_ID, target: id });
     }
   }
@@ -148,7 +189,7 @@ export function buildDependencyGraph(input: {
   if (unrefFiles.length > 0) {
     ensureGroup(UNREF_ID, "未引用", "unref");
     for (const file of unrefFiles) {
-      nodes.set(file, { id: file, label: file, kind: "unref" });
+      nodes.set(file, { id: file, label: displayName(file), kind: "unref", open: { via: "skill" } });
       edges.push({ source: UNREF_ID, target: file });
     }
   }
@@ -183,8 +224,8 @@ export interface LayoutNode extends DepNode {
   y: number;
 }
 
-export const NODE_W = 200;
-export const NODE_H = 34;
+export const NODE_W = 240;
+export const NODE_H = 60;
 const GAP_X = 72;
 const GAP_Y = 14;
 

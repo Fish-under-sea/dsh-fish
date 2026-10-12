@@ -52,7 +52,36 @@ const TRANSPILED = ts.transpileModule(SOURCE, {
 const deps = await import(
   `data:text/javascript;base64,${Buffer.from(TRANSPILED, 'utf8').toString('base64')}`
 );
-const { buildDependencyGraph, layoutGraph } = deps;
+const { buildDependencyGraph, layoutGraph, displayName } = deps;
+
+test('文件名：兼容 Windows 分隔符，保留完整 basename', () => {
+  assert.equal(displayName('C:\\skills\\skill-refs\\design-essence\\02-judgments.md'), '02-judgments.md');
+  assert.equal(displayName('skill-refs/ai-asset-forge/soloapi-playbook.md'), 'soloapi-playbook.md');
+});
+
+test('依赖图：入口与共享资源保留各自打开目标，分类及环境变量不可点', () => {
+  const rootOpen = { via: 'external', path: 'C:/skills/ai-asset-forge.md' };
+  const graph = buildDependencyGraph({
+    rootLabel: 'ai-asset-forge.md', rootOpen, skillFiles: ['ai-asset-forge.md'],
+    references: [
+      { kind: 'relative-path', target: '../skill-refs/a/details.md', line: 2 },
+      { kind: 'relative-path', target: '../skill-refs/b/details.md', line: 3 },
+      { kind: 'env-var', target: 'DSH_HOME', line: 4 },
+    ],
+    externalFiles: ['a', 'b'].map((folder) => ({
+      target: `../skill-refs/${folder}/details.md`,
+      path: `C:/skill-refs/${folder}/details.md`,
+      label: `skill-refs/${folder}/details.md`,
+    })),
+  });
+  assert.deepEqual(graph.nodes.find((n) => n.kind === 'root').open, rootOpen);
+  const refs = graph.nodes.filter((n) => n.kind === 'referenced' && !n.isGroup);
+  assert.equal(refs.length, 2);
+  assert.equal(refs[0].label, 'details.md');
+  assert.notEqual(refs[0].id, refs[1].id);
+  assert.notEqual(refs[0].open.path, refs[1].open.path);
+  assert.ok(graph.nodes.filter((n) => n.isGroup || n.kind === 'env-var').every((n) => n.open === undefined));
+});
 
 /** 统计节点种类，便于断言。 */
 function countKinds(nodes) {
@@ -90,7 +119,8 @@ test('依赖图：技能目录之外的引用进入「引用资源」分类', ()
 
   const leaves = graph.nodes.filter((n) => n.kind === 'referenced' && !n.isGroup);
   assert.equal(leaves.length, 1, '只有解析成功的引用才生成叶子');
-  assert.equal(leaves[0].label, external.label, '叶子用可读标签（相对 DSH_HOME）');
+  assert.equal(leaves[0].label, 'protocol.md', '叶子显示文件名而非路径前缀');
+  assert.deepEqual(leaves[0].open, { via: 'external', path: external.path });
 
   // 根节点连到分组
   assert.ok(graph.edges.some((e) => e.source === root.id && e.target === group.id));
