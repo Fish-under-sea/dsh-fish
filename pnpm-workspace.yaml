@@ -1,2 +1,10 @@
 packages:
   - 'packages/*'
+
+# pnpm 默认拦截全部依赖的安装脚本；只放行 esbuild 的（它需要装平台原生二进制）。
+# packages/dsh-skill-lens-fish 用 esbuild 把 src/ 构建成 lib/，没有这一步无法构建。
+# 其余包一律保持拦截 —— 本仓库其它子包都没有构建步骤，lib/ 是直接提交进仓库的。
+#
+# 键名是 pnpm v11 的 allowBuilds（布尔映射）；旧版的 onlyBuiltDependencies 在本版已不被读取。
+allowBuilds:
+  esbuild: true

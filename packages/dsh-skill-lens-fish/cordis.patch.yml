@@ -1,0 +1,17 @@
+# @fish-under-sea/dsh-skill-lens-fish bundle layer —— 把插件行插入 profile 的 roster。
+#
+# 唯一一行：宿主半区注册 /skill-lens/api 的 JSON / SSE 路由（技能扫描、文件读写、
+# 技能目录之外的引用解析、新建 / 导入 / 删除），浏览器半区占用 conversation.view
+# 槽位渲染「Skill Lens」页签（技能清单 / 概览 / 文件浏览 / 依赖图）。
+#
+# 行名 = 它的 npm 包名，不能改写成聚合包的子路径（`@fish-under-sea/dsh-fish/skill-lens`）：
+# @deepseek-ai/dsh-client-modules 的 exactPackageSpecifier() 只认 `@scope/name`
+# 两段式 scoped 名，多带一段子路径会被判为「不是包」并跳过，于是读不到本包的
+# package.json，也就读不到 dsh.client 声明 —— 浏览器半区根本不会注册。
+#
+# 本插件没有任何用户可调项（扫描根由宿主环境决定：项目级 <会话工作区>/.dsh/skills
+# 与全局级 $DSH_HOME/skills），config 保留空映射。
+- insert:
+    - id: skill-lens
+      name: '@fish-under-sea/dsh-skill-lens-fish'
+      config: {}

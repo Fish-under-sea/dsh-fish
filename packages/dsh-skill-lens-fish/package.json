@@ -1,0 +1,78 @@
+{
+  "name": "@fish-under-sea/dsh-skill-lens-fish",
+  "version": "0.1.0",
+  "description": "Skill Lens（Fish 版）：在 DSH Web GUI 的会话页签里浏览本机全部 Agent Skill——同时识别目录式 <名称>/SKILL.md 与扁平 <名称>.md，解析技能对共享资源（skill-refs/）的引用并画成依赖图，另有概览、文件浏览/编辑、新建/导入/删除。基于 x-feichen/dsh-skill-lens（MIT）改造。",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "README.en.md"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "skill",
+    "skill-lens",
+    "agent-skills",
+    "dependency-graph",
+    "fish"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node test/host.test.mjs && node test/client.test.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Fish-under-sea/dsh-fish.git",
+    "directory": "packages/dsh-skill-lens-fish"
+  },
+  "dsh": {
+    "engines": {
+      "dsh": ">=0.2.0-rc.2"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ],
+      "platform": "web"
+    }
+  },
+  "dependencies": {
+    "fflate": "^0.8.3",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "@types/react": "^19",
+    "esbuild": "^0.25.0",
+    "typescript": "^5"
+  }
+}
