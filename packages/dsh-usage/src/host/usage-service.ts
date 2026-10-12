@@ -349,6 +349,7 @@ export class UsageService {
           to: days[days.length - 1] ?? todayKey,
           totals: range.totals,
           providers: range.providers,
+          deepseek: range.deepseek,
         },
         // Every retained day, not just the trend window: the day picker's
         // option list reaches back to the oldest day retention still keeps.
@@ -358,6 +359,7 @@ export class UsageService {
           to: allKeys[allKeys.length - 1] ?? todayKey,
           totals: all.totals,
           providers: all.providers,
+          deepseek: all.deepseek,
         },
         ...(this.spendWatch !== undefined && this.spendWatch.accruedCny > 0
           ? { observedSpend: { cny: this.spendWatch.accruedCny, since: this.spendWatch.since } satisfies ObservedSpendView }
@@ -410,8 +412,8 @@ export class UsageService {
   /** One local day aggregated per provider. */
   private daySummary(dateKey: string): UsageDayView {
     const day = this.ledger.days[dateKey] ?? {}
-    const { totals, providers } = summarizeDays([day])
-    return { date: dateKey, totals, providers }
+    const { totals, providers, deepseek } = summarizeDays([day])
+    return { date: dateKey, totals, providers, deepseek }
   }
 
   /**

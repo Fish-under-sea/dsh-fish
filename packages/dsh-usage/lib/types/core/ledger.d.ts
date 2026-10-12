@@ -36,6 +36,14 @@ export declare const SUMMARY_MODEL_CAP = 12;
 export declare function summarizeDays(days: ReadonlyArray<Record<string, Record<string, UsageTokenTotals>>>): {
     totals: UsageTokenTotals;
     providers: UsageProviderSummary[];
+    /**
+     * Every DeepSeek model's totals across **all** routes in this window, summed
+     * from the uncapped per-model maps. Computed here rather than in the browser
+     * because the wire caps each provider's model list at `SUMMARY_MODEL_CAP`, so
+     * a client-side sum would silently undercount an aggregator's DeepSeek rows
+     * once it serves more models than the cap.
+     */
+    deepseek: UsageTokenTotals;
 };
 /** All local-date keys in the ledger, ascending. */
 export declare function ledgerDayKeys(doc: Readonly<UsageLedgerDocument>): string[];

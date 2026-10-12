@@ -5,6 +5,7 @@
  * @module @fish-under-sea/dsh-usage/core/ledger
  */
 
+import { countsAsDeepSeekUsage } from './adapters.ts'
 import { addTotals, emptyTotals, type UsageLedgerDocument, type UsageProviderSummary, type UsageTokenTotals } from './types.ts'
 
 /** Local-date key (`YYYY-MM-DD`) for an epoch ms timestamp. */
@@ -84,8 +85,17 @@ export const SUMMARY_MODEL_CAP = 12
 export function summarizeDays(days: ReadonlyArray<Record<string, Record<string, UsageTokenTotals>>>): {
   totals: UsageTokenTotals
   providers: UsageProviderSummary[]
+  /**
+   * Every DeepSeek model's totals across **all** routes in this window, summed
+   * from the uncapped per-model maps. Computed here rather than in the browser
+   * because the wire caps each provider's model list at `SUMMARY_MODEL_CAP`, so
+   * a client-side sum would silently undercount an aggregator's DeepSeek rows
+   * once it serves more models than the cap.
+   */
+  deepseek: UsageTokenTotals
 } {
   const merged = new Map<string, Map<string, UsageTokenTotals>>()
+  const deepseek = emptyTotals()
   for (const day of days) {
     for (const [provider, models] of Object.entries(day)) {
       if (!isSafeBucketKey(provider) || typeof models !== 'object' || models === null) continue
@@ -99,6 +109,7 @@ export function summarizeDays(days: ReadonlyArray<Record<string, Record<string, 
         const bucket = modelMap.get(model) ?? emptyTotals()
         addTotals(bucket, totals)
         modelMap.set(model, bucket)
+        if (countsAsDeepSeekUsage(provider, model)) addTotals(deepseek, totals)
       }
     }
   }
@@ -113,7 +124,7 @@ export function summarizeDays(days: ReadonlyArray<Record<string, Record<string, 
   }
   providers.sort((a, b) => totalTokens(b.totals) - totalTokens(a.totals))
   for (const row of providers) addTotals(totals, row.totals)
-  return { totals, providers }
+  return { totals, providers, deepseek }
 }
 
 /** All local-date keys in the ledger, ascending. */

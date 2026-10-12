@@ -653,12 +653,9 @@ function VoucherCard(props: { window?: UsageWindowSummary; observedSpend?: Obser
                 : t('usage.bank.spend.estimated', { cost: data.cost.toFixed(2) })}
             </span>
             {scenarios !== undefined && (
-              <>
-                <span className={styles.muted} data-dsh-part="bank-scenario">
-                  {t('usage.bank.scenario', { peak: scenarios.peak.toFixed(2), offPeak: scenarios.offPeak.toFixed(2) })}
-                </span>
-                <span className={styles.muted} style={{ fontSize: 11 }}>{t('usage.bank.scenario.hint')}</span>
-              </>
+              <span className={styles.muted} data-dsh-part="bank-scenario">
+                {t('usage.bank.scenario', { peak: scenarios.peak.toFixed(2), offPeak: scenarios.offPeak.toFixed(2) })}
+              </span>
             )}
             <span className={styles.muted}>{t('usage.bank.window', { from: data.from, to: data.to })}</span>
             <div className={styles.buttonRow}>

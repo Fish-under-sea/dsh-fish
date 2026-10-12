@@ -557,6 +557,32 @@ export function isDeepSeekProviderRoute(provider: string): boolean {
 }
 
 /**
+ * Whether one ledger model id denotes a DeepSeek model, whichever route served
+ * it. Consumption of a DeepSeek model through an aggregator or a relay is still
+ * DeepSeek consumption, so the Token Bank's price-book scenario counts it — the
+ * route-family predicate alone only ever sees the official account.
+ *
+ * The match is deliberately narrow: `deepseek` must appear in the id. Every
+ * real naming observed in this machine's ledger keeps the vendor token —
+ * `deepseek-v4.1-flash` (bailian), `loomy/DeepSeek-V4.1-Flash` (a relay),
+ * `our-free-model/deepseek-ai/deepseek-v4.1-flash` — and the official routes log
+ * `deepseek-flash`.
+ */
+export function isDeepSeekModelId(model: string): boolean {
+  return /deepseek/i.test(model)
+}
+
+/**
+ * Whether one ledger row (route + model) counts as DeepSeek consumption. The
+ * route clause keeps an official route honest even if it ever logged a model id
+ * without the vendor token; the model clause is what reaches relay and
+ * aggregator traffic.
+ */
+export function countsAsDeepSeekUsage(provider: string, model: string): boolean {
+  return isDeepSeekProviderRoute(provider) || isDeepSeekModelId(model)
+}
+
+/**
  * Best-effort human message from a provider error body, for the per-provider
  * error line. Never throws; truncated to one short sentence.
  */

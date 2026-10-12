@@ -79,6 +79,8 @@ export interface UsageDayView {
   totals: UsageTokenTotals
   /** Per-provider rows, heaviest by total tokens first. */
   providers: UsageProviderSummary[]
+  /** Same meaning as {@link UsageWindowSummary.deepseek}, for this one day. */
+  deepseek?: UsageTokenTotals
 }
 
 /** The day route's response body. */
@@ -126,6 +128,13 @@ export interface UsageWindowSummary {
   to: string
   totals: UsageTokenTotals
   providers: UsageProviderSummary[]
+  /**
+   * Every DeepSeek model's totals across **all** routes in this window,
+   * aggregated host-side from the uncapped per-model maps. Optional so an
+   * older host document still renders (the Token Bank then omits its
+   * price-book scenario line rather than showing a wrong figure).
+   */
+  deepseek?: UsageTokenTotals
 }
 
 /** Real spend observed from an official balance series rather than priced locally. */

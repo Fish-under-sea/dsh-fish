@@ -52,7 +52,13 @@ export declare function mintsWhaleYuan(provider: string): boolean;
  * family's fold-time estimate (and the observed-balance watch above it).
  */
 export declare function voucherData(window: UsageWindowSummary | undefined): VoucherData | undefined;
-/** 官方家族按当前 Flash 表重算的两种假设金额，非实际扣费。 */
+/**
+ * 全高峰与全低谷两种假设金额：把窗口内**所有路由**的 DeepSeek 消耗（宿主已按
+ * 不截断的逐模型映射汇总好）按当前 Flash 价目表分别重算一次。不是实际扣费。
+ *
+ * 旧宿主不下发该分桶时返回 undefined —— Token 银行宁可少显示一行，也不拿
+ * 只能看到官方账号的口径冒充全量。
+ */
 export declare function officialPricingScenarios(window: UsageWindowSummary | undefined): {
     peak: number;
     offPeak: number;

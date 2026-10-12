@@ -746,6 +746,30 @@ function isDeepSeekProviderRoute(provider) {
 	return DEEPSEEK.familyOnlyIds?.includes(provider) === true;
 }
 /**
+* Whether one ledger model id denotes a DeepSeek model, whichever route served
+* it. Consumption of a DeepSeek model through an aggregator or a relay is still
+* DeepSeek consumption, so the Token Bank's price-book scenario counts it — the
+* route-family predicate alone only ever sees the official account.
+*
+* The match is deliberately narrow: `deepseek` must appear in the id. Every
+* real naming observed in this machine's ledger keeps the vendor token —
+* `deepseek-v4.1-flash` (bailian), `loomy/DeepSeek-V4.1-Flash` (a relay),
+* `our-free-model/deepseek-ai/deepseek-v4.1-flash` — and the official routes log
+* `deepseek-flash`.
+*/
+function isDeepSeekModelId(model) {
+	return /deepseek/i.test(model);
+}
+/**
+* Whether one ledger row (route + model) counts as DeepSeek consumption. The
+* route clause keeps an official route honest even if it ever logged a model id
+* without the vendor token; the model clause is what reaches relay and
+* aggregator traffic.
+*/
+function countsAsDeepSeekUsage(provider, model) {
+	return isDeepSeekProviderRoute(provider) || isDeepSeekModelId(model);
+}
+/**
 * Best-effort human message from a provider error body, for the per-provider
 * error line. Never throws; truncated to one short sentence.
 */
@@ -1257,6 +1281,7 @@ function totalTokens(totals) {
 */
 function summarizeDays(days) {
 	const merged = /* @__PURE__ */ new Map();
+	const deepseek = emptyTotals();
 	for (const day of days) for (const [provider, models] of Object.entries(day)) {
 		if (!isSafeBucketKey(provider) || typeof models !== "object" || models === null) continue;
 		let modelMap = merged.get(provider);
@@ -1269,6 +1294,7 @@ function summarizeDays(days) {
 			const bucket = modelMap.get(model) ?? emptyTotals();
 			addTotals(bucket, totals);
 			modelMap.set(model, bucket);
+			if (countsAsDeepSeekUsage(provider, model)) addTotals(deepseek, totals);
 		}
 	}
 	const providers = [];
@@ -1291,7 +1317,8 @@ function summarizeDays(days) {
 	for (const row of providers) addTotals(totals, row.totals);
 	return {
 		totals,
-		providers
+		providers,
+		deepseek
 	};
 }
 /** All local-date keys in the ledger, ascending. */
@@ -1569,14 +1596,16 @@ var UsageService = class {
 					from: days[0] ?? todayKey,
 					to: days[days.length - 1] ?? todayKey,
 					totals: range.totals,
-					providers: range.providers
+					providers: range.providers,
+					deepseek: range.deepseek
 				},
 				availableDays: allKeys,
 				all: {
 					from: allKeys[0] ?? todayKey,
 					to: allKeys[allKeys.length - 1] ?? todayKey,
 					totals: all.totals,
-					providers: all.providers
+					providers: all.providers,
+					deepseek: all.deepseek
 				},
 				...this.spendWatch !== void 0 && this.spendWatch.accruedCny > 0 ? { observedSpend: {
 					cny: this.spendWatch.accruedCny,
@@ -1624,11 +1653,12 @@ var UsageService = class {
 	}
 	/** One local day aggregated per provider. */
 	daySummary(dateKey) {
-		const { totals, providers } = summarizeDays([this.ledger.days[dateKey] ?? {}]);
+		const { totals, providers, deepseek } = summarizeDays([this.ledger.days[dateKey] ?? {}]);
 		return {
 			date: dateKey,
 			totals,
-			providers
+			providers,
+			deepseek
 		};
 	}
 	/**

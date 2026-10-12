@@ -87,17 +87,21 @@ export function voucherData(window: UsageWindowSummary | undefined): VoucherData
   return { tokens, calls, cost, from: window.from, to: window.to }
 }
 
-/** 官方家族按当前 Flash 表重算的两种假设金额，非实际扣费。 */
+/**
+ * 全高峰与全低谷两种假设金额：把窗口内**所有路由**的 DeepSeek 消耗（宿主已按
+ * 不截断的逐模型映射汇总好）按当前 Flash 价目表分别重算一次。不是实际扣费。
+ *
+ * 旧宿主不下发该分桶时返回 undefined —— Token 银行宁可少显示一行，也不拿
+ * 只能看到官方账号的口径冒充全量。
+ */
 export function officialPricingScenarios(window: UsageWindowSummary | undefined): { peak: number; offPeak: number } | undefined {
-  if (window === undefined) return undefined
-  let peak = 0
-  let offPeak = 0
-  for (const row of window.providers) {
-    if (!isDeepSeekProviderRoute(row.provider)) continue
-    peak += deepseekFlashScenarioSpend(row.totals, 'peak')
-    offPeak += deepseekFlashScenarioSpend(row.totals, 'offPeak')
+  const totals = window?.deepseek
+  if (totals === undefined) return undefined
+  const round = (value: number): number => Math.round(value * 1e6) / 1e6
+  return {
+    peak: round(deepseekFlashScenarioSpend(totals, 'peak')),
+    offPeak: round(deepseekFlashScenarioSpend(totals, 'offPeak')),
   }
-  return { peak: Math.round(peak * 1e6) / 1e6, offPeak: Math.round(offPeak * 1e6) / 1e6 }
 }
 
 /** Banknote denomination: full digits with thousands separators. */
