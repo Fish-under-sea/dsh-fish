@@ -18,14 +18,18 @@
 
 ---
 
-> **🆕 0.8.2 (2026-10-12):** **`dsh-usage` 0.4.7 → 0.4.9 — the scenario line now counts DeepSeek consumption on every API, and its explanatory sub-line is gone.**
+> **🆕 0.8.2 / 0.8.3 (2026-10-12):** **`dsh-usage` 0.4.7 → 0.4.9 — the scenario line now counts DeepSeek consumption on every API, and its explanatory sub-line is gone.**
 >
 > - **Why**: the 0.4.7 line counted only the **official family routes** (`deepseek-official` / `deepseek-account`) and therefore dropped DeepSeek usage served by aggregators and free channels entirely. On this machine that omission was large: a single channel, `bailian`, carries **2.74 billion DeepSeek tokens**, against 260 million on the official account.
 > - **New scope**: a row counts when its route is in the official family **or** its model id contains `deepseek` (case-insensitive); non-DeepSeek models (MiMo / Qwen / GLM / GPT / Claude …) stay excluded. Relay and aggregator traffic counts — a DeepSeek model served by an aggregator is still DeepSeek consumption.
 > - **Aggregated host-side**: the wire caps each provider's model list at `SUMMARY_MODEL_CAP = 12`, so a browser-side sum would silently undercount once an aggregator serves more models than the cap. The host now aggregates over the uncapped per-model maps and the client only reads the result; an older host that does not send it gets **one fewer line** rather than a figure that only ever saw the official account.
 > - **How the numbers move** (this machine's real ledger, 2026-09-11 → 10-12): ¥22.06 / ¥11.03 → **¥1478.77 / ¥739.39** (4.93 billion DeepSeek tokens, 57.9% of all traffic).
 > - The explanatory sub-line under the scenario line has been **removed** as requested.
->> **🆕 0.8.1 (2026-10-12):** **three sub-packages updated** (the bundle itself only widens its dependency ranges).
+> - **Why both 0.8.2 and 0.8.3 exist**: when 0.8.2 was published, `dsh-usage`'s 0.4.8 got stuck in npm's staged state (the registry returned 202 and never finished processing — the version never entered the list, its tarball stayed 404, and re-publishing the same number was refused with `E409 Cannot publish over previously staged version`). `dsh-usage` therefore moved to a clean **0.4.9**, and the bundle published **0.8.3** pointing at it. **0.8.2 cannot be installed (its 0.4.8 dependency never landed) — use 0.8.3.**
+
+---
+
+> **🆕 0.8.1 (2026-10-12):** **three sub-packages updated** (the bundle itself only widens its dependency ranges).
 >
 > - **`dsh-skill-lens-fish` 0.1.0 → 0.1.1**: fixes two reported problems in the dependency graph. ① Node labels now show the **filename** instead of the full path — the old 24-character truncation turned `skill-refs/ai-asset-forge/...` paths into identical strings, making several nodes in one directory look like duplicates; the full path stays in the hover tooltip. ② **Referenced resources and flat-skill entries are now clickable**: a read-only preview dialog was added (close button, Escape, read-failure state); previously `clickable` hard-excluded those node kinds, so clicking did nothing. In-directory files still open in the editable file tab.
 > - **`dsh-usage` 0.4.6 → 0.4.7**: the Token Bank gains a **price-book scenario line** — the **DeepSeek official family's** tokens are repriced at the current Flash book twice, once assuming every call ran in peak hours and once off-peak, giving two figures that bracket the hypothetical cost. It is explicitly labelled **not an actual charge**, counts only the official family (MiMo and relay traffic have no official price book and are excluded), and never reuses the fold-time `cost`.
@@ -347,4 +351,4 @@ See each companion fork's `NOTICE.md` for provenance, attribution, and scope of 
 
 ---
 
-<sub>Bundle <code>@fish-under-sea/dsh-fish</code> v0.8.2 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
+<sub>Bundle <code>@fish-under-sea/dsh-fish</code> v0.8.3 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>

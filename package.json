@@ -1,6 +1,6 @@
 {
   "name": "@fish-under-sea/dsh-fish",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "Fish 自建 DSH 插件全家桶聚合包：一键插入十四个插件的插件行 —— 十一个本仓库子包（approval-guide / git-sync / settings-nav-order / visual-companion / skill-lens-fish / task-board / git-graph / model-capabilities / ssh / usage / session-archive）与三个外部补充包（agent-teams / better-reasoning-effort / our-free-model）。",
   "type": "module",
   "main": "./lib/index.js",
