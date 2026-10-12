@@ -4,7 +4,7 @@
 
 ---
 
-> **0.8.2 (2026-10-12):** **`dsh-usage` 0.4.7 → 0.4.8 — the scenario line now counts DeepSeek consumption on every API, and its explanatory sub-line is gone.**
+> **0.8.2 (2026-10-12):** **`dsh-usage` 0.4.7 → 0.4.9 — the scenario line now counts DeepSeek consumption on every API, and its explanatory sub-line is gone.**
 >
 > **Background**: the line introduced in 0.4.7 counted only the **official family routes** (`deepseek-official` / `deepseek-account`). The user pointed out that is wrong — it should be "the DeepSeek consumption across every API currently retained". This machine's ledger shows how large that gap was: a single channel, `bailian`, carries **2.74 billion DeepSeek tokens**, against 260 million on the official account.
 >
