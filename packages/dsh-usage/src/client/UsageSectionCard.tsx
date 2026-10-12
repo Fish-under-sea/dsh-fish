@@ -15,7 +15,7 @@ import { t } from './locales.ts'
 import styles from './usage.module.css'
 import { isDeepSeekProviderRoute } from '../core/adapters.ts'
 import { deepseekPeriodAt } from '../core/pricing.ts'
-import { voucherData, drawVoucher, faceValue, formatDay, formatDenomination, loadVoucherArt } from './voucher.ts'
+import { voucherData, officialPricingScenarios, drawVoucher, faceValue, formatDay, formatDenomination, loadVoucherArt } from './voucher.ts'
 import type { ObservedSpendView, ProviderSnapshotView, UsageDayView, UsageOverviewView, UsageProviderSummary, UsageTokenTotals, UsageWindowSummary } from '../core/types.ts'
 
 /** The settings fields this section edits (immediate-apply semantics). */
@@ -562,6 +562,15 @@ function totalOf(totals: UsageTokenTotals): number {
 function VoucherCard(props: { window?: UsageWindowSummary; observedSpend?: ObservedSpendView; loading?: boolean; error?: string }): ReactNode {
   const { window: ledger, observedSpend, loading, error } = props
   const data = voucherData(ledger)
+  /**
+   * The hypothetical price-book scenarios: the official family's tokens
+   * repriced twice at the current Flash book, once as if every call ran in
+   * peak hours and once as if every call ran off-peak. Deliberately **not**
+   * derived from `data.cost` (which is stamped at fold time by the period each
+   * call actually ran in) — the whole point is a counterfactual the user can
+   * compare against the observed spend above it.
+   */
+  const scenarios = officialPricingScenarios(ledger)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const [drawError, setDrawError] = useState<string | undefined>(undefined)
   const dataKey = data === undefined ? '' : `${data.from}|${data.to}|${data.tokens}|${data.calls}|${data.cost}`
@@ -643,6 +652,14 @@ function VoucherCard(props: { window?: UsageWindowSummary; observedSpend?: Obser
                 ? t('usage.bank.spend.observed', { cost: observedSpend.cny.toFixed(2), since: formatDay(observedSpend.since) })
                 : t('usage.bank.spend.estimated', { cost: data.cost.toFixed(2) })}
             </span>
+            {scenarios !== undefined && (
+              <>
+                <span className={styles.muted} data-dsh-part="bank-scenario">
+                  {t('usage.bank.scenario', { peak: scenarios.peak.toFixed(2), offPeak: scenarios.offPeak.toFixed(2) })}
+                </span>
+                <span className={styles.muted} style={{ fontSize: 11 }}>{t('usage.bank.scenario.hint')}</span>
+              </>
+            )}
             <span className={styles.muted}>{t('usage.bank.window', { from: data.from, to: data.to })}</span>
             <div className={styles.buttonRow}>
               <button type="button" className={styles.refreshBtn} onClick={onSave}>{t('usage.bank.save')}</button>

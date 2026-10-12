@@ -112,6 +112,8 @@ window.__ModuleLoader__.load({
 			"usage.bank.minted": "累计铸造 {minted} 鲸元（{tokens} tokens）",
 			"usage.bank.spend.observed": "官方余额实测花费 ¥{cost}（自 {since} 起）",
 			"usage.bank.spend.estimated": "消费估算：约 ¥{cost}",
+			"usage.bank.scenario": "官方价目表假设估算：全高峰 ¥{peak} ／ 全低谷 ¥{offPeak}",
+			"usage.bank.scenario.hint": "按当前 Flash 价目表对官方家族 token 重算，不是实际扣费；两个值分别假设全部调用都落在高峰 / 空闲时段。",
 			"usage.bank.window": "统计窗口 {from} ~ {to}",
 			"usage.bank.windowAll": "全部保留期",
 			"usage.bank.save": "保存图片",
@@ -178,6 +180,8 @@ window.__ModuleLoader__.load({
 			"usage.bank.minted": "Minted {minted} whale yuan ({tokens} tokens)",
 			"usage.bank.spend.observed": "Spent ¥{cost} observed on the official balance (watching since {since})",
 			"usage.bank.spend.estimated": "Estimated spend: about ¥{cost}",
+			"usage.bank.scenario": "Price-book scenario: all-peak ¥{peak} / all-off-peak ¥{offPeak}",
+			"usage.bank.scenario.hint": "Recomputed from the official family tokens at the current Flash price book; not an actual charge. The two figures assume every call ran in peak or in off-peak hours respectively.",
 			"usage.bank.window": "Window {from} - {to}",
 			"usage.bank.windowAll": "All retained days",
 			"usage.bank.save": "Save image",
@@ -983,6 +987,21 @@ window.__ModuleLoader__.load({
 		}];
 		/** Beijing is UTC+8 year-round (no DST), so a fixed shift is exact. */
 		const BEIJING_UTC_OFFSET_MS = 8 * 36e5;
+		/** deepseek-flash (DeepSeek-V4.1-Flash), including the retired flash-class ids it now serves. */
+		const FLASH_PRICE = {
+			cacheHit: {
+				offPeak: .02,
+				peak: .04
+			},
+			inputMiss: {
+				offPeak: 1,
+				peak: 2
+			},
+			output: {
+				offPeak: 4,
+				peak: 8
+			}
+		};
 		function withinWindow(minuteOfDay) {
 			return PEAK_WINDOWS.find((window) => minuteOfDay >= window.from && minuteOfDay < window.to);
 		}
@@ -1046,6 +1065,10 @@ window.__ModuleLoader__.load({
 				peak: false,
 				boundaryMs: ms + 864e5
 			};
+		}
+		/** 按当前 Flash 表计算固定时段假设值，不改变历史实际计费。 */
+		function deepseekFlashScenarioSpend(totals, column) {
+			return (totals.cacheReadTokens * FLASH_PRICE.cacheHit[column] + (totals.inputTokens + totals.cacheWriteTokens) * FLASH_PRICE.inputMiss[column] + totals.outputTokens * FLASH_PRICE.output[column]) / 1e6;
 		}
 		//#endregion
 		//#region src/core/ledger.ts
@@ -1133,6 +1156,21 @@ window.__ModuleLoader__.load({
 				cost,
 				from: window.from,
 				to: window.to
+			};
+		}
+		/** 官方家族按当前 Flash 表重算的两种假设金额，非实际扣费。 */
+		function officialPricingScenarios(window) {
+			if (window === void 0) return void 0;
+			let peak = 0;
+			let offPeak = 0;
+			for (const row of window.providers) {
+				if (!isDeepSeekProviderRoute(row.provider)) continue;
+				peak += deepseekFlashScenarioSpend(row.totals, "peak");
+				offPeak += deepseekFlashScenarioSpend(row.totals, "offPeak");
+			}
+			return {
+				peak: Math.round(peak * 1e6) / 1e6,
+				offPeak: Math.round(offPeak * 1e6) / 1e6
 			};
 		}
 		/** Banknote denomination: full digits with thousands separators. */
@@ -1823,6 +1861,15 @@ window.__ModuleLoader__.load({
 		function VoucherCard(props) {
 			const { window: ledger, observedSpend, loading, error } = props;
 			const data = voucherData(ledger);
+			/**
+			* The hypothetical price-book scenarios: the official family's tokens
+			* repriced twice at the current Flash book, once as if every call ran in
+			* peak hours and once as if every call ran off-peak. Deliberately **not**
+			* derived from `data.cost` (which is stamped at fold time by the period each
+			* call actually ran in) — the whole point is a counterfactual the user can
+			* compare against the observed spend above it.
+			*/
+			const scenarios = officialPricingScenarios(ledger);
 			const canvasRef = (0, react.useRef)(null);
 			const [drawError, setDrawError] = (0, react.useState)(void 0);
 			(0, react.useEffect)(() => {
@@ -1925,6 +1972,18 @@ window.__ModuleLoader__.load({
 							since: formatDay(observedSpend.since)
 						}) : t("usage.bank.spend.estimated", { cost: data.cost.toFixed(2) })
 					}),
+					scenarios !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: usage_module_css_default.muted,
+						"data-dsh-part": "bank-scenario",
+						children: t("usage.bank.scenario", {
+							peak: scenarios.peak.toFixed(2),
+							offPeak: scenarios.offPeak.toFixed(2)
+						})
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: usage_module_css_default.muted,
+						style: { fontSize: 11 },
+						children: t("usage.bank.scenario.hint")
+					})] }),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 						className: usage_module_css_default.muted,
 						children: t("usage.bank.window", {

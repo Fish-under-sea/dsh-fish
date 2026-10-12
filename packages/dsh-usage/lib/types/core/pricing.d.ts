@@ -55,6 +55,8 @@ export declare function deepseekPeriodAt(ms: number, calendar?: PublicHolidayCal
     peak: boolean;
     boundaryMs: number;
 };
+/** 按当前 Flash 表计算固定时段假设值，不改变历史实际计费。 */
+export declare function deepseekFlashScenarioSpend(totals: Readonly<UsageTokenTotals>, column: 'peak' | 'offPeak'): number;
 /**
  * Estimate one call's DeepSeek spend in CNY from its token totals, priced in
  * the billing period at `atMs`. Uncatalogued model ids take the flash-class

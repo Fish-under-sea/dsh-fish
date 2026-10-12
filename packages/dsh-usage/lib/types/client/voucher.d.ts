@@ -52,6 +52,11 @@ export declare function mintsWhaleYuan(provider: string): boolean;
  * family's fold-time estimate (and the observed-balance watch above it).
  */
 export declare function voucherData(window: UsageWindowSummary | undefined): VoucherData | undefined;
+/** 官方家族按当前 Flash 表重算的两种假设金额，非实际扣费。 */
+export declare function officialPricingScenarios(window: UsageWindowSummary | undefined): {
+    peak: number;
+    offPeak: number;
+} | undefined;
 /** Banknote denomination: full digits with thousands separators. */
 export declare function formatDenomination(value: number): string;
 /** Deterministic serial number flavor: the face value mod 1e9, zero-padded. */

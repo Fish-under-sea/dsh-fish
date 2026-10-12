@@ -11,6 +11,7 @@
 
 import { isDeepSeekProviderRoute } from '../core/adapters.ts'
 import { totalTokens } from '../core/ledger.ts'
+import { deepseekFlashScenarioSpend } from '../core/pricing.ts'
 import type { UsageWindowSummary } from '../core/types.ts'
 import { VOUCHER_ART_DATA_URL } from './voucher-art.generated.ts'
 
@@ -84,6 +85,19 @@ export function voucherData(window: UsageWindowSummary | undefined): VoucherData
   }
   if (tokens <= 0) return undefined
   return { tokens, calls, cost, from: window.from, to: window.to }
+}
+
+/** 官方家族按当前 Flash 表重算的两种假设金额，非实际扣费。 */
+export function officialPricingScenarios(window: UsageWindowSummary | undefined): { peak: number; offPeak: number } | undefined {
+  if (window === undefined) return undefined
+  let peak = 0
+  let offPeak = 0
+  for (const row of window.providers) {
+    if (!isDeepSeekProviderRoute(row.provider)) continue
+    peak += deepseekFlashScenarioSpend(row.totals, 'peak')
+    offPeak += deepseekFlashScenarioSpend(row.totals, 'offPeak')
+  }
+  return { peak: Math.round(peak * 1e6) / 1e6, offPeak: Math.round(offPeak * 1e6) / 1e6 }
 }
 
 /** Banknote denomination: full digits with thousands separators. */

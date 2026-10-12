@@ -166,6 +166,13 @@ function priceFor(model: string, atMs: number): ModelPrice {
   return proPriced ? PRO_PRICE : FLASH_PRICE
 }
 
+/** 按当前 Flash 表计算固定时段假设值，不改变历史实际计费。 */
+export function deepseekFlashScenarioSpend(totals: Readonly<UsageTokenTotals>, column: 'peak' | 'offPeak'): number {
+  return (totals.cacheReadTokens * FLASH_PRICE.cacheHit[column]
+    + (totals.inputTokens + totals.cacheWriteTokens) * FLASH_PRICE.inputMiss[column]
+    + totals.outputTokens * FLASH_PRICE.output[column]) / 1_000_000
+}
+
 /**
  * Estimate one call's DeepSeek spend in CNY from its token totals, priced in
  * the billing period at `atMs`. Uncatalogued model ids take the flash-class

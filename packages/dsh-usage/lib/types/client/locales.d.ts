@@ -60,6 +60,8 @@ export declare const zh: {
     'usage.bank.minted': string;
     'usage.bank.spend.observed': string;
     'usage.bank.spend.estimated': string;
+    'usage.bank.scenario': string;
+    'usage.bank.scenario.hint': string;
     'usage.bank.window': string;
     'usage.bank.windowAll': string;
     'usage.bank.save': string;
