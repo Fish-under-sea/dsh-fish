@@ -18,7 +18,14 @@
 
 ---
 
-> **🆕 0.8.1（2026-10-12）**：**三个子包功能更新**（聚合包本身只升依赖范围）。
+> **🆕 0.8.2（2026-10-12）**：**`dsh-usage` 0.4.7 → 0.4.8 —— 假设计价口径放宽到「所有 API 下的 DeepSeek 消耗」，并删掉那行小字说明。**
+>
+> - **为什么要改**：0.4.7 的假设行只算**官方家族路由**（`deepseek-official` / `deepseek-account`），把聚合站与免费渠道上的 DeepSeek 用量整片漏掉了。实测本机台账里这条漏得很大：`bailian` 一个渠道的 DeepSeek 模型就有 **27.4 亿 tokens**，而官方家族只有 2.6 亿。
+> - **新口径**：路由属官方家族，**或**模型 id 含 `deepseek`（不分大小写）即计入；非 DeepSeek 模型（MiMo / Qwen / GLM / GPT / Claude 等）一律排除。中转与聚合渠道算数 —— 聚合站上的 DeepSeek 模型同样是 DeepSeek 消耗。
+> - **汇总放在宿主侧**：线上协议按 `SUMMARY_MODEL_CAP = 12` 截断每个 provider 的模型列表，浏览器侧求和会在聚合站模型数超过上限后**静默漏算**。现在由宿主在不截断的逐模型映射上汇总，客户端只读结果；旧宿主不下发该字段时**少显示一行**，不拿只看到官方账号的口径冒充全量。
+> - **数字变化**（本机真实台账，2026-09-11 ~ 10-12）：旧口径 ¥22.06 / ¥11.03 → 新口径 **¥1478.77 / ¥739.39**（DeepSeek 49.3 亿 tokens，占全部流量 57.9%）。
+> - 按你的要求，假设计价行下方的说明小字**已删除**。
+>> **🆕 0.8.1（2026-10-12）**：**三个子包功能更新**（聚合包本身只升依赖范围）。
 >
 > - **`dsh-skill-lens-fish` 0.1.0 → 0.1.1**：修掉依赖图「文件名显示与点击打开」两个现场问题。① 节点名从完整路径改为**文件名** —— 原先按 24 字截断，`skill-refs/ai-asset-forge/...` 一类路径会被截成同一串，同目录多个节点看起来像重复；完整路径仍在悬停提示里。② **引用资源与扁平技能本体现在可以点开**：新增只读预览对话框（支持关闭、Escape、读取失败提示），原先 `clickable` 硬排除这两类节点，点了没反应。技能目录内的文件仍跳「文件」页签编辑。
 > - **`dsh-usage` 0.4.6 → 0.4.7**：Token 银行新增**官方价目表假设行** —— 按当前 Flash 价目表对 **DeepSeek 官方家族** token 重算两次，分别假设全部调用落在高峰 / 空闲时段，给出两个金额作为假设成本上下界。明确标注**不是实际扣费**，只计官方家族（MiMo 与其它渠道无官方价目表、不计入），也不复用折叠时刻的 `cost`。
@@ -57,7 +64,7 @@ Fish 自建 [DSH](https://github.com/Fish-under-sea/DSH)（DeepSeek Harness）�
 | [`dsh-client-ui-git-graph`](packages/dsh-client-ui-git-graph) | 0.4.6 | **Git 图谱与分支切换**（上游 `@linxin666/dsh-client-ui-git-graph@0.4.6` 的 **Fork**，Apache-2.0）：交互式提交图谱 + 空白会话里的分支选择胶囊（宿主侧真跑 `git switch`），带 Worktree 冲突守卫与可读报错；opt-in 的 `git_worktree` 模型工具作用于 `$DSH_HOME/worktrees/` 托管目录。**已移除安装遥测** |
 | [`dsh-client-ui-model-capabilities`](packages/dsh-client-ui-model-capabilities) | 0.4.6 | **模型能力声明**（上游 `@linxin666/dsh-client-ui-model-capabilities@0.4.6` 的 **Fork**，Apache-2.0）：在官方「模型」页的提供方卡片里直接编辑**逐模型推理档位**（off→max 与发送值）与**图像输入声明**，写官方 `llm-pi-ai` 设置命名空间；提供方一键禁用/启用（存档后下线路由，密钥不受影响） |
 | [`dsh-ssh`](packages/dsh-ssh) | 0.4.6 | **SSH 运维**（上游 `@linxin666/dsh-ssh@0.4.6` 的 **Fork**，Apache-2.0）：主机库（可一键导入 `~/.ssh/config`）、持久连接池与多级跳板机、exec 执行、xterm Web 终端、SFTP 上传下载、本地端口转发、集群执行；另带 `ssh_list` / `ssh_exec` / `ssh_upload` / `ssh_download` / `ssh_tunnel` / `ssh_cluster` 六个模型工具。主机配置存 `$DSH_HOME/dsh-ssh.json`。**已移除安装遥测** |
-| [`dsh-usage`](packages/dsh-usage) | 0.4.7 | **用量统计**（上游 `@linxin666/dsh-usage@0.4.6` 的 **Fork**，Apache-2.0）：分 provider / 模型的 token 台账（输入/输出/缓存读/缓存写分桶）、余额与**编程套餐配额**（Kimi / GLM / OpenCode Go / MiniMax / Codex）、DeepSeek 峰谷计价估算、「Token 银行」鲸元券，以及侧栏底部的紧凑速览卡。台账存 `$DSH_HOME/dsh-usage/` |
+| [`dsh-usage`](packages/dsh-usage) | 0.4.8 | **用量统计**（上游 `@linxin666/dsh-usage@0.4.6` 的 **Fork**，Apache-2.0）：分 provider / 模型的 token 台账（输入/输出/缓存读/缓存写分桶）、余额与**编程套餐配额**（Kimi / GLM / OpenCode Go / MiniMax / Codex）、DeepSeek 峰谷计价估算、「Token 银行」鲸元券，以及侧栏底部的紧凑速览卡。台账存 `$DSH_HOME/dsh-usage/` |
 | [`dsh-session-archive`](packages/dsh-session-archive) | 0.4.6 | **会话归档管理**（上游 `@linxin666/dsh-session-archive@0.4.6` 的 **Fork**，Apache-2.0）：全量清单（含子代理会话与无工作区会话）、筛选搜索排序、跨结果集多选、批量归档/取消归档、**物理删除（含级联与保护规则）**，以及可选的自动归档与自动清理策略。**修正了上游的依赖声明错误**（源码 import 带 scope 的 `@deepseek-ai/schemastery`，上游 dependencies 却写无 scope 的 `schemastery`，导致构建期类型解析失败） |
 | [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) | 0.7.0 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；**厂商头像素材随包分发**（**17 厂商** × 10 岗位 + 厂商通用图 + 立绘 + 队长 + 商标 SVG，**286 个文件 / 约 29.3 MB**，含 1024×1024 高清 WebP 族），装完即有，跨机不再依赖 `artworkDir`；自定义目录仍可整套覆盖；商标 SVG 按扩展名送达；**队长头像跟随队长自己的模型路由**；`0.5.1` 修掉降级链序（`厂商+岗位 → 厂商 → 岗位`）；`0.6.0` 并入上游 v0.1.23（成员工具策略、质量门契约与修订绑定、lineage 身份沿 fork 链、工作区审计、损坏 `team.json` 降级）；**⚠️ `0.6.1` 修掉「升级 DSH 到 0.2.1-alpha.2 后插件被整行禁用」** —— 该版本的宿主白名单此前未收录新运行时，DSH 判定不兼容并自动停用插件行（症状：显示「异常」、团队协作毫无反应） |
 | [`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish) | 0.5.8 | **思考强度与输入模态**（上游 [HaoyueQin/dsh-better-reasoning-effort](https://github.com/HaoyueQin/dsh-better-reasoning-effort) 的**Fork**）：在官方「模型」页编辑卡里直接编辑每模型的 `reasoningEfforts` 与 `input` 声明，并支持一键自动适配；本 Fork 把 `settings.models.provider-card` 席位完整让给模型能力面板；0.5.8 并入上游三条安装路线说明（冷静期下写明版本号、release tarball 路线、GitHub 源码安装） |
@@ -279,7 +286,7 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 
 ```text
 dsh-fish/                 # 仓库目录名（npm 包名是 @fish-under-sea/dsh-fish）
-├── package.json          # 聚合包清单（version 0.8.1，dsh.bundle.patch 指向 cordis.patch.yml）
+├── package.json          # 聚合包清单（version 0.8.2，dsh.bundle.patch 指向 cordis.patch.yml）
 ├── cordis.patch.yml      # bundle 层：插入十四个插件的插件行
 ├── CHANGELOG.md          # 完整版本记录（README 顶部只留最近一版）
 ├── pnpm-workspace.yaml   # workspace 声明（仅本地开发用；并放行 esbuild 安装脚本）
@@ -358,4 +365,4 @@ pnpm --filter @fish-under-sea/dsh-client-ui-model-capabilities build
 
 ---
 
-<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.8.1 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
+<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.8.2 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>

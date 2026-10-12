@@ -4,6 +4,21 @@
 
 ---
 
+> **0.8.2 (2026-10-12):** **`dsh-usage` 0.4.7 → 0.4.8 — the scenario line now counts DeepSeek consumption on every API, and its explanatory sub-line is gone.**
+>
+> **Background**: the line introduced in 0.4.7 counted only the **official family routes** (`deepseek-official` / `deepseek-account`). The user pointed out that is wrong — it should be "the DeepSeek consumption across every API currently retained". This machine's ledger shows how large that gap was: a single channel, `bailian`, carries **2.74 billion DeepSeek tokens**, against 260 million on the official account.
+>
+> **New scope**: a new core predicate `countsAsDeepSeekUsage(provider, model)` counts a row when its route is in the official family **or** its model id contains `deepseek` (case-insensitive); non-DeepSeek models (MiMo / Qwen / GLM / GPT / Claude …) stay excluded. Relay and aggregator traffic counts — a DeepSeek model served by an aggregator or free channel is still DeepSeek consumption.
+>
+> **Why the aggregation moved host-side (important)**: the wire caps each provider's model list at `SUMMARY_MODEL_CAP = 12`, so a browser-side sum would silently undercount once an aggregator serves more models than the cap. A dedicated test builds a 20-model scenario proving it: none of the 12 model rows the client receives is the DeepSeek one, while the host aggregate stays complete. `UsageWindowSummary.deepseek` and `UsageDayView.deepseek` were added, accumulated by `summarizeDays` in the same pass (it already holds the uncapped per-model maps, so there is no extra cost). The client's `officialPricingScenarios` only reads that bucket; **an older host gets one fewer line** rather than a figure that only ever saw the official account.
+>
+> **How the numbers move** (this machine's real ledger, 2026-09-11 → 2026-10-12): ¥22.06 / ¥11.03 → **¥1478.77 / ¥739.39** (4.93 billion DeepSeek tokens, 57.9% of all traffic). **The old figure reproduces the user's screenshot to the cent**, which is what makes the new one trustworthy.
+>
+> **UI**: as requested, the explanatory sub-line under the scenario line (`usage.bank.scenario.hint`) is removed from both dictionaries and from the render.
+>
+> **Verification**: 6 new tests pass (cross-route aggregation, official-alias fallback, non-DeepSeek exclusion, model cap not affecting the aggregate, real naming variants, older-host degradation, zero is not `undefined`, historical `cost` never reused); `tsc -b` and `tsdown` pass; the artifact contains the line and no longer contains the deleted copy.
+
+---
 > **0.8.1 (2026-10-12):** **three sub-packages updated** (the bundle itself only widens its dependency ranges; the member count stays 14).
 >
 > **① `dsh-skill-lens-fish` 0.1.0 → 0.1.1: dependency-graph filenames and click-to-open**
