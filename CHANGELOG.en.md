@@ -4,6 +4,21 @@
 
 ---
 
+> **0.7.8 (2026-10-12):** **`@fish-under-sea/dsh-session-title-refresh` moves out, `dsh-git-sync` gains "Export private config", and the bundle gets a custom icon.**
+>
+> **① `dsh-session-title-refresh` moves out (member count 8 → 7)**: DSH has shipped **built-in automatic session renaming since v0.2.1-alpha.2**, which overlaps with that plugin's core purpose — it is now **unmaintained** (its source stays under `packages/`, and published npm versions remain installable on their own) and the bundle no longer ships it.
+>
+> ⚠️ **The patch block that disabled DSH's built-in first-prompt title provider (`session-title-llm`) is withdrawn along with it** — that disable existed solely to make room for the plugin. Removing the plugin while keeping the disable would switch the built-in provider off with nothing replacing it and **sessions would stop being named automatically**. The built-in provider is active again. If you still want the old plugin, install it on its own and its own patch re-disables the built-in provider.
+>
+> **② `dsh-git-sync` 0.3.3 → 0.4.0: "Export private config" (purely local)**: copies the credential-bearing files (`channel-pack/state.json`, `channel-pack/auto-checkin.json`, `channel-pack/token-ledger.json`, `.credentials.yaml`, `our-free-model/eac-user.json`) into a `DSH私钥配置` folder under a **chosen directory** (editable in the panel; **blank means Desktop**), **preserving the relative layout**, and writes a README explaining what each file is and where it goes on the new machine.
+>
+> Three constraints that must hold: **purely local** (never touches git, never makes a network request), **no content parsing** (byte copies only; credential contents never reach the log or the README), and **no permission loosening** (uses `fs.copyFileSync` rather than the internal `copyFileRobust`, which chmods the target to `0666`; tightens to `0600` on POSIX). It is a **completely separate path from git sync** — credentials sit on the sync hard blacklist and never travel with the repository, which is exactly why they can only be moved by hand on a machine switch; this feature makes that hand-move hard to get wrong. New tests: `test/test-private-export.mjs` (32 assertions).
+>
+> **③ Custom icon**: adds `icon.png` (384×384 · 231 KB). DSH requires the icon to be "a path relative to the manifest, SVG/PNG/JPEG/WebP, ≤ 256 KiB", so the 1254×1254 source was scaled to 384×384 and compressed to 231 KB, and the file was added to the `files` allowlist. Plugin Manager cards, bundle details and the settings plugin inventory now show the bundle's own icon.
+>
+> **④ Tests**: sync engine 188/188, client 37/37, bundle registration 2/2, new export suite 32/32 — all passing.
+
+---
 > **0.7.7 (2026-10-11):** the three upstream forks catch up with upstream — `dsh-agent-teams-fish` **0.5.1 → 0.6.0**, `dsh-better-reasoning-effort-fish` **0.5.7 → 0.5.8**, `dsh-our-free-model` **2.0.0 → 2.1.0** (dependency ranges raised to **`^0.6.0`** / **`^0.5.8`** / **`^2.1.0`**).
 >
 > **① `dsh-agent-teams-fish` 0.6.0**: merges upstream v0.1.23 (37 commits) — **member tool policies** (assign a policy ID per member; the four required coordination tools always stay; it governs tool availability only, not an OS sandbox), **quality-gate contracts bound to revisions** (a verdict is bound to the actual artifact bytes and the full repair lineage), **repair-contract retention with stale-source warnings** (no deadlock on a failed dependency), **out-of-scope finding escalation** (escalate with a reason instead of creating an impossible repair task), **lineage identity across fork chains**, **workspace audit**, **degraded reads of a corrupt `team.json`**, and session-source metadata with a non-destructive history recovery tool. All three conflicts (the import block and body of `src/snapshot.ts`, plus `add_member` in `src/tools.ts`) were resolved by keeping both sides; Fish's `src/artwork-source.ts`, the `src/client/artwork.ts` degradation chain, the `captainRouteOf` captain-avatar-follows-route behaviour and the 286 packaged assets are retained byte-for-byte. `lib/` is committed build output and was rebuilt with the sources (77 files).

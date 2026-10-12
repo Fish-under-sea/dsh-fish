@@ -54,11 +54,13 @@ window.__ModuleLoader__.load({
 			const [busy, setBusy] = react.useState(false);
 			const [log, setLog] = react.useState([]);
 			const [repoDir, setRepoDir] = react.useState('');
+			const [exportDir, setExportDir] = react.useState('');
 			const [opts, setOpts] = react.useState({ autoPush: false });
 
 			const applyStatus = (data) => {
 				setStatus(data);
 				if (typeof data?.repoDir === 'string') setRepoDir(data.repoDir);
+				if (typeof data?.exportDir === 'string') setExportDir(data.exportDir);
 			};
 
 			const refresh = react.useCallback(() => {
@@ -97,6 +99,7 @@ window.__ModuleLoader__.load({
 				setBusy(true);
 				const params = new URLSearchParams({
 					repoDir,
+					exportDir,
 				});
 				return fetch(`${API}/config?${params}`, { method: 'POST', credentials: 'same-origin' })
 					.then(async (r) => {
@@ -143,6 +146,24 @@ window.__ModuleLoader__.load({
 					}),
 					h('button', { className: 'dgs-btn', disabled: busy, onClick: saveConfig }, '保存设置'),
 				),
+
+				h('div', { className: 'dgs-row' },
+					h('input', {
+						type: 'text',
+						value: exportDir,
+						placeholder: `导出私钥配置的目标目录；留空 = 桌面（${status?.exportDirResolved || '…'}）`,
+						onChange: (e) => setExportDir(e.target.value),
+					}),
+					h('button', { className: 'dgs-btn primary', disabled: busy, onClick: () => run('export') }, '导出私钥配置'),
+				),
+				h('div', { className: 'dgs-note' },
+					'「导出私钥配置」把带凭据的几份配置**本机**拷到上述目录下的 ',
+					h('code', null, 'DSH私钥配置'),
+					' 文件夹（含一份 README 说明每个文件是什么、要放回哪里）。',
+					h('br'),
+					'它**只做本地拷贝**：不碰 git、不发任何网络请求，也不会把凭据内容读进日志。',
+					h('br'),
+					'⚠️ 凭据在同步硬黑名单里，**永远不会**随「一键同步」推到 git 仓库 —— 所以换机时只能靠这个导出手工搬。'),
 
 				h('div', { className: 'dgs-row' },
 					h('button', { className: 'dgs-btn primary', disabled: busy, onClick: () => run('pull', { gitPush: '1' }) }, '一键同步'),

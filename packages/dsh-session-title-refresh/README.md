@@ -14,6 +14,14 @@
 
 </div>
 
+> **⚠️ 本插件已暂停维护（2026-10-12）**
+>
+> **DSH 自 `v0.2.1-alpha.2` 起已内置会话自动重命名功能**，与本插件的核心用途重叠。因此本插件**从 `@fish-under-sea/dsh-fish` 聚合包移出**，源码保留、npm 上的既有版本仍可安装，但**不再跟进新功能与修复**。
+>
+> - **新用户**：直接使用 DSH 内置的会话重命名，无需安装本插件。
+> - **已装用户**：可以继续用（功能不失效）；若要切回内置行为，按下方「卸载 / 回退」执行 `dsh plugin remove`，DSH 会自动回到内置的标题机制。
+> - **仍要装**：`dsh plugin --profile <profile> add @fish-under-sea/dsh-session-title-refresh` 照旧可用。
+
 > **注意：本插件会停用 DSH 内置的会话标题提供方（`session-title-llm`），由本插件完全接管标题生成。** 通过 `cordis.patch.yml` 在安装时自动生效。
 
 ## 解决什么问题

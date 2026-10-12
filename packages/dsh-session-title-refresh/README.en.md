@@ -14,6 +14,14 @@
 
 </div>
 
+> **⚠️ This plugin is no longer maintained (2026-10-12)**
+>
+> **DSH has shipped built-in automatic session renaming since `v0.2.1-alpha.2`**, which overlaps with this plugin's core purpose. It has therefore been **removed from the `@fish-under-sea/dsh-fish` bundle**. The source stays here and the published npm versions remain installable, but **no new features or fixes will follow**.
+>
+> - **New users**: use DSH's built-in session renaming; installing this plugin is unnecessary.
+> - **Existing users**: it keeps working as before. To return to the built-in behaviour, run `dsh plugin remove` as described under "Uninstall / roll back" below and DSH falls back to its own title mechanism.
+> - **Still want it**: `dsh plugin --profile <profile> add @fish-under-sea/dsh-session-title-refresh` works exactly as before.
+
 > **Note: This plugin disables the built-in DSH session-title provider (`session-title-llm`) and takes over title generation entirely.** The switch is applied automatically via `cordis.patch.yml` at install time.
 
 ## What problem does it solve

@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="icon.png" alt="@fish-under-sea/dsh-fish" width="120">
+
 # @fish-under-sea/dsh-fish
 
 **一个包，装齐全部自建 DSH 插件**
@@ -16,56 +18,12 @@
 
 ---
 
-> **🆕 0.7.7（2026-10-11）**：三个上游 fork 同步到最新上游 —— `dsh-agent-teams-fish` **0.5.1 → 0.6.0**、`dsh-better-reasoning-effort-fish` **0.5.7 → 0.5.8**、`dsh-our-free-model` **2.0.0 → 2.1.0**（依赖范围分别提到 **`^0.6.0`** / **`^0.5.8`** / **`^2.1.0`**）。
+> **🆕 0.7.8（2026-10-12）**：**移出 `@fish-under-sea/dsh-session-title-refresh`，并新增自定义图标**。
 >
-> - **`dsh-agent-teams-fish` 0.6.0**：并入上游 v0.1.23（37 个提交）—— **成员工具策略**（可为成员配策略 ID，四个必需协调工具始终保留；只控工具可用性，不是操作系统沙箱）、**质量门契约与修订绑定**（verdict 绑定实际产物字节与完整修复 lineage）、**修复契约保留与失效源告警**（不在失败依赖上死锁）、**越界 finding 升级**（带理由升级，而非造不可能完成的修复任务）、**lineage 身份沿 fork 链**、**工作区审计**、**损坏 `team.json` 降级读取**。三处冲突按「两侧并存」融合，Fish 自建的美术目录解析、客户端降级链与队长头像跟随路由完整保留。
-> - **`dsh-better-reasoning-effort-fish` 0.5.8**：并入上游三条安装路线说明（24 小时 `minimum-release-age` 下写明版本号可立即安装、release 附带的 tarball 路线、GitHub 源码安装）。**0.5.7 已发布过**，本仓库 HEAD 比它多一个 README 提交，故版本提到 0.5.8。
-> - **`dsh-our-free-model` 2.1.0**：并入上游 v2.1.0（17 个提交）—— **combos 组合链**、**token-saver**、**原生 Anthropic 网关**、`standalone` 拆分、渠道包与 Kilo 渠道、升级器 snapshot SHA 修复。Fish 自建的**隐藏渠道模型分组**总开关与**按面积计价**完整保留。
-> - ⚠️ **仓库改名**：`dsh-our-free-model` 的仓库已从 `Our-Free-Mode-fish` 迁到 [`dsh-our-free-model-fish`](https://github.com/Fish-under-sea/dsh-our-free-model-fish)（旧名已失效），本 README 中英双语的 4 处链接与安装示例已同步。
-> - ⚠️ **`dsh-our-free-model` 的应用内一键升级暂不可用**：它的自升级器按 Ed25519 签名校验 `feed/manifest.json`，而重签需要上游发布私钥（本机没有）。**npm 安装不受影响**（该包无 `prepublishOnly`，且 `feed/`、`catalog/` 不在 `files` 里）。
-> - **测试**：at-fork 美术与质量门测试全绿（自定义美术 21/21、岗位匹配 41/41、质量门修订 9/9，另加五套上游新门禁）；ofm 的 `channel-visibility` 与 `image-pricing` 测试通过；brf typecheck 通过。
-
----
-
-> **🆕 0.7.6（2026-10-11）**：`@fish-under-sea/dsh-git-sync` **0.3.2 → 0.3.3**（依赖范围 `^0.3.2` → **`^0.3.3`**）—— **壁纸引擎采集范围四条收敛为一条**。
->
-> - **为什么收敛**：壁纸引擎（`dsh-plugin-wallpaper-engine`）的 ADR-0011 把「预设」从**玻璃子集快照**升为**整机配置快照**，并新增导入 / 导出。面板点「导出预设…」得到的那份文件（本机 `$DSH_HOME/FISH.json`）**就是**它的配置面 —— 实测 `values` 116 键与 `config.json.settings` 132 键的**差集恰好是 12 个硬排除键 + 4 个资产指针**（当前壁纸 / 隐藏清单 / 轮播列表 / `userProps` 本机绝对路径摘要 / 运行期失败记忆 / 版本号），且 `assets` 段**内嵌字体与吉祥物资产本体**。⇒ 原先四条（`wallpaper-engine/config.json` + `glass-presets/` + `fontsets/` + `mascot/`，走额外扫描根）全部冗余。
-> - **顺带修掉一个真实缺陷**：采集是**单向拷贝**，白名单**目录**里本机删掉的文件会**永远留在仓库**，被算成「仓库多出 N」。本机面板当时正是 `4 个文件有差异（新增 0 · 变更 1 · 仓库多出 3）`——多出的 3 个全在被撤下的目录里（两份旧格式玻璃预设 + 一张旧立绘，来历正是 ADR-0011 那次旧预设作废），撤下后**归零**。⚠️ 只治了壁纸引擎这一处，`skills/` 等目录级条目仍有只增不减特性。
-> - **额外扫描根保留、当前表为空**：`EXTRA_ROOTS` 是「插件把数据放在 `$DSH_HOME` 之外」的通用落点，不再有消费者但有意留着（表空时行为与「没有这套机制」逐字等价）。
-> - **⚠️ 还原不是全自动**：`dsh-git-sync` 只把文件搬回 `$DSH_HOME/FISH.json`，**真正生效要在壁纸引擎面板点「导入预设…」选中它、再在列表里点一下**（导入 ≠ 应用）。少这两步，新机器上壁纸引擎是出厂状态而「待同步」却显示 0 —— 属**静默失败**。配置仓 README 与 AGENT-GUIDE.md 已补专节。
-> - **测试**：同步引擎 178 → **188** 用例全通过（新增「本机删掉快照后仓库那份如实算成 removed」回归；原「字体集 / 吉祥物随配置走」改为「资产已内嵌、素材目录不再采集」）。同时把配置仓 `dsh-sync.ps1` 白名单对齐到 0.3.3，并补上此前落后的 0.2.7～0.3.2 条目。
-
----
-
-> **0.7.5（2026-10-11）**：`dsh-agent-teams-fish` **0.5.0 → 0.5.1**（依赖范围 `^0.5.0` → **`^0.5.1`**）—— **降级链修正 + 厂商识别细化**。
->
-> - **链序缺陷（本版重点）**：原链 `vendor+role → role → vendor` 里，岗位通用图（随包 8 张鲸鱼）对**每一个**岗位都存在，故「岗位」那一跳**永远**抢先命中、「厂商」那一跳是死代码。现场症状就是「**徽标已是 StepFun 商标，头像却是通用岗位鲸鱼**」—— 厂商识别没错，坏的是链序。后果：只有厂商通用图的 **7 家**（`meta` / `mistral` / `rwkv` / `seed` / `ernie` / `stepfun` / `jev`）厂商角色**永久不可达**，`member-<vendor>-full-v2.webp`（**17 张**厂商立绘）也永远轮不到（点击放大只拿到 256 岗位头像）。现改为 **`vendor+role → vendor → role`**，厂商优先、岗位图仍留链尾兜底。
-> - **门禁为何没抓到**：当时只钉**第 1 跳**，而事故发生在第 2 跳。0.5.1 补 3 条断言（第 2 跳可达、厂商跳下标 < 岗位跳、`-full` 优先厂商立绘）。
-> - **识别细化**：`stepfun` 补**字母家族**（`step-asr` / `step-tts-mini` / `stepaudio-*` 等，旧规则要求 step 后跟数字故整片漏）；`glm` 补 `charglm` / `codegeex` / `cogview` / `cogvideo`；`qwen` 补 `dashscope` / `aliyun`；`gemini` 补 `palm-<数字>` / `bison` / `gecko` / `vertex`；`seed` 补 `byteplus` / `skylark`；`minimax` 补 `speech-<数字>`；并把 `\bern` 收紧为 `\bernie`（不再误吞 `ernest`）。
-> - 详见 [dsh-agent-teams-fish v0.5.1](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.5.1.md)。
-
----
-
-> **0.7.4（2026-10-11）**：`dsh-agent-teams-fish` **0.4.3 → 0.5.0**（依赖范围 `^0.4.3` → **`^0.5.0`**）—— **第三轮厂商素材**：厂商命名空间 **15 → 17**，新增 **StepFun（阶跃星辰）** 与 **Jev（TypeSafe System One）**，随包素材 **280 → 286 个文件**。
->
-> - **档位**：两家都只有「厂商通用图 + 立绘高清」，与既有 `meta` / `mistral` / `rwkv` / `seed` / `ernie` 同档。成员请求 `member-<vendor>-<role>-v2.png` 时第 1 跳落空，随后由 [0.5.1](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.5.1.md) 修正为**第 2 跳命中自家厂商角色**（0.5.0 当时误落岗位通用图，那正是 0.5.1 修掉的链序缺陷；本机暂无这两家的 Q 版岗位图，属预期兜底）。
-> - **识别规则**：`stepfun` 同时认 provider 名、`step-<数字>` 模型族与中文「阶跃」。**模型族那一条是必需的**：本机三条 Step 路由（[模型配置清单](模型配置清单.md) 的 S1 / S2 / S3）的 provider 段是 `cn-f/cline/cline-free` 这类，**没有 stepfun 字样**而 model 是 `step-5-preview`，只认 provider 名会让整队掉兜底头像。`jev` 认 `jev` / `typesafe` / `type-safe`，两者都保留词边界（`stepper` / `steps` / `jevons` 不会被误吞）。
-> - ⚠️ **`brand-jev.svg` 是占位字标，不是官方商标**：TypeSafe / Jev 无公开商标（simple-icons 与 LobeHub icons 均无收录），而插件门禁强制每个厂商必须有 `brand-<vendor>.svg`，故按既有归一化口径自制「J」字标。拿到官方素材后直接替换该文件即可。
-> - 详见 [dsh-agent-teams-fish v0.5.0](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.5.0.md)。
-
----
-
-> **0.7.3（2026-10-10）**：`dsh-agent-teams-fish` **0.4.2 → 0.4.3**（依赖范围 `^0.4.2` → **`^0.4.3`**）—— **纯文档修正，二进制与 0.4.2 等价**。0.4.2 修了「队长头像跟随路由」，但 README 的「已知限制」表里漏改了「队长不跟随模型路由」那一行，同一份文档里新旧说法并存。代码没问题，**npm 包内 README 在 publish 那一刻就冻结、事后无法修改**，所以只能补发一版把正确文案带上 npm。本版 `lib/` 运行时代码与 0.4.2 逐字节相同，升上来只是为了让 npm 页面上的文档不再自相矛盾。详见 [dsh-agent-teams-fish v0.4.3](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.4.3.md)。
-
----
-
-> **0.7.2（2026-10-10）**：两个成员同时升级 —— `@fish-under-sea/dsh-session-title-refresh` **0.3.2** 与 `dsh-agent-teams-fish` **0.4.2**。
->
-> **① 标题刷新（0.3.2）**：**修掉「标题模型不支持 off 档时，每一次自动命名都报 `UNSUPPORTED_REASONING_EFFORT`」**。0.3.1 为了修「思考吃光输出预算」而**无条件**传 `reasoningEffort: 'off'`，但 **DSH 核心对显式档位是硬校验、不做任何降级**（模型没声明该档位就直接抛，连 reasoning 元数据都没有时传任何档位同样抛），`dsh-llm-pi-ai` 又会把未声明的档位一律钉成不支持 —— 于是**所有没声明 `off` 的模型**（真实配置 58 个里占 **33 个**）自动命名全部失效。0.3.2 改为**先探测再表态**：读该模型真实档位，能关思考就传 `off`、关不掉退到它支持的最低档、实在没有才完全不传该字段。core 25 + host 25 + client 13 = **63** 用例全通过。
->
-> **② AgentTeams（0.4.2）**：**修掉「队长头像永远是 DeepSeek 那张」**。队长换成 qwen / claude / glm 后头像不变 —— 不是缺素材（10 个厂商的队长图早在包里），而是客户端把队长图**写死成常量** `team-lead-deepseek-v2.png`，另外 9 张永远不可达；宿主端 `team.json` 也只记 `captainSessionId`、没有队长的模型路由。0.4.2 建队时写入 `captainProvider` / `captainModel`，快照暴露（实时值优先），客户端走与成员同一套厂商识别。artwork-role-match 30 → **34** 用例 + 2 条新门禁。
->
-> ⚠️ **第八个成员的安装约定**：本包插入 `id: our-free-model` 行，而 `dsh-our-free-model` 自己的 bundle 层也插入同一个 id —— 聚合 patch **不去重**，两边都生效就是**重复挂载、启动失败**。所以请把它写在 profile 的 `devDependencies`（装得到，且不会被对账提升为 bundle 层），**不要**再列进 `dsh.profile.bundles`（见 [安装](#安装) 与「[为什么子包要写在 devDependencies](#方式二从-git-仓库安装跨机可复现)」）。
+> - **为什么移出**：DSH 自 **v0.2.1-alpha.2** 起**已内置会话自动重命名**，与该插件的核心用途重叠。该插件**暂停维护更新**（源码保留在 `packages/` 下，npm 上已发布的版本仍可单独安装），本包不再随附。
+> - **⚠️ 同时撤下一段 patch（要紧）**：原先本包会**停用 DSH 内置的首行标题提供方**（`session-title-llm`）为该插件让位。插件移出后这段停用必须一并撤掉 —— 否则内置提供方被停用却没有替代者，**会话将不再自动命名**。现在内置提供方恢复生效。
+> - **仍要用旧插件**：`dsh plugin --profile <profile> add @fish-under-sea/dsh-session-title-refresh` 照旧可装，它自带的 patch 会重新停用内置提供方。该包 README 顶部已加暂停维护说明。
+> - **成员数 8 → 7**；本包新增**自定义图标** `icon.png`（384×384 · 231 KB，符合 DSH ≤256 KiB 的上限），插件管理器卡片与清单详情从此显示本包图标。
 >
 > 更早的版本记录见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -73,9 +31,9 @@
 
 ## 这是什么
 
-Fish 自建 [DSH](https://github.com/Fish-under-sea/DSH)（DeepSeek Harness）插件聚合包。根目录是**聚合包**，子插件源码在 `packages/` 下。聚合包靠自己的 bundle 层（`cordis.patch.yml`）把八个插件的插件行**一次性插入** profile 的 roster —— 其中五个是本仓库 `packages/` 下的自建插件，另外三个是**外部补充版**：`dsh-agent-teams-fish`、`dsh-better-reasoning-effort-fish` 与 `dsh-our-free-model`（各自独立仓库，非本仓库子包）。
+Fish 自建 [DSH](https://github.com/Fish-under-sea/DSH)（DeepSeek Harness）插件聚合包。根目录是**聚合包**，子插件源码在 `packages/` 下。聚合包靠自己的 bundle 层（`cordis.patch.yml`）把七个插件的插件行**一次性插入** profile 的 roster —— 其中四个是本仓库 `packages/` 下的自建插件，另外三个是**外部补充版**：`dsh-agent-teams-fish`、`dsh-better-reasoning-effort-fish` 与 `dsh-our-free-model`（各自独立仓库，非本仓库子包）。
 
-> **装一次 `@fish-under-sea/dsh-fish` ＝ 装齐八个插件。**
+> **装一次 `@fish-under-sea/dsh-fish` ＝ 装齐七个插件。**
 
 **命名差异（容易踩）**：npm 包名 `@fish-under-sea/*` 带 scope，但仓库目录名（`dsh-fish/`）与 GitHub 仓库名（`Fish-under-sea/dsh-fish`）**不带**。
 
@@ -84,27 +42,24 @@ Fish 自建 [DSH](https://github.com/Fish-under-sea/DSH)（DeepSeek Harness）�
 | 子包 | 版本 | 说明 |
 |------|:----:|------|
 | [`dsh-approval-guide`](packages/dsh-approval-guide) | 0.2.2 | 在审批弹窗里追加**中文说明**：这次审批会做什么、有什么风险、依据是什么 |
-| [`dsh-session-title-refresh`](packages/dsh-session-title-refresh) | 0.3.2 | **会话标题自动刷新**：第 N 轮起总结命名，此后每 M 轮刷新一次；设置页「标题模型（可选）」下拉与官方「模型」页同源；标题调用的**思考档位按模型真实能力挑**（能关就关、关不掉退最低档、无元数据不传），默认输出预算 256、`max-tokens` 有正文即接受截断结果 |
-| [`dsh-git-sync`](packages/dsh-git-sync) | 0.3.3 | **一键 Git 同步**：把插件清单、启用状态、本地设置、Skills、看板/用量账本、设置导航顺序偏好、**标题自动刷新设置**、**免费模型插件配置及用量账本**与**壁纸引擎整机配置快照**（`$DSH_HOME/FISH.json`，资产本体已内嵌）同步到自己的私有仓库。0.3.3 把壁纸引擎原先的四条（`config.json` + 三个素材目录，走额外扫描根）**收敛成一条** —— 那个插件已支持一键导出整机快照；顺带修掉目录级条目「仓库多出」的残留（实测 `4 个差异（新增 0 · 变更 1 · 仓库多出 3）` → 归零）。额外扫描根机制保留、当前表为空 |
+| [`dsh-git-sync`](packages/dsh-git-sync) | 0.4.0 | **一键 Git 同步**：把插件清单、启用状态、本地设置、Skills、看板/用量账本、设置导航顺序偏好、**免费模型插件配置及用量账本**与**壁纸引擎整机配置快照**（`$DSH_HOME/FISH.json`，资产本体已内嵌）同步到自己的私有仓库。**0.4.0 新增「导出私钥配置」**：把带凭据的几份配置（`channel-pack/` 的花名册 / 签到 / 账本、`.credentials.yaml`、`our-free-model/eac-user.json`）**纯本机**拷到指定目录（默认桌面）下的 `DSH私钥配置` 文件夹，并附一份说明 README —— 不碰 git、不发任何网络请求，凭据内容也不进日志；**这条通路与 git 同步完全分开**，因为凭据在同步硬黑名单里、永远不会随仓库走 |
 | [`dsh-settings-nav-order`](packages/dsh-settings-nav-order) | 0.1.5 | **设置导航重排**：把设置面板左侧菜单排成自己要的顺序、把不想看的项收起来；偏好随 Git 同步插件**跨机复原** |
 | [`dsh-visual-companion`](packages/dsh-visual-companion) | 0.1.7 | **视觉伴侣唤醒**：网页上看原型 / 比布局，点选 + 备注后按「提交给助手」，会话自动收到一条用户消息并起一轮 —— 不必回终端复述；**点选过程静默，只有提交才唤醒一次**（0.1.7 起加载日志的版本号从 `package.json` 现读，不再写死） |
 | [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) | 0.6.0 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；**厂商头像素材随包分发**（**17 厂商** × 10 岗位 + 厂商通用图 + 立绘 + 队长 + 商标 SVG，**286 个文件 / 约 29.3 MB**，含 1024×1024 高清 WebP 族），装完即有，跨机不再依赖 `artworkDir`；自定义目录仍可整套覆盖；商标 SVG 按扩展名送达；**队长头像跟随队长自己的模型路由**（0.4.2 修）；**0.5.1 修掉降级链序**（现链序为 `厂商+岗位 → 厂商 → 岗位`）；**0.6.0 并入上游 v0.1.23** —— 成员工具策略、质量门契约与修订绑定、修复契约保留与失效源告警、越界 finding 升级、lineage 身份沿 fork 链、工作区审计、损坏 `team.json` 降级读取，Fish 自建的美术目录解析与降级链完整保留 |
 | [`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish) | 0.5.8 | **思考强度与输入模态**（上游 [HaoyueQin/dsh-better-reasoning-effort](https://github.com/HaoyueQin/dsh-better-reasoning-effort) 的**Fork**）：在官方「模型」页编辑卡里直接编辑每模型的 `reasoningEfforts` 与 `input` 声明，并支持一键自动适配；本 Fork 把 `settings.models.provider-card` 席位完整让给模型能力面板；0.5.8 并入上游三条安装路线说明（冷静期下写明版本号、release tarball 路线、GitHub 源码安装） |
 | [`dsh-our-free-model`](https://github.com/Fish-under-sea/dsh-our-free-model-fish) | 2.1.0 | **免费模型与渠道聚合**（上游 [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 的**Fork**）：把 13 个免费渠道（CodeArts / CodeBuddy / Loomy / Raccoon / MiniMax / Gemini 等）与免费模型并入官方模型选择器，并自带渠道网关供其它本地 harness 反代。本 Fork 新增「**隐藏渠道模型分组**」总开关 —— 渠道分组会与你自己配的 provider 混在一起把选择器撑长，打开即一次收起 13 组；**只影响展示不影响路由**（网关请求走 `resolveModelInfo()`，被隐藏的模型照常收发），渠道设置页的「显示列表 / 关闭全部」读 `listAllModels()` 也不受影响；默认关闭，升级不会静默改变你看到的列表。**2.1.0 并入上游 v2.1.0** —— combos 组合链、token-saver 省 token、原生 Anthropic 网关、`standalone` 拆分、渠道包与 Kilo 渠道、升级器 snapshot SHA 修复；Fish 自建的隐藏渠道分组与按面积计价完整保留 |
 
-## 本包会停用一个 DSH 内置插件
+## 本包不再停用任何内置插件
 
-**这是使用前必须知道的行为** —— `cordis.patch.yml` 会显式停用 DSH 内置的会话标题提供方：
+**0.7.8 起的行为变化** —— 原先本包会显式停用 DSH 内置的会话标题提供方（`session-title-llm`），为 `dsh-session-title-refresh` 让位（会话标题服务每个进程**只接受一个提供方**，第二次注册直接抛错）。
 
-```yaml
-- id: session-title-llm
-  name: '@deepseek-ai/dsh-session-title-first-prompt-llm'
-  disabled: true
+该插件移出后，这段停用**已一并撤除**，内置提供方恢复生效。**这一点很要紧**：若只移出插件而保留停用，内置提供方被关掉却没有替代者，**会话将不再自动命名**。
+
+仍要旧插件的用户单独安装即可，它自带的 patch 会重新停用内置提供方：
+
+```powershell
+dsh plugin --profile <profile> add @fish-under-sea/dsh-session-title-refresh
 ```
-
-**原因**：会话标题服务每个进程**只接受一个提供方**，第二次注册会直接抛错。所以必须先让位给 `dsh-session-title-refresh`。
-
-**行为差异**：本插件同样以 `first-prompt` 节奏注册，**第 1 轮照样会生成标题** —— 日常使用无感知，但你需要知道这个内置插件是被本包关掉的。
 
 ## 安装
 
@@ -114,11 +69,11 @@ Fish 自建 [DSH](https://github.com/Fish-under-sea/DSH)（DeepSeek Harness）�
 dsh plugin --profile <profile> add @fish-under-sea/dsh-fish
 ```
 
-聚合包已声明八个插件依赖，它们作为传递依赖被 pnpm 装到 profile 顶层（本 profile 用 `nodeLinker: hoisted`），插件行按包名解析即可得到。
+聚合包已声明七个插件依赖，它们作为传递依赖被 pnpm 装到 profile 顶层（本 profile 用 `nodeLinker: hoisted`），插件行按包名解析即可得到。
 
 **为什么不会插出重复行**：对账逻辑（`dsh-plugin-manager` 的 `reconcile`）只遍历 **profile 自己的 `dependencies`**，不递归看传递依赖，所以子包不会被提升为 bundle 层，插行不会叠加。
 
-> ⚠️ **如果安装报 `[NOT_FOUND]`**：本包与**八个**成员包都已发布到 npm **官方源**。若你的机器把 registry 指向国内镜像（例如 `registry.npmmirror.com`），镜像**懒同步**可能还没收录其中某个子包，于是 `dsh plugin add` 会以
+> ⚠️ **如果安装报 `[NOT_FOUND]`**：本包与**七个**成员包都已发布到 npm **官方源**。若你的机器把 registry 指向国内镜像（例如 `registry.npmmirror.com`），镜像**懒同步**可能还没收录其中某个子包，于是 `dsh plugin add` 会以
 > `404 Not Found … {"error":"[NOT_FOUND] @fish-under-sea/<子包> not found"}` 失败。
 > **这不是包不存在** —— 任选下面一条即可：
 >
@@ -126,7 +81,6 @@ dsh plugin --profile <profile> add @fish-under-sea/dsh-fish
 >   ```sh
 >   curl.exe -X PUT https://registry.npmmirror.com/-/package/@fish-under-sea/dsh-approval-guide/syncs
 >   curl.exe -X PUT https://registry.npmmirror.com/-/package/@fish-under-sea/dsh-git-sync/syncs
->   curl.exe -X PUT https://registry.npmmirror.com/-/package/@fish-under-sea/dsh-session-title-refresh/syncs
 >   curl.exe -X PUT https://registry.npmmirror.com/-/package/@fish-under-sea/dsh-settings-nav-order/syncs
 >   curl.exe -X PUT https://registry.npmmirror.com/-/package/@fish-under-sea/dsh-visual-companion/syncs
 >   curl.exe -X PUT https://registry.npmmirror.com/-/package/dsh-agent-teams-fish/syncs
@@ -148,7 +102,7 @@ dsh plugin --profile <profile> add @fish-under-sea/dsh-fish
 "devDependencies": {
   "@fish-under-sea/dsh-approval-guide": "github:Fish-under-sea/dsh-fish#path:packages/dsh-approval-guide",
   "@fish-under-sea/dsh-git-sync": "github:Fish-under-sea/dsh-fish#path:packages/dsh-git-sync",
-  "@fish-under-sea/dsh-session-title-refresh": "github:Fish-under-sea/dsh-fish#path:packages/dsh-session-title-refresh",
+
   "@fish-under-sea/dsh-settings-nav-order": "github:Fish-under-sea/dsh-fish#path:packages/dsh-settings-nav-order",
   "@fish-under-sea/dsh-visual-companion": "github:Fish-under-sea/dsh-fish#path:packages/dsh-visual-companion",
   "dsh-agent-teams-fish": "github:Fish-under-sea/dsh-agent-teams-fish",
@@ -157,7 +111,7 @@ dsh plugin --profile <profile> add @fish-under-sea/dsh-fish
 }
 ```
 
-`#path:` 是 pnpm 的子目录语法，让一个仓库同时提供多个包 —— 五个子包指向本仓库；三个外部补充版指向各自仓库：[`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish)、[`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish) 与 [`dsh-our-free-model`](https://github.com/Fish-under-sea/dsh-our-free-model-fish)（三者包都在各自仓库根目录，无需 `#path:`）；换机 `pnpm install` 后直接从仓库下载，**不依赖任何本机绝对路径**。`bundles` 里只需列 `"@fish-under-sea/dsh-fish"`（它的 patch 负责插入八行）。
+`#path:` 是 pnpm 的子目录语法，让一个仓库同时提供多个包 —— 四个子包指向本仓库；三个外部补充版指向各自仓库：[`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish)、[`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish) 与 [`dsh-our-free-model`](https://github.com/Fish-under-sea/dsh-our-free-model-fish)（三者包都在各自仓库根目录，无需 `#path:`）；换机 `pnpm install` 后直接从仓库下载，**不依赖任何本机绝对路径**。`bundles` 里只需列 `"@fish-under-sea/dsh-fish"`（它的 patch 负责插入八行）。
 
 ### 方式三：本地开发安装（改源码即时生效）
 
@@ -169,7 +123,7 @@ dsh plugin --profile <profile> add @fish-under-sea/dsh-fish
 "devDependencies": {
   "@fish-under-sea/dsh-approval-guide": "link:<本仓库路径>/packages/dsh-approval-guide",
   "@fish-under-sea/dsh-git-sync": "link:<本仓库路径>/packages/dsh-git-sync",
-  "@fish-under-sea/dsh-session-title-refresh": "link:<本仓库路径>/packages/dsh-session-title-refresh",
+
   "@fish-under-sea/dsh-settings-nav-order": "link:<本仓库路径>/packages/dsh-settings-nav-order",
   "@fish-under-sea/dsh-visual-companion": "link:<本仓库路径>/packages/dsh-visual-companion",
   "dsh-agent-teams-fish": "link:<dsh-agent-teams-fish 仓库路径>",
@@ -197,22 +151,22 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 
 **② 手工声明时子包要写在 `devDependencies`**
 
-`dsh plugin` 每次执行都会对账，把 profile 的 `dependencies` 里任何声明了 `dsh.bundle` 的包**自动追加进 `dsh.profile.bundles`**。八个包各自都声明了 `dsh.bundle`，而聚合包的 patch 已经把八行插行复述了一遍 ——
+`dsh plugin` 每次执行都会对账，把 profile 的 `dependencies` 里任何声明了 `dsh.bundle` 的包**自动追加进 `dsh.profile.bundles`**。七个包各自都声明了 `dsh.bundle`，而聚合包的 patch 已经把八行插行复述了一遍 ——
 
 > 子包一旦被提升为 bundle 层，插行就会**叠加成重复行**，而**重复挂载会让应用启动失败**。
 
-**这一条对第八个成员 `dsh-our-free-model` 尤其要紧**：它自己的 `cordis.patch.yml` 插入的 id 就是 `our-free-model`，与本包插的是**同一个 id**（`composeEntries` 只做 `push`、不去重）。所以任何时候都**必须**把它从 `dsh.profile.bundles` 里移走（或直接从 profile 的 `dependencies` 挪到 `devDependencies`）。
+**这一条对第七个成员 `dsh-our-free-model` 尤其要紧**：它自己的 `cordis.patch.yml` 插入的 id 就是 `our-free-model`，与本包插的是**同一个 id**（`composeEntries` 只做 `push`、不去重）。所以任何时候都**必须**把它从 `dsh.profile.bundles` 里移走（或直接从 profile 的 `dependencies` 挪到 `devDependencies`）。
 
 写在 `devDependencies` 同样会被装到 profile 顶层（行名照常解析得到），但不会被对账逻辑提升为 bundle 层。
 
 ## 子插件的运行期配置
 
-本仓库五个子插件的参数**都不写在 `cordis.patch.yml` 里**，而是存在各自 `$DSH_HOME` 下的 `config.json` 中，在 **GUI 设置页**里修改（外部补充版与 `dsh-visual-companion` 相反：它们的配置写在插件行的 `config` 里）：
+本仓库四个子插件的参数**都不写在 `cordis.patch.yml` 里**，而是存在各自 `$DSH_HOME` 下的 `config.json` 中，在 **GUI 设置页**里修改（外部补充版与 `dsh-visual-companion` 相反：它们的配置写在插件行的 `config` 里）：
 
 | 插件 | 设置入口 | 配置文件 |
 |------|---------|---------|
 | `approval-guide` | 无配置项 | — |
-| `session-title-refresh` | 设置 → 会话标题自动刷新 | `$DSH_HOME/dsh-session-title-refresh/config.json` |
+
 | `git-sync` | 设置 → Git 同步 | `$DSH_HOME/dsh-git-sync/config.json` |
 | `settings-nav-order` | 设置 → 设置导航顺序 | 无配置项；偏好存在浏览器 `localStorage`（键 `dsh-settings-nav-order/v1`）并镜像到 `$DSH_HOME/dsh-settings-nav-order/state.json`（供 `git-sync` 采集） |
 | `dsh-visual-companion` | 无设置页（配置写在自己 profile patch 的插件行里） | 同上（`watchDir`：视觉伴侣根目录，用于「加载即自动绑定」） |
@@ -253,7 +207,7 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 ```text
 dsh-fish/                 # 仓库目录名（npm 包名是 @fish-under-sea/dsh-fish）
 ├── package.json          # 聚合包清单（version 0.7.6，dsh.bundle.patch 指向 cordis.patch.yml）
-├── cordis.patch.yml      # bundle 层：停用内置标题插件 + 插入八个插件的插件行
+├── cordis.patch.yml      # bundle 层：插入七个插件的插件行
 ├── CHANGELOG.md          # 完整版本记录（README 顶部只留最近一版）
 ├── pnpm-workspace.yaml   # workspace 声明（仅本地开发用）
 ├── lib/                  # 聚合包自身的空实现（本包不注册任何东西）
@@ -261,7 +215,7 @@ dsh-fish/                 # 仓库目录名（npm 包名是 @fish-under-sea/dsh-
 │   └── client.js
 └── packages/
     ├── dsh-approval-guide/
-    ├── dsh-session-title-refresh/
+
     ├── dsh-git-sync/
     ├── dsh-settings-nav-order/
     └── dsh-visual-companion/
@@ -269,7 +223,7 @@ dsh-fish/                 # 仓库目录名（npm 包名是 @fish-under-sea/dsh-
 
 > 三个外部补充版 **不在** `packages/` 下 —— `dsh-agent-teams-fish` 的源码在[它自己的仓库](https://github.com/Fish-under-sea/dsh-agent-teams-fish)，`dsh-better-reasoning-effort-fish` 在[另一个仓库](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish)，`dsh-our-free-model` 在[第三个仓库](https://github.com/Fish-under-sea/dsh-our-free-model-fish)；三者都以 **npm 依赖**的形式随聚合包装到 profile 顶层。
 
-> **子包为什么不在聚合包的 `files` 里被打包进来**：聚合包只携带 `lib/`、`cordis.patch.yml` 与 `README*.md`，五个子包与三个外部补充版都以 **npm 依赖**的形式被装到 profile 顶层（见方式一）。只有在「一个仓库同时提供多个包、从 GitHub 安装」时才需要在安装方 profile 里用 `#path:` 显式声明（见方式二）。
+> **子包为什么不在聚合包的 `files` 里被打包进来**：聚合包只携带 `lib/`、`cordis.patch.yml` 与 `README*.md`，四个子包与三个外部补充版都以 **npm 依赖**的形式被装到 profile 顶层（见方式一）。只有在「一个仓库同时提供多个包、从 GitHub 安装」时才需要在安装方 profile 里用 `#path:` 显式声明（见方式二）。
 
 ## 开发
 
@@ -277,7 +231,7 @@ dsh-fish/                 # 仓库目录名（npm 包名是 @fish-under-sea/dsh-
 pnpm install                                                          # 装 workspace 依赖
 
 node packages/dsh-approval-guide/test/guide.test.mjs                  # 跑测试
-node packages/dsh-session-title-refresh/test/run-all.mjs
+
 node packages/dsh-git-sync/test/client.test.mjs
 node packages/dsh-git-sync/test/test-sync-engine.mjs
 node packages/dsh-git-sync/test/commit-identity.test.mjs
@@ -295,7 +249,7 @@ node packages/dsh-visual-companion/test/visual-companion.test.mjs
 | # | 位置 | 漏改的后果 |
 |:-:|------|-----------|
 | 1 | 六个 `package.json` 的 `name` | 安装方的依赖键对不上 |
-| 2 | 聚合包与五个子包 `cordis.patch.yml` 里的行 `name` | 行解析不到包，插件整条不加载 |
+| 2 | 聚合包与四个子包 `cordis.patch.yml` 里的行 `name` | 行解析不到包，插件整条不加载 |
 | 3 | ⚠️ **带浏览器半区的包（本仓库四个子包 + 两个外部补充版）`lib/client.js` 里 `__ModuleLoader__.load({ id })` 的 `id`** | **浏览器侧报 `loaded without registering "<包名>"`，插件加载失败** |
 | 4 | 安装方 profile 的依赖键与 `bundles` | 依赖装不上、bundle 层不展开 |
 | 5 | 子包在 profile 里的归属 | 必须放 `devDependencies`（见「两条坑」第 ② 条） |
@@ -308,7 +262,7 @@ node packages/dsh-visual-companion/test/visual-companion.test.mjs
 
 ## 许可
 
-**MIT**（聚合包与五个子包一致）。
+**MIT**（聚合包与四个子包一致）。
 
 三个外部补充版同样以 **MIT** 分发，**著作权各归其上游原作者**：
 
@@ -318,8 +272,8 @@ node packages/dsh-visual-companion/test/visual-companion.test.mjs
 
 补充版的来源、署名与改动范围见各自仓库里的 `NOTICE.md`。
 
-> 仓库根目录已放置 `LICENSE` 文件，与 `package.json` 中的 `license` 字段（MIT）及五个子包保持一致。
+> 仓库根目录已放置 `LICENSE` 文件，与 `package.json` 中的 `license` 字段（MIT）及四个子包保持一致。
 
 ---
 
-<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.7.7 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
+<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.7.8 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>

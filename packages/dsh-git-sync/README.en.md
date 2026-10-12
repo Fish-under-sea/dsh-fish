@@ -119,6 +119,8 @@ The settings menu order and hidden items **actually take effect in the browser's
 
 ### Title auto-refresh settings
 
+> ⚠️ **As of 0.7.8 this plugin has moved out of the bundle and is unmaintained**: DSH has shipped built-in automatic session renaming since **v0.2.1-alpha.2**. This section still applies if you installed the plugin on its own.
+
 [`dsh-session-title-refresh`](https://github.com/Fish-under-sea/dsh-fish/tree/main/packages/dsh-session-title-refresh) stores its user settings in `$DSH_HOME/dsh-session-title-refresh/config.json` — that is **which model writes the title** (`provider` / `model`) plus the whole set of tuning knobs (first-round rounds, interval, window, output budget, timeout, target length, skip-subagent-sessions). Without this entry, a machine switch means **re-setting the title model and every one of those knobs in the original UI**.
 
 The sibling `history.json` is a **machine-local run log** (per-refresh success/failure and session ids). It only grows, it overwrites its counterpart across machines, and it has no restoration value — so the allowlist names **only `config.json`** and never the directory.
@@ -206,6 +208,38 @@ Removed content **remains in the repo history** (`git log -- <path>` to retrieve
 > Side note (a lesson from hands-on testing on 2026-10-06): **any** allowlist entry that's also excluded by the config repo's `.gitignore` becomes "copied locally, never committed, yet the panel shows synced". When modifying the allowlist, it's worth cross-checking the repo's `.gitignore`.
 
 **Since 0.2.0, the sync scope narrowed to "configuration surface"**: session logs and attachments **are no longer uploaded**. `sessions/` is zstd binary — append-only, impossible for git to diff or line-merge, and simultaneous edits on two machines would inevitably conflict; `attachments/` is the same and also local private data. After a machine switch, the configuration surface plus each machine's own session copies are enough to recover. **Old session files already committed to the repo are not deleted** (only new ones stop being added); history is preserved.
+
+### Export private config (new in 0.4.0, purely local)
+
+**This is a second, entirely separate path from "sync to a git repository"** — do not conflate the two:
+
+| | Sync (one-click sync / collect / restore) | Export private config |
+|---|---|---|
+| Destination | your private git repository (pushed to a remote) | a folder on this machine's disk |
+| May it carry credentials? | **Never** — credentials sit on the hard blacklist | **Yes** — it is never uploaded |
+| Network | fetches / pushes | **no network at all** |
+
+The "Export private config" button copies the files below into a `DSH私钥配置` folder under the **target directory** (editable in the panel; **blank means Desktop**), **preserving the original relative layout**, and writes a `README.md` explaining what each file is and where it goes on the new machine:
+
+| File | Needed? | What it is |
+|------|---------|------------|
+| `channel-pack/state.json` | required | Channel-account roster and credential index (provider / nickname / enabled / `credentialRef`). No plaintext secrets itself, but without it the account list is empty |
+| `channel-pack/auto-checkin.json` | optional | Auto check-in record. Skipping it just re-counts today on the new machine |
+| `channel-pack/token-ledger.json` | optional | Usage ledger. Skipping it restarts the statistics from zero |
+| `.credentials.yaml` | required | ⚠️ **The credentials themselves** — every channel account's key lives in this one file |
+| `our-free-model/eac-user.json` | depends | ⚠️ The co-build channel's GitHub login token and username (unrelated to channel accounts). Skip it and you re-authorise on the new machine |
+
+**Why a separate path is necessary**: `.credentials.yaml` and `eac-user.json` are both on the sync hard blacklist (see the previous section), so "one-click sync" can never touch them — by design. That means these files can **only be moved by hand** on a machine switch, and this feature exists to make that hand-move hard to get wrong.
+
+**Three implementation constraints** (do not relax them when editing this code):
+
+1. **Purely local** — never touches git, never makes a network request;
+2. **No content parsing** — byte copies only; the contents of `.credentials.yaml` / `eac-user.json` must **never** reach the log or the README (content in a log is a leak);
+3. **No permission loosening** — uses `fs.copyFileSync` rather than the internal `copyFileRobust` (which chmods the target to `0666`), and tightens the target to `0600` on POSIX.
+
+**How to import**: this feature **only exports** — there is no "import" button. Follow the table in the README inside the export folder, copy the files back to their `$DSH_HOME` locations on the new machine, and restart DSH. Neither this plugin nor DSH ever reads those credential files to upload or compare them.
+
+> Tests live in `test/test-private-export.mjs` (32 assertions), including explicit ones that neither the log nor the README may contain credential contents, and that no path in the list is ever on the sync allowlist.
 
 ### Safety design (three gates)
 

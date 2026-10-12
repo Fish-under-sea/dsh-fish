@@ -4,6 +4,21 @@
 
 ---
 
+> **0.7.8（2026-10-12）**：**移出 `@fish-under-sea/dsh-session-title-refresh`、`dsh-git-sync` 新增「导出私钥配置」、聚合包加上自定义图标**。
+>
+> **① 移出 `dsh-session-title-refresh`（成员数 8 → 7）**：DSH 自 **v0.2.1-alpha.2** 起**已内置会话自动重命名**，与该插件的核心用途重叠 —— 该插件因此**暂停维护更新**（源码保留在 `packages/` 下，npm 上已发布的版本仍可单独安装），本聚合包不再随附。
+>
+> ⚠️ **同时撤下原先那段「停用 DSH 内置首行标题提供方（`session-title-llm`）」的 patch** —— 这段停用当初就是为了给该插件让位。若只移出插件而保留停用，内置提供方被关掉却没有替代者，**会话将不再自动命名**。现内置提供方恢复生效。仍要用旧插件的话单独安装即可，它自带的 patch 会重新停用内置提供方。
+>
+> **② `dsh-git-sync` 0.3.3 → 0.4.0：新增「导出私钥配置」（纯本机）**：把带凭据的几份配置（`channel-pack/state.json`、`channel-pack/auto-checkin.json`、`channel-pack/token-ledger.json`、`.credentials.yaml`、`our-free-model/eac-user.json`）拷到**指定目录**（面板可改，**留空即桌面**）下的 `DSH私钥配置` 文件夹，**保留原相对目录结构**，并写入一份 README 说明每个文件是什么、要放回新机器的哪里。
+>
+> 三条必须守住的约束：**纯本地**（不碰 git、不发任何网络请求）、**不解析内容**（只做字节拷贝，凭据内容绝不进日志或 README）、**不放宽权限**（走 `fs.copyFileSync` 而非内部那个会把目标 chmod 成 `0666` 的 `copyFileRobust`，POSIX 下收紧到 `0600`）。它与 git 同步是**两条完全分开的通路** —— 凭据在同步硬黑名单里，永远不会随仓库走；正因如此换机时这几份只能手工搬，本功能就是把这件事变得不容易漏。新增测试 `test/test-private-export.mjs`（32 个断言）。
+>
+> **③ 自定义图标**：新增 `icon.png`（384×384 · 231 KB）。DSH 规定图标为「相对 manifest 的路径、SVG/PNG/JPEG/WebP、≤ 256 KiB」，故从 1254×1254 的源图缩到 384×384 并压到 231 KB；同时加入 `files` 白名单。插件管理器卡片、bundle 详情与设置里的插件清单从此显示本包图标。
+>
+> **④ 测试**：同步引擎 188/188、客户端 37/37、bundle 注册 2/2、新增导出 32/32 —— 全部通过。
+
+---
 > **0.7.7（2026-10-11）**：三个上游 fork 同步到最新上游 —— `dsh-agent-teams-fish` **0.5.1 → 0.6.0**、`dsh-better-reasoning-effort-fish` **0.5.7 → 0.5.8**、`dsh-our-free-model` **2.0.0 → 2.1.0**（依赖范围分别提到 **`^0.6.0`** / **`^0.5.8`** / **`^2.1.0`**）。
 >
 > **① `dsh-agent-teams-fish` 0.6.0**：并入上游 v0.1.23（37 个提交）—— **成员工具策略**（可为成员配策略 ID，四个必需协调工具始终保留；只控工具可用性，不是操作系统沙箱）、**质量门契约与修订绑定**（verdict 绑定实际产物字节与完整修复 lineage）、**修复契约保留与失效源告警**（不在失败依赖上死锁）、**越界 finding 升级**（带理由升级，而非造不可能完成的修复任务）、**lineage 身份沿 fork 链**、**工作区审计**、**损坏 `team.json` 降级读取**、会话来源元数据与非破坏性历史恢复。三处冲突（`src/snapshot.ts` 的 import 块与函数体、`src/tools.ts` 的 `add_member`）均按「两侧并存」融合；Fish 自建的 `src/artwork-source.ts`、`src/client/artwork.ts` 降级链、`captainRouteOf` 队长头像跟随路由与 286 个随包素材零改动保留。`lib/` 为提交进仓库的产物，已随源码重建（77 个文件）。

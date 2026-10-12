@@ -31,19 +31,14 @@
 # 七个插件的运行期参数都写在 $DSH_HOME 下的各自 config.json 里
 # （在 GUI 设置页改），不写在这里，因此不会跟着本包同步到别的机器。
 
-# 会话标题服务每个进程只接受一个提供方，第二次注册直接抛错。
-# 所以必须先停用 DSH 内置的「首条消息」提供方（行 id = session-title-llm），
-# 让位给本插件的提供方。行为不变：本插件同样以 first-prompt 节奏注册，
-# 第 1 轮照样会生成标题。
-- id: session-title-llm
-  name: '@deepseek-ai/dsh-session-title-first-prompt-llm'
-  disabled: true
+# 2026-10-12：原先此处停用 DSH 内置的「首条消息」标题提供方
+# （id = session-title-llm），为 @fish-under-sea/dsh-session-title-refresh 让位。
+# 该插件已从本聚合包移出（DSH 自 v0.2.1-alpha.2 起内置会话自动重命名），
+# 故这段停用一并移除 —— 否则内置提供方被停用却没有替代者，会话将不再自动命名。
+# 需要本插件时单独安装：dsh plugin --profile <profile> add @fish-under-sea/dsh-session-title-refresh
+# （它自带的 patch 会重新停用内置提供方）。
 
 - insert:
-    # 会话标题自动刷新：第 N 轮首次总结命名，此后每 M 轮刷新一次。
-    - id: session-title-refresh
-      name: '@fish-under-sea/dsh-session-title-refresh'
-
     # 审批弹窗中文说明（纯浏览器插件，宿主侧空实现）。
     - id: approval-guide
       name: '@fish-under-sea/dsh-approval-guide'

@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="icon.png" alt="@fish-under-sea/dsh-fish" width="120">
+
 # @fish-under-sea/dsh-fish
 
 **One package to install every Fish-made DSH plugin**
@@ -16,56 +18,12 @@
 
 ---
 
-> **🆕 0.7.7 (2026-10-11):** the three upstream forks catch up with upstream — `dsh-agent-teams-fish` **0.5.1 → 0.6.0**, `dsh-better-reasoning-effort-fish` **0.5.7 → 0.5.8**, `dsh-our-free-model` **2.0.0 → 2.1.0** (dependency ranges raised to **`^0.6.0`** / **`^0.5.8`** / **`^2.1.0`**).
+> **🆕 0.7.8 (2026-10-12):** **`@fish-under-sea/dsh-session-title-refresh` moves out, and the bundle gains a custom icon.**
 >
-> - **`dsh-agent-teams-fish` 0.6.0**: merges upstream v0.1.23 (37 commits) — **member tool policies** (assign a policy ID per member; the four required coordination tools always stay; it governs tool availability only, not an OS sandbox), **quality-gate contracts bound to revisions** (a verdict is bound to the actual artifact bytes and the full repair lineage), **repair-contract retention with stale-source warnings** (no deadlock on a failed dependency), **out-of-scope finding escalation** (escalate with a reason instead of creating an impossible repair task), **lineage identity across fork chains**, **workspace audit**, and **degraded reads of a corrupt `team.json`**. All three conflicts were resolved by keeping both sides, so Fish's custom artwork-directory resolution, client degradation chain and captain-avatar-follows-route behaviour are fully retained.
-> - **`dsh-better-reasoning-effort-fish` 0.5.8**: merges upstream's three installation routes (pin a version to install immediately under the 24-hour `minimum-release-age`; the tarball attached to the release; GitHub source install). **0.5.7 was already published**, and this repository's HEAD carries one extra README commit, so the version moves to 0.5.8.
-> - **`dsh-our-free-model` 2.1.0**: merges upstream v2.1.0 (17 commits) — **combos**, **token-saver**, a **native Anthropic gateway**, the `standalone` split, channel packs and the Kilo channel, and an updater snapshot-SHA fix. Fish's **hide channel model groups** master switch and **area-based image pricing** are fully retained.
-> - ⚠️ **Repository rename**: `dsh-our-free-model` moved from `Our-Free-Mode-fish` to [`dsh-our-free-model-fish`](https://github.com/Fish-under-sea/dsh-our-free-model-fish) (the old name is dead); all 4 links and install examples in both READMEs are updated.
-> - ⚠️ **`dsh-our-free-model`'s in-app one-click upgrade is unavailable for now**: its self-updater verifies an Ed25519 signature over `feed/manifest.json`, and re-signing needs the upstream release private key (not available here). **npm installs are unaffected** (no `prepublishOnly`, and `feed/` and `catalog/` are not in `files`).
-> - **Tests**: at-fork's artwork and quality-gate suites are green (custom artwork 21/21, role matching 41/41, quality-gate amendments 9/9, plus five new upstream gates); ofm's `channel-visibility` and `image-pricing` suites pass; brf typechecks.
-
----
-
-> **🆕 0.7.6 (2026-10-11):** `@fish-under-sea/dsh-git-sync` **0.3.2 → 0.3.3** (dependency range `^0.3.2` → **`^0.3.3`**) — **the wallpaper engine's collection scope collapses from four entries to one**.
->
-> - **Why**: the wallpaper engine's ADR-0011 promoted "presets" from a **glass-subset snapshot** to a **whole-machine configuration snapshot** and added import / export. The file from "Export preset…" (here `$DSH_HOME/FISH.json`) **is** that plugin's configuration surface — `values` has 116 keys vs `config.json.settings`' 132, and the **difference is exactly the 12 hard-excluded keys plus 4 asset pointers**, with the `assets` segment **embedding the font and mascot payloads**. ⇒ The previous four entries (`wallpaper-engine/config.json` + `glass-presets/` + `fontsets/` + `mascot/`, via an extra scan root) are all redundant.
-> - **It also fixes a real defect**: collection is a **one-way copy**, so files you delete locally inside an allowlisted **directory** stay in the repo forever and are reported as "extra in repo N". This machine's panel read `4 files differ (added 0 · changed 1 · extra in repo 3)` — all 3 extras sat in the dropped directories (two old-format glass presets plus an old mascot), and it now reads **zero**. ⚠️ This only cures the wallpaper-engine spot; directory-level entries such as `skills/` still grow-only.
-> - **Extra scan roots kept, table now empty**: `EXTRA_ROOTS` remains the general landing spot for "a plugin stores its data outside `$DSH_HOME`".
-> - **⚠️ Restore is not automatic**: `dsh-git-sync` only carries the file back to `$DSH_HOME/FISH.json`; **it takes effect when you click "Import preset…" in the wallpaper engine panel and pick it, then click that preset in the list** (imported ≠ applied). Skip those steps and a new machine shows the wallpaper engine at factory state while the panel still reports "pending 0" — a **silent failure**. The config repo's README and AGENT-GUIDE.md gained a dedicated section.
-> - **Tests**: the sync engine goes 178 → **188** cases, all passing (a regression now asserts that a locally deleted snapshot is honestly reported as `removed`; the old "font sets / mascot travel with the config" section became "payloads are embedded, asset directories are no longer collected"). The config repo's `dsh-sync.ps1` allowlist was aligned to 0.3.3 as well, catching it up on the 0.2.7–0.3.2 entries it had fallen behind on.
-
----
-
-> **0.7.5 (2026-10-11):** `dsh-agent-teams-fish` **0.5.0 → 0.5.1** (dependency range `^0.5.0` → **`^0.5.1`**) — **degradation-chain fix + refined vendor matching**.
->
-> - **The chain defect (the headline)**: the old chain `vendor+role → role → vendor` let the role-generic image (the 8 packaged whales, which exist for **every** role) always win, turning the vendor hop into dead code. The symptom on screen was exactly "**the badge already shows the StepFun mark, yet the avatar is the generic role whale**" — vendor detection was fine; the chain order was wrong. Consequences: the vendor character was permanently unreachable for the **7 vendors** that ship only a generic portrait (`meta` / `mistral` / `rwkv` / `seed` / `ernie` / `stepfun` / `jev`), and `member-<vendor>-full-v2.webp` (**17 vendor portraits**) could never win either (click-to-enlarge only produced a 256px role avatar). The chain is now **`vendor+role → vendor → role`** — vendor wins, with the role image still at the tail.
-> - **Why the gate missed it**: it only pinned **hop 1**, while the accident happened at hop 2. 0.5.1 adds three assertions (hop 2 reachable, vendor hop index before the role hop, `-full` prefers the vendor portrait).
-> - **Recognition refinements**: `stepfun` gains its **letter families** (`step-asr` / `step-tts-mini` / `stepaudio-*` — the old rule required a digit after `step` and missed them all); `glm` gains `charglm` / `codegeex` / `cogview` / `cogvideo`; `qwen` gains `dashscope` / `aliyun`; `gemini` gains `palm-<digit>` / `bison` / `gecko` / `vertex`; `seed` gains `byteplus` / `skylark`; `minimax` gains `speech-<digit>`; and `\bern` is tightened to `\bernie` so `ernest` is no longer swallowed.
-> - See [dsh-agent-teams-fish v0.5.1](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.5.1.md).
-
----
-
-> **0.7.4 (2026-10-11):** `dsh-agent-teams-fish` **0.4.3 → 0.5.0** (dependency range `^0.4.3` → **`^0.5.0`**) — the **third round of vendor artwork**: the vendor namespace goes **15 → 17**, adding **StepFun** and **Jev** (TypeSafe System One); in-package assets go **280 → 286 files**.
->
-> - **Tier**: both ship only a generic vendor portrait + HD portrait, the same tier as `meta` / `mistral` / `rwkv` / `seed` / `ernie`. A member request for `member-<vendor>-<role>-v2.png` misses hop 1, and [0.5.1](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.5.1.md) then made hop 2 land on **the vendor's own character** (0.5.0 itself mistakenly landed on the role-generic image — precisely the chain defect 0.5.1 fixed; this machine has no chibi role art for either vendor yet).
-> - **Recognition**: `stepfun` matches the provider name, the `step-<digit>` model family, and 阶跃. The **model-family clause is required**: this machine's three Step routes (S1 / S2 / S3) use `cn-f/cline/cline-free`-style provider segments that **never contain "stepfun"** while the model is `step-5-preview`, so matching the provider alone would drop the whole team to fallback avatars. `jev` matches `jev` / `typesafe` / `type-safe`, and both keep word boundaries (`stepper` / `steps` / `jevons` are not swallowed).
-> - ⚠️ **`brand-jev.svg` is a placeholder monogram, not an official mark**: TypeSafe / Jev has no public logo (neither simple-icons nor LobeHub icons carries one), while the plugin gate requires a `brand-<vendor>.svg` for every vendor — so a minimal "J" mark was drawn under the existing normalization contract. Replace that file once an official mark exists.
-> - See [dsh-agent-teams-fish v0.5.0](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.5.0.md).
-
----
-
-> **0.7.3 (2026-10-10):** `dsh-agent-teams-fish` **0.4.2 → 0.4.3** (dependency range `^0.4.2` → **`^0.4.3`**) — a **documentation-only release, binary-equivalent to 0.4.2**. The 0.4.2 release fixed "the captain avatar follows the route" but missed "Captain does not follow model routing" in the known-limitations table, leaving the same document asserting both. The code was fine; **an npm package's README is frozen at publish time and cannot be edited afterwards**, so the corrected text could only reach npm through another release. This version's `lib/` runtime code is byte-identical to 0.4.2 — upgrading only removes the self-contradiction from the npm page. See [dsh-agent-teams-fish v0.4.3](https://github.com/Fish-under-sea/dsh-agent-teams-fish/blob/main/release-notes/v0.4.3.md).
-
----
-
-> **0.7.2 (2026-10-10):** Two members upgraded together — `@fish-under-sea/dsh-session-title-refresh` **0.3.2** and `dsh-agent-teams-fish` **0.4.2**.
->
-> **① Title refresh (0.3.2): fixes "when the title model does not support the `off` rung, every auto-naming attempt fails with `UNSUPPORTED_REASONING_EFFORT`."** To cure "thinking eats the whole output budget", 0.3.1 sent `reasoningEffort: 'off'` **unconditionally**, but **DSH core hard-validates an explicit effort and never degrades it** (it throws outright when the model does not declare the rung, and also throws for any explicit effort when the model carries no reasoning metadata at all), while `dsh-llm-pi-ai` pins every undeclared rung to unsupported — so auto-naming died for **every model that does not declare `off`** (**33 of 58** in the real configuration). 0.3.2 now **probes before it speaks**: it reads the model's real rungs, sends `off` when thinking can be disabled, falls back to the lowest rung it does support, and omits the field entirely when there is none. Core 25 + host 25 + client 13 = **63** cases, all passing.
->
-> **② AgentTeams (0.4.2): fixes "the captain avatar is always the DeepSeek one."** Switching the captain to qwen / claude / glm left the avatar unchanged — not for lack of artwork (all 10 vendors' captain images shipped long ago) but because the client **hard-coded the captain image** as the constant `team-lead-deepseek-v2.png`, leaving the other 9 permanently unreachable; the host side also recorded only `captainSessionId`, never the captain's model route. 0.4.2 writes `captainProvider` / `captainModel` at team creation, exposes them in the snapshot (live value wins), and uses the same vendor detection as members. artwork-role-match 30 → **34** cases plus 2 new gates.
->
-> ⚠️ **Installation convention for the eighth member**: this bundle inserts the `id: our-free-model` row, and `dsh-our-free-model`'s own bundle layer inserts the same id — the aggregate patch **does not dedupe**, so both taking effect means a **duplicate mount and a failed startup**. Keep it in the profile's `devDependencies` (it still installs, and reconciliation never promotes it to a bundle layer) and do **not** list it in `dsh.profile.bundles` (see [Installation](#installation) and "[why sub-packages belong in devDependencies](#option-2-install-from-the-git-repository-reproducible-across-machines)").
+> - **Why it moved out**: DSH has shipped **built-in automatic session renaming since `v0.2.1-alpha.2`**, which overlaps with that plugin's core purpose. The plugin is now **unmaintained** (its source stays under `packages/`, and the published npm versions remain installable on their own); the bundle no longer ships it.
+> - **⚠️ A patch block is withdrawn along with it (important)**: this bundle used to **disable DSH's built-in first-prompt title provider** (`session-title-llm`) to make room for that plugin. With the plugin gone, that disable must go too — otherwise the built-in provider is switched off with nothing replacing it and **sessions stop being named automatically**. The built-in provider is now active again.
+> - **Still want the old plugin?** `dsh plugin --profile <profile> add @fish-under-sea/dsh-session-title-refresh` works as before, and its own patch re-disables the built-in provider. Its README now carries an unmaintained notice at the top.
+> - **Member count 8 → 7**; the bundle also gains a **custom icon**, `icon.png` (384×384 · 231 KB, within DSH's 256 KiB limit), shown on Plugin Manager cards and in the inventory detail view.
 >
 > Older releases are recorded in [CHANGELOG.en.md](CHANGELOG.en.md).
 
@@ -73,9 +31,9 @@
 
 ## What is this
 
-An aggregate package for Fish-made [DSH](https://github.com/Fish-under-sea/DSH) (DeepSeek Harness) plugins. The repository root is the **bundle package**; sub-plugin sources live under `packages/`. The bundle uses its own bundle layer (`cordis.patch.yml`) to **insert all eight plugin entries at once** into the profile's roster — five are local sub-plugins under `packages/` in this repository, and three are **external companion forks**: `dsh-agent-teams-fish`, `dsh-better-reasoning-effort-fish` and `dsh-our-free-model` (each in its own repository, not sub-packages of this one).
+An aggregate package for Fish-made [DSH](https://github.com/Fish-under-sea/DSH) (DeepSeek Harness) plugins. The repository root is the **bundle package**; sub-plugin sources live under `packages/`. The bundle uses its own bundle layer (`cordis.patch.yml`) to **insert all seven plugin entries at once** into the profile's roster — four are local sub-plugins under `packages/` in this repository, and three are **external companion forks**: `dsh-agent-teams-fish`, `dsh-better-reasoning-effort-fish` and `dsh-our-free-model` (each in its own repository, not sub-packages of this one).
 
-> **Installing `@fish-under-sea/dsh-fish` once = installing all eight plugins.**
+> **Installing `@fish-under-sea/dsh-fish` once = installing all seven plugins.**
 
 **Naming difference (easy to trip on):** npm package names `@fish-under-sea/*` carry a scope, but the repository directory name (`dsh-fish/`) and the GitHub repository name (`Fish-under-sea/dsh-fish`) **do not**.
 
@@ -84,27 +42,24 @@ An aggregate package for Fish-made [DSH](https://github.com/Fish-under-sea/DSH) 
 | Sub-package | Version | Description |
 |-------------|:-------:|-------------|
 | [`dsh-approval-guide`](packages/dsh-approval-guide) | 0.2.2 | Appends **Chinese explanations** to approval dialogs: what this approval will do, what risks are involved, and what it is based on |
-| [`dsh-session-title-refresh`](packages/dsh-session-title-refresh) | 0.3.2 | **Auto-refresh session titles**: summarize and name at round N, then refresh every M rounds; the "Title model (optional)" dropdown is sourced from the same provider/model list as the official Models page; the title call's **reasoning effort is chosen from the model's real capability** (off when possible, otherwise the lowest supported rung, omitted when there is no metadata), the default output budget is 256, and a `max-tokens` result is accepted when it carries text |
-| [`dsh-git-sync`](packages/dsh-git-sync) | 0.3.3 | **One-click Git sync**: collect plugin list, enable states, local settings, Skills, ledger, settings-nav-order preferences, **title auto-refresh settings**, the **free-model plugin's configuration and usage ledger**, and the **wallpaper engine's whole-machine snapshot** (`$DSH_HOME/FISH.json`, asset payloads embedded) into your own private repository. 0.3.3 collapses the wallpaper engine's previous four entries (`config.json` + three asset directories, via an extra scan root) into **one** — that plugin now supports exporting a whole-machine snapshot; this also fixes directory-level "extra in repo" residue (measured `4 files differ (added 0 · changed 1 · extra in repo 3)` → zero). The extra-scan-root mechanism is kept with an empty table |
+| [`dsh-git-sync`](packages/dsh-git-sync) | 0.4.0 | **One-click Git sync**: collect the plugin list, enable states, local settings, Skills, the task-board/usage ledgers, the settings-nav-order preference, the **free-model plugin config and usage ledger**, and the **wallpaper engine whole-machine snapshot** (`$DSH_HOME/FISH.json`, payloads embedded) into your own private git repository. **0.4.0 adds "Export private config"**: copies the credential-bearing files (`channel-pack/` roster / check-in / ledger, `.credentials.yaml`, `our-free-model/eac-user.json`) **purely locally** into a `DSH私钥配置` folder under a chosen directory (Desktop by default), together with an explanatory README — it never touches git, makes no network request, and never logs credential contents. **That path is entirely separate from git sync**, because credentials sit on the sync hard blacklist and never travel with the repository |
 | [`dsh-settings-nav-order`](packages/dsh-settings-nav-order) | 0.1.5 | **Settings nav reordering**: arrange the left sidebar menu in the settings panel to your own order and hide items you don't want to see; preferences **restore across machines** via the Git sync plugin |
 | [`dsh-visual-companion`](packages/dsh-visual-companion) | 0.1.7 | **Visual Companion wake**: preview prototypes / compare layouts on the web, select + annotate, then press "Submit to assistant" — the session automatically receives a user message and starts a new round, no need to go back to the terminal to repeat; **the selection process is silent, only the submission wakes the session once** (since 0.1.7 the version in the load log is read live from `package.json`, no longer hard-coded) |
 | [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) | 0.6.0 | **AgentTeams multi-agent collaboration** (companion fork of upstream [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams)): natural-language team building, member/task dependency DAG, mailbox communication, right-sidebar tree monitoring; **vendor avatar assets shipped in-package** (**17 vendors** × 10 roles + vendor-generic art + portraits + captain + brand SVGs, **286 files / ~29.3 MB**, including a 1024×1024 HD WebP family), available immediately after install, no `artworkDir` dependency across machines; custom directory still overrides the full set; brand SVGs served by extension; **the captain avatar follows the captain's own model route** (fixed in 0.4.2); **0.5.1 fixed the degradation-chain order** (now `vendor+role → vendor → role`); **0.6.0 merges upstream v0.1.23** — member tool policies, quality-gate contracts bound to revisions, repair-contract retention with stale-source warnings, out-of-scope finding escalation, lineage identity across fork chains, workspace audit, and degraded reads of a corrupt `team.json`, with Fish's custom artwork resolution and degradation chain fully retained |
 | [`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish) | 0.5.8 | **Reasoning effort & input modality** (fork of upstream [HaoyueQin/dsh-better-reasoning-effort](https://github.com/HaoyueQin/dsh-better-reasoning-effort)): edit per-model `reasoningEfforts` and `input` declarations directly in the official Models page edit card, with one-click auto-adaptation; this fork yields the `settings.models.provider-card` slot entirely to the model capabilities panel; 0.5.8 merges upstream's three installation routes (pin a version under the release-age window, the release tarball, GitHub source install) |
 | [`dsh-our-free-model`](https://github.com/Fish-under-sea/dsh-our-free-model-fish) | 2.1.0 | **Free models & channel aggregation** (fork of upstream [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model)): folds 13 free channels (CodeArts / CodeBuddy / Loomy / Raccoon / MiniMax / Gemini and more) and free models into the official model picker, and ships its own channel gateway for other local harnesses to proxy. This fork adds a **"hide channel model groups" master switch** — the channel groups mix with your own configured providers and stretch the picker, and turning it on collapses all 13 at once; **display only, never routing** (gateway requests go through `resolveModelInfo()`, so hidden models keep working), and the channel settings page's "show list / disable all" reads `listAllModels()`, also unaffected; off by default, so an upgrade never silently changes the list you see. **2.1.0 merges upstream v2.1.0** — combos, token-saver, a native Anthropic gateway, the `standalone` split, channel packs and the Kilo channel, and an updater snapshot-SHA fix, with Fish's hide-channel-groups switch and area-based pricing fully retained |
 
-## This package disables a built-in DSH plugin
+## This package no longer disables any built-in plugin
 
-**This is behavior you must know before using** — `cordis.patch.yml` explicitly disables DSH's built-in session title provider:
+**Behavior change as of 0.7.8** — the bundle used to explicitly disable DSH's built-in session title provider (`session-title-llm`) to make room for `dsh-session-title-refresh` (the session title service accepts only **one provider per process**; a second registration throws immediately).
 
-```yaml
-- id: session-title-llm
-  name: '@deepseek-ai/dsh-session-title-first-prompt-llm'
-  disabled: true
+Now that the plugin has moved out, that disable is **withdrawn as well** and the built-in provider is active again. **This matters**: removing the plugin while keeping the disable would switch the built-in provider off with nothing replacing it, so **sessions would stop being named automatically**.
+
+If you still want the old plugin, install it on its own — its own patch re-disables the built-in provider:
+
+```powershell
+dsh plugin --profile <profile> add @fish-under-sea/dsh-session-title-refresh
 ```
-
-**Reason**: the session title service accepts only **one provider per process**; a second registration throws immediately. So the built-in must yield to `dsh-session-title-refresh` first.
-
-**Behavioral difference**: this plugin also registers at `first-prompt` cadence, and **round 1 still generates a title** — no perceptible difference in daily use, but you should know that this built-in plugin is disabled by this bundle.
 
 ## Installation
 
@@ -114,11 +69,11 @@ An aggregate package for Fish-made [DSH](https://github.com/Fish-under-sea/DSH) 
 dsh plugin --profile <profile> add @fish-under-sea/dsh-fish
 ```
 
-The bundle declares all eight plugin dependencies. They are installed as transitive dependencies to the profile top level by pnpm (this profile uses `nodeLinker: hoisted`), and plugin entries resolve by package name.
+The bundle declares all seven plugin dependencies. They are installed as transitive dependencies to the profile top level by pnpm (this profile uses `nodeLinker: hoisted`), and plugin entries resolve by package name.
 
 **Why duplicate entries don't appear**: the reconciliation logic (`reconcile` in `dsh-plugin-manager`) only walks **the profile's own `dependencies`**, not transitive dependencies recursively, so sub-packages are not promoted to bundle layers and entries don't stack.
 
-> ⚠️ **If installation reports `[NOT_FOUND]`**: this package and **all eight** of its member packages are published to the npm **official registry**. If your machine points the registry at a domestic mirror (e.g. `registry.npmmirror.com`), the mirror's **lazy sync** may not have picked up one of the sub-packages yet, so `dsh plugin add` fails with
+> ⚠️ **If installation reports `[NOT_FOUND]`**: this package and **all seven** of its member packages are published to the npm **official registry**. If your machine points the registry at a domestic mirror (e.g. `registry.npmmirror.com`), the mirror's **lazy sync** may not have picked up one of the sub-packages yet, so `dsh plugin add` fails with
 > `404 Not Found … {"error":"[NOT_FOUND] @fish-under-sea/<sub-package> not found"}`.
 > **This does not mean the package doesn't exist** — pick any of the following:
 >
@@ -126,7 +81,6 @@ The bundle declares all eight plugin dependencies. They are installed as transit
 >   ```sh
 >   curl.exe -X PUT https://registry.npmmirror.com/-/package/@fish-under-sea/dsh-approval-guide/syncs
 >   curl.exe -X PUT https://registry.npmmirror.com/-/package/@fish-under-sea/dsh-git-sync/syncs
->   curl.exe -X PUT https://registry.npmmirror.com/-/package/@fish-under-sea/dsh-session-title-refresh/syncs
 >   curl.exe -X PUT https://registry.npmmirror.com/-/package/@fish-under-sea/dsh-settings-nav-order/syncs
 >   curl.exe -X PUT https://registry.npmmirror.com/-/package/@fish-under-sea/dsh-visual-companion/syncs
 >   curl.exe -X PUT https://registry.npmmirror.com/-/package/dsh-agent-teams-fish/syncs
@@ -148,7 +102,7 @@ The bundle declares all eight plugin dependencies. They are installed as transit
 "devDependencies": {
   "@fish-under-sea/dsh-approval-guide": "github:Fish-under-sea/dsh-fish#path:packages/dsh-approval-guide",
   "@fish-under-sea/dsh-git-sync": "github:Fish-under-sea/dsh-fish#path:packages/dsh-git-sync",
-  "@fish-under-sea/dsh-session-title-refresh": "github:Fish-under-sea/dsh-fish#path:packages/dsh-session-title-refresh",
+
   "@fish-under-sea/dsh-settings-nav-order": "github:Fish-under-sea/dsh-fish#path:packages/dsh-settings-nav-order",
   "@fish-under-sea/dsh-visual-companion": "github:Fish-under-sea/dsh-fish#path:packages/dsh-visual-companion",
   "dsh-agent-teams-fish": "github:Fish-under-sea/dsh-agent-teams-fish",
@@ -156,7 +110,7 @@ The bundle declares all eight plugin dependencies. They are installed as transit
 }
 ```
 
-`#path:` is pnpm's sub-directory syntax, letting one repository provide multiple packages — the five sub-packages point to this repository; the three external companion forks point to their respective repositories: [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish), [`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish) and [`dsh-our-free-model`](https://github.com/Fish-under-sea/dsh-our-free-model-fish) (all three are at their repository root, no `#path:` needed). After `pnpm install` on a new machine, packages download directly from the repository with **no dependency on any machine-specific absolute paths**. Only `"@fish-under-sea/dsh-fish"` needs to be listed in `bundles` (its patch handles inserting all eight entries).
+`#path:` is pnpm's sub-directory syntax, letting one repository provide multiple packages — the four sub-packages point to this repository; the three external companion forks point to their respective repositories: [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish), [`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish) and [`dsh-our-free-model`](https://github.com/Fish-under-sea/dsh-our-free-model-fish) (all three are at their repository root, no `#path:` needed). After `pnpm install` on a new machine, packages download directly from the repository with **no dependency on any machine-specific absolute paths**. Only `"@fish-under-sea/dsh-fish"` needs to be listed in `bundles` (its patch handles inserting all seven entries).
 
 ### Option 3: Local development install (source changes take effect immediately)
 
@@ -168,7 +122,7 @@ The bundle declares all eight plugin dependencies. They are installed as transit
 "devDependencies": {
   "@fish-under-sea/dsh-approval-guide": "link:<this-repo-path>/packages/dsh-approval-guide",
   "@fish-under-sea/dsh-git-sync": "link:<this-repo-path>/packages/dsh-git-sync",
-  "@fish-under-sea/dsh-session-title-refresh": "link:<this-repo-path>/packages/dsh-session-title-refresh",
+
   "@fish-under-sea/dsh-settings-nav-order": "link:<this-repo-path>/packages/dsh-settings-nav-order",
   "@fish-under-sea/dsh-visual-companion": "link:<this-repo-path>/packages/dsh-visual-companion",
   "dsh-agent-teams-fish": "link:<dsh-agent-teams-fish repo path>",
@@ -195,11 +149,11 @@ When a sub-package is not at the profile top level, the entry cannot resolve to 
 
 **② When declaring manually, sub-packages go in `devDependencies`**
 
-`dsh plugin` reconciles on every run, automatically appending any package in the profile's `dependencies` that declares `dsh.bundle` into `dsh.profile.bundles`. All eight packages declare `dsh.bundle`, and the bundle's patch already restates all eight entry insertions —
+`dsh plugin` reconciles on every run, automatically appending any package in the profile's `dependencies` that declares `dsh.bundle` into `dsh.profile.bundles`. All seven packages declare `dsh.bundle`, and the bundle's patch already restates all seven entry insertions —
 
 > Once a sub-package is promoted to a bundle layer, entry insertions will **duplicate**, and **duplicate mounting causes application startup failure**.
 
-**This matters most for the eighth member, `dsh-our-free-model`**: its own `cordis.patch.yml` inserts the id `our-free-model`, the **same id** this bundle inserts (`composeEntries` only pushes, it does not dedupe). So you **must** always remove it from `dsh.profile.bundles` (or move it from the profile's `dependencies` into `devDependencies`).
+**This matters most for the seventh member, `dsh-our-free-model`**: its own `cordis.patch.yml` inserts the id `our-free-model`, the **same id** this bundle inserts (`composeEntries` only pushes, it does not dedupe). So you **must** always remove it from `dsh.profile.bundles` (or move it from the profile's `dependencies` into `devDependencies`).
 
 Placing them in `devDependencies` still installs them at the profile top level (entry names still resolve correctly), but they won't be promoted to bundle layers by the reconciliation logic.
 
@@ -210,7 +164,7 @@ The five local sub-plugins' parameters are **not written in `cordis.patch.yml`**
 | Plugin | Settings entry | Config file |
 |--------|---------------|-------------|
 | `approval-guide` | No configuration | — |
-| `session-title-refresh` | Settings → Session title auto-refresh | `$DSH_HOME/dsh-session-title-refresh/config.json` |
+
 | `git-sync` | Settings → Git sync | `$DSH_HOME/dsh-git-sync/config.json` |
 | `settings-nav-order` | Settings → Settings nav order | No config file; preferences live in browser `localStorage` (key `dsh-settings-nav-order/v1`) and are mirrored to `$DSH_HOME/dsh-settings-nav-order/state.json` (collected by `git-sync`) |
 | `dsh-visual-companion` | No settings page (configuration is in its own profile patch plugin entry) | Same as above (`watchDir`: visual companion root directory, used for "auto-bind on load") |
@@ -251,7 +205,7 @@ The order of the left column menu in the settings panel (General / Models / Buil
 ```text
 dsh-fish/                 # Repository directory name (npm package name is @fish-under-sea/dsh-fish)
 ├── package.json          # Bundle manifest (version 0.7.6, dsh.bundle.patch points to cordis.patch.yml)
-├── cordis.patch.yml      # Bundle layer: disables built-in title plugin + inserts eight plugin entries
+├── cordis.patch.yml      # Bundle layer: disables built-in title plugin + inserts seven plugin entries
 ├── CHANGELOG.en.md       # Full release history (the README keeps only the latest release)
 ├── pnpm-workspace.yaml   # Workspace declaration (local development only)
 ├── lib/                  # Bundle's own empty implementation (this package registers nothing)
@@ -259,7 +213,7 @@ dsh-fish/                 # Repository directory name (npm package name is @fish
 │   └── client.js
 └── packages/
     ├── dsh-approval-guide/
-    ├── dsh-session-title-refresh/
+
     ├── dsh-git-sync/
     ├── dsh-settings-nav-order/
     └── dsh-visual-companion/
@@ -267,7 +221,7 @@ dsh-fish/                 # Repository directory name (npm package name is @fish
 
 > The three external companion forks are **not** under `packages/` — `dsh-agent-teams-fish` source lives in [its own repository](https://github.com/Fish-under-sea/dsh-agent-teams-fish), `dsh-better-reasoning-effort-fish` in [another repository](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish), and `dsh-our-free-model` in [a third](https://github.com/Fish-under-sea/dsh-our-free-model-fish); all three are installed at the profile top level as **npm dependencies** of the bundle.
 
-> **Why sub-packages are not bundled in the aggregate's `files`**: the bundle only carries `lib/`, `cordis.patch.yml`, and `README*.md`. The five sub-packages and three external companion forks are all installed at the profile top level as **npm dependencies** (see Option 1). Only when "one repository provides multiple packages, installed from GitHub" do you need to declare them explicitly with `#path:` in the installer's profile (see Option 2).
+> **Why sub-packages are not bundled in the aggregate's `files`**: the bundle only carries `lib/`, `cordis.patch.yml`, and `README*.md`. The four sub-packages and three external companion forks are all installed at the profile top level as **npm dependencies** (see Option 1). Only when "one repository provides multiple packages, installed from GitHub" do you need to declare them explicitly with `#path:` in the installer's profile (see Option 2).
 
 ## Development
 
@@ -275,7 +229,7 @@ dsh-fish/                 # Repository directory name (npm package name is @fish
 pnpm install                                                          # Install workspace dependencies
 
 node packages/dsh-approval-guide/test/guide.test.mjs                  # Run tests
-node packages/dsh-session-title-refresh/test/run-all.mjs
+
 node packages/dsh-git-sync/test/client.test.mjs
 node packages/dsh-git-sync/test/test-sync-engine.mjs
 node packages/dsh-git-sync/test/commit-identity.test.mjs
@@ -293,7 +247,7 @@ A package name is not just a string in `package.json` — **five places must be 
 | # | Location | Consequence of missing it |
 |:-:|----------|--------------------------|
 | 1 | `name` in six `package.json` files | Installer's dependency keys won't match |
-| 2 | Entry `name` in the bundle and five sub-package `cordis.patch.yml` files | Entry can't resolve the package; plugin doesn't load at all |
+| 2 | Entry `name` in the bundle and four sub-package `cordis.patch.yml` files | Entry can't resolve the package; plugin doesn't load at all |
 | 3 | ⚠️ **`id` in `__ModuleLoader__.load({ id })` inside `lib/client.js` for packages with a client side (four sub-packages in this repo + two external companions)** | **Client side reports `loaded without registering "<package name>"`; plugin fails to load** |
 | 4 | Installer's profile dependency keys and `bundles` | Dependencies won't install; bundle layer won't expand |
 | 5 | Sub-package placement in the profile | Must go in `devDependencies` (see pitfall ② above) |
@@ -306,7 +260,7 @@ Good news: client tests for all four sub-packages with a client side assert this
 
 ## License
 
-**MIT** (consistent across the bundle and all five sub-packages).
+**MIT** (consistent across the bundle and all four sub-packages).
 
 The three external companion forks are also distributed under **MIT**, with **copyright belonging to their respective upstream original authors**:
 
@@ -316,8 +270,8 @@ The three external companion forks are also distributed under **MIT**, with **co
 
 See each companion fork's `NOTICE.md` for provenance, attribution, and scope of changes.
 
-> A `LICENSE` file is placed at the repository root, consistent with the `license` field in `package.json` (MIT) and all five sub-packages.
+> A `LICENSE` file is placed at the repository root, consistent with the `license` field in `package.json` (MIT) and all four sub-packages.
 
 ---
 
-<sub>Bundle <code>@fish-under-sea/dsh-fish</code> v0.7.7 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
+<sub>Bundle <code>@fish-under-sea/dsh-fish</code> v0.7.8 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>

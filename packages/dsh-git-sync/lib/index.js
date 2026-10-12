@@ -193,6 +193,119 @@ const NEVER_COPY = new Set([
   'eac-user.json',
 ]);
 
+/**
+ * ── 私钥配置导出（纯本机磁盘拷贝，不经任何云）──────────────────────────
+ *
+ * ⚠️ 与「同步到 git 仓库」是**两条完全不同的通路**，务必分清：
+ *
+ *   同步（WHITE_LIST） → 私有 git 仓库。凭据**一律不进**（NEVER_COPY 硬拦）。
+ *   导出（本清单）     → 本机磁盘上的一个文件夹。**可以含凭据**，因为它
+ *                        从不上传：不碰 git、不发任何网络请求。
+ *
+ * 用途：换机时把这几份「带凭据的配置」用 U 盘 / 局域网手工拷过去。
+ * 正因如此，导出目录**不在** WHITE_LIST 里，也永远不该进去 —— 一旦进去，
+ * 凭据就会随同步推到 git 远端，与「凭据只走本地」的约定直接冲突。
+ *
+ * `need` / `what` / `back` 只用于生成导出目录里的 README 文案，不影响导出本身：
+ * 凡是本机读得到的，都照拷。
+ */
+const PRIVATE_EXPORT_DIR_NAME = 'DSH私钥配置';
+
+const PRIVATE_EXPORT_FILES = [
+  {
+    rel: 'channel-pack/state.json',
+    need: '必需',
+    what: '渠道账号花名册与凭据索引：每个账号的 provider、昵称、启用状态、到期时间，以及指向凭据本体的 credentialRef。本身不含明文密钥，但缺了它账号列表就空了。',
+  },
+  {
+    rel: 'channel-pack/auto-checkin.json',
+    need: '可选',
+    what: '自动签到记录（今天哪些账号已经领过额度）。不带也能用，代价是换机后当天会重新计一次。',
+  },
+  {
+    rel: 'channel-pack/token-ledger.json',
+    need: '可选',
+    what: '用量账本（各账号累计 token 与请求数）。不带也能用，代价是换机后统计从零开始。',
+  },
+  {
+    rel: '.credentials.yaml',
+    need: '必需',
+    what: '⚠️ 凭据本体：所有渠道账号的密钥都在这一个文件里。它从不进 git 仓库（硬黑名单），只能靠手工搬运。',
+  },
+  {
+    rel: 'our-free-model/eac-user.json',
+    need: '视情况',
+    what: '⚠️ 共创通道的 GitHub 登录 token 与登录名（与渠道账号无关）。不搬就要在新机器上重新授权一次。',
+  },
+];
+
+/** 导出目标目录：设置里的值 > 桌面（不存在则退回用户目录）。 */
+function resolveExportDir(settings) {
+  const configured = String(settings?.exportDir ?? '').trim();
+  if (configured) return path.resolve(configured);
+  const desktop = path.join(os.homedir(), 'Desktop');
+  return fs.existsSync(desktop) ? desktop : os.homedir();
+}
+
+/**
+ * 导出目录里的 README（固定模板，随每次导出重写）。
+ *
+ * 这份文案是本功能的安全边界之一：它必须把「哪些文件带凭据」和
+ * 「这些东西绝不允许上传」讲到不会被误读的程度。
+ */
+function privateExportReadme(exported, generatedAt) {
+  const rows = exported
+    .map((item) => `| \`${item.rel}\` | ${item.need} | ${item.what} |`)
+    .join('\n');
+  return `# DSH 私钥配置（本机导出）
+
+> 导出时间：${generatedAt}
+> 导出目录：本文件夹由 dsh-git-sync 的「导出私钥配置」生成。
+
+## ⚠️ 先读这一段
+
+**本文件夹里含真实凭据。绝对不要**把它上传到任何云盘、git 仓库、聊天软件或网盘同步目录。
+换机时请用 U 盘或局域网直连手工拷贝。
+
+它与「Git 同步」是两回事：**Git 同步永远不会带上这些文件**（凭据在硬黑名单里），
+所以这些文件只能这样手工搬。
+
+## 这些文件是什么、搬到哪里去
+
+把下表的「放回位置」按相同的相对路径拷回新机器的 \`$DSH_HOME\` 即可。
+
+| 文件 | 要不要带 | 说明 |
+|------|---------|------|
+${rows}
+
+## 放回位置（新机器）
+
+假设新机器的 \`$DSH_HOME\` 是 \`C:\\Users\\<你>\\.dsh\`，则：
+
+\`\`\`
+本文件夹\\channel-pack\\state.json        →  $DSH_HOME\\channel-pack\\state.json
+本文件夹\\channel-pack\\auto-checkin.json →  $DSH_HOME\\channel-pack\\auto-checkin.json
+本文件夹\\channel-pack\\token-ledger.json →  $DSH_HOME\\channel-pack\\token-ledger.json
+本文件夹\\.credentials.yaml               →  $DSH_HOME\\.credentials.yaml
+本文件夹\\our-free-model\\eac-user.json   →  $DSH_HOME\\our-free-model\\eac-user.json
+\`\`\`
+
+拷完**重启 DSH** 生效。
+
+## 覆盖前先备份
+
+新机器如果已经有同名的 \`state.json\` / \`.credentials.yaml\`，先把原文件改个名留底，
+再覆盖。凭据文件覆盖错了不容易恢复。
+
+## 关于「导入」
+
+本功能只负责**导出**，不提供「导入」按钮 —— 这几份文件直接手工拷回上述位置即可。
+DSH 与 dsh-git-sync 在任何时候都**不会主动读取**这些凭据文件的内容去上传或比对：
+\`.credentials.yaml\`、\`eac-user.json\` 都在同步硬黑名单里，任何同步动作都读不到它们。
+`;
+
+}
+
 const SECRET_NAME_RE = /(^|[\\/])(\.credentials|\.env|credentials\.|.*\.pem$|.*\.key$|.*\.bak)/i;
 
 /**
@@ -263,6 +376,9 @@ function resolveSettings(home, config) {
   );
   return {
     repoDir: path.resolve(repoDir),
+    // 导出目标目录：留空即用桌面（见 resolveExportDir）。这里只做字符串透传，
+    // 「不存在就退回用户目录」的兜底在 resolveExportDir 里判。
+    exportDir: String(state.exportDir || cfg.exportDir || '').trim(),
     lastRun: state.lastRun ?? null,
   };
 }
@@ -731,6 +847,9 @@ async function readStatus(home, settings) {
   const status = {
     home,
     repoDir: settings.repoDir,
+    // 导出目标（面板要显示「实际会导到哪里」，所以给出解析后的绝对值）。
+    exportDir: settings.exportDir ?? '',
+    exportDirResolved: resolveExportDir(settings),
     repoExists: fs.existsSync(settings.repoDir),
     isGitRepo: fs.existsSync(path.join(settings.repoDir, '.git')),
     branch: null,
@@ -836,6 +955,78 @@ async function syncWithRemote(repoDir, say) {
   return { ok: false, merged: 0 };
 }
 // ── 动作 ──────────────────────────────────────────────────────────────
+/**
+ * 「导出私钥配置」：把带凭据的几份配置拷到本机一个文件夹里。
+ *
+ * 三条硬约束（实现时不要放宽）：
+ *  1. **纯本地** —— 不碰 git、不发任何网络请求；调用链里不允许出现 fetch/git。
+ *  2. **不做内容解析** —— 只做字节拷贝，绝不读取 `.credentials.yaml` /
+ *     `eac-user.json` 的内容去打印、比对或上报（内容一旦进日志就等于外泄）。
+ *  3. **不改宽松权限** —— 走 fs.copyFileSync 而不是 copyFileRobust（后者会把
+ *     目标 chmod 成 0666）；POSIX 下对凭据文件收紧到 0600。
+ */
+function exportPrivateConfig(home, settings) {
+  const log = [];
+  const say = (line) => log.push(line);
+  const target = resolveExportDir(settings);
+  const outDir = path.join(target, PRIVATE_EXPORT_DIR_NAME);
+  const generatedAt = new Date().toLocaleString('zh-CN');
+
+  try {
+    fs.mkdirSync(outDir, { recursive: true });
+  } catch (error) {
+    return {
+      ok: false,
+      log: [`[x] 无法创建导出目录：${outDir}`, `    ${String(error?.message ?? error)}`],
+    };
+  }
+  say(`导出目录：${outDir}`);
+
+  const exported = [];
+  const missing = [];
+  let failed = 0;
+
+  for (const item of PRIVATE_EXPORT_FILES) {
+    const src = path.join(home, ...item.rel.split('/'));
+    const dst = path.join(outDir, ...item.rel.split('/'));
+    if (!fs.existsSync(src)) { missing.push(item.rel); continue; }
+    try {
+      fs.mkdirSync(path.dirname(dst), { recursive: true });
+      fs.copyFileSync(src, dst);
+      try { fs.chmodSync(dst, 0o600); } catch { /* Windows 上是空操作 */ }
+      exported.push(item);
+      say(`  [ok] ${item.rel}（${fs.statSync(dst).size} 字节）`);
+    } catch (error) {
+      failed += 1;
+      say(`  [!] ${item.rel} 复制失败：${String(error?.message ?? error)}`);
+    }
+  }
+
+  for (const rel of missing) say(`  [--] ${rel}（本机不存在，跳过）`);
+
+  // README 一并重写：它记录本次实际导出了哪些文件。
+  let readmeWritten = false;
+  try {
+    fs.writeFileSync(path.join(outDir, 'README.md'), privateExportReadme(exported, generatedAt), 'utf8');
+    readmeWritten = true;
+    say('  [ok] README.md（说明每个文件是什么、要放回哪里）');
+  } catch (error) {
+    say(`  [!] README.md 写入失败：${String(error?.message ?? error)}`);
+  }
+
+  say('');
+  say('⚠️ 该文件夹含真实凭据：请用 U 盘 / 局域网搬运，不要上传到任何云盘或 git 仓库。');
+  say('本功能只做本地拷贝：不碰 git、不发网络请求、不读取凭据文件内容。');
+
+  return {
+    ok: failed === 0 && exported.length > 0 && readmeWritten,
+    log,
+    outDir,
+    exported: exported.map((item) => item.rel),
+    missing,
+  };
+}
+
 async function runAction(home, settings, action, options) {
   const log = [];
   const say = (line) => log.push(line);
@@ -853,6 +1044,12 @@ async function runAction(home, settings, action, options) {
     if (!fs.existsSync(path.join(home, '.credentials.yaml'))) say('[!] 未找到 .credentials.yaml');
     else say('[OK] .credentials.yaml 在硬黑名单中，永不被搬运。');
     return { ok: !scan.findings.length, log, scan };
+  }
+
+  // 导出是**纯本机**动作：不碰仓库、不发网络请求，所以放在仓库目录检查之前 ——
+  // 没配仓库（或仓库不存在）也必须能用它。
+  if (action === 'export') {
+    return exportPrivateConfig(home, settings);
   }
 
   if (!fs.existsSync(settings.repoDir)) {
@@ -979,8 +1176,12 @@ export function apply(ctx, config) {
 
           if (req.method === 'POST' && route === '/config') {
             const repoDir = url.searchParams.get('repoDir');
+            const exportDir = url.searchParams.get('exportDir');
             const patch = {};
             if (repoDir && repoDir.trim()) patch.repoDir = repoDir.trim();
+            // exportDir 允许被清空（清空 = 回到默认的桌面）：只在参数**存在**时写，
+            // 传空串即写空串，避免「想清空却清不掉」。
+            if (exportDir !== null) patch.exportDir = exportDir.trim();
             // includeSessions / includeAttachments 已废弃：会话与附件不再属于同步范围，
             // 这里不再接受这两个开关（旧 config.json 里的残留字段被 resolveSettings 忽略）。
             writeState(home, patch);
@@ -1023,4 +1224,8 @@ export function apply(ctx, config) {
 
 // commitAll / resolveCommitIdentity / githubOwner 都已在各自的定义处导出
 // （它们是「本机没有 git 身份」这条真实故障路径的测试接缝）。
-export { resolveHome, WHITE_LIST, PROFILE_FILES, activeList, NEVER_COPY, testForbidden };
+export {
+  resolveHome, WHITE_LIST, PROFILE_FILES, activeList, NEVER_COPY, testForbidden,
+  PRIVATE_EXPORT_FILES, PRIVATE_EXPORT_DIR_NAME, resolveExportDir, privateExportReadme,
+  exportPrivateConfig,
+};
