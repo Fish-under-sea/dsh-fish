@@ -157,3 +157,15 @@
     # 可选的自动归档与自动清理策略。
     - id: session-archive
       name: '@fish-under-sea/dsh-session-archive'
+
+    # 侧栏内嵌视频预览（Fork）—— 本仓库子包：上游 zemul/dsh-video-preview（MIT）的
+    # 派生版，自带 /video 前缀路由，用流式响应实现 HTTP Range（206），进度条可拖动。
+    #
+    # ⚠️ 本 Fork 修掉了「装上永不激活」：上游宿主半区把已被内核移除的 `webRuntime`
+    # 写进 inject（DSH 0.2.1-alpha.2 起 dsh-web-app 不再 provide 该服务），cordis 对
+    # 缺失服务是「永久 pending」，于是上游版 apply 永不执行、/video 从不注册、视频
+    # 请求落到 SPA 静态兜底并得到空体 405（界面显示裸的 HTTP 405）。本版把该服务从
+    # inject 移除，受信列表改为每请求惰性解析（webRuntime → connection → 空数组），
+    # 空数组等价于只信回环 —— 只会收紧，绝不放宽信任边界。
+    - id: video-preview
+      name: '@fish-under-sea/dsh-video-preview'

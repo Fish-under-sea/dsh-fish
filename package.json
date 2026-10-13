@@ -1,7 +1,7 @@
 {
   "name": "@fish-under-sea/dsh-fish",
-  "version": "0.8.3",
-  "description": "Fish 自建 DSH 插件全家桶聚合包：一键插入十四个插件的插件行 —— 十一个本仓库子包（approval-guide / git-sync / settings-nav-order / visual-companion / skill-lens-fish / task-board / git-graph / model-capabilities / ssh / usage / session-archive）与三个外部补充包（agent-teams / better-reasoning-effort / our-free-model）。",
+  "version": "0.9.0",
+  "description": "Fish 自建 DSH 插件全家桶聚合包：一键插入十五个插件的插件行 —— 十二个本仓库子包（approval-guide / git-sync / settings-nav-order / visual-companion / skill-lens-fish / task-board / git-graph / model-capabilities / ssh / usage / session-archive / video-preview）与三个外部补充包（agent-teams / better-reasoning-effort / our-free-model）。",
   "type": "module",
   "main": "./lib/index.js",
   "exports": {
@@ -34,6 +34,7 @@
     "@fish-under-sea/dsh-ssh": "^0.4.6",
     "@fish-under-sea/dsh-usage": "^0.4.9",
     "@fish-under-sea/dsh-visual-companion": "^0.1.7",
+    "@fish-under-sea/dsh-video-preview": "^0.1.5",
     "dsh-agent-teams-fish": "^0.7.0",
     "dsh-better-reasoning-effort-fish": "^0.5.8",
     "dsh-our-free-model": "^2.1.0"

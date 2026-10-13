@@ -4,6 +4,14 @@
 
 ---
 
+> **🆕 0.9.0（2026-10-13）**：**并入 `dsh-video-preview`（Fork），成员数 14 → 15。**
+>
+> - **新增 1 个上游 Fork**：把 [zemul/dsh-video-preview](https://github.com/zemul/dsh-video-preview)（MIT）fork 进本仓库 `packages/dsh-video-preview`，以 `@fish-under-sea/dsh-video-preview@0.1.5` 自主发布 —— 侧栏内嵌视频预览（`.mp4` / `.webm` / `.mov` / `.mkv` / `.avi` 等），自带 `/video` 路由用流式响应实现 HTTP Range，**进度条可拖动**。
+> - **为什么 fork**：与既有 6 个 Fork 同理 —— 包名要烧进客户端 bundle 的模块注册 id（`dsh-client-modules` 按 `package.json` 的 `name` 认领 factory），改名才能自主发版、并与上游原版在同一进程内共存。
+> - **⚠️ 同时修掉「装上永不激活」（要紧）**：上游宿主半区 `inject: ['webServer', 'sessions', 'webRuntime']`，而 **`webRuntime` 服务已被内核移除**（DSH 0.2.1-alpha.2：`dsh-web-app` 的 web-runtime 行不再 provide 它，`client-connection` 改从 `webStartup` 读受信 authority）。cordis 的 inject 是「服务缺失则**永久 pending**」，于是上游版本在新内核上 apply 永不执行：`/video` 路由从不注册，视频请求落到 SPA 静态兜底，非 GET/HEAD 得到**空体 405**（界面显示裸的 `HTTP 405`）。本 Fork 把 `webRuntime` 从 inject 移除，把受信列表改为**每请求惰性解析**（`webRuntime` → `connection` → 空数组），空数组等价于**只信回环**，因此只会收紧、**绝不放宽信任边界**；并删掉 `dsh.client.inject` 里早已被移除的 `@deepseek-ai/dsh-client-runtime`（留着重则整个客户端 bundle 加载失败）。
+> - **顺手拔掉一根垫片依赖**：本机此前靠 profile 里的 `dsh-webruntime-shim.mjs` 给上游版续命（该垫片同时服务 `dsh-better-sidebar`）。视频预览这一半随本版**不再依赖它** —— `dsh-better-sidebar` 仍需时，垫片可以继续留着。
+> - **Range 语义与防护未动**：200 / 206 / 后缀区间 / 416 / HEAD / 跨站 403 / 越界 403 全部与上游一致，并新增 28 项路由回归测试 + 8 项身份契约测试（`packages/dsh-video-preview/test/`）。
+
 > **0.8.2 / 0.8.3（2026-10-12）**：**`dsh-usage` 0.4.7 → 0.4.9 —— 假设计价口径放宽到「所有 API 下的 DeepSeek 消耗」，并删掉说明小字。**
 >
 > **背景**：0.4.7 引入的假设行只统计**官方家族路由**（`deepseek-official` / `deepseek-account`）。用户指出这不对 —— 应为「目前存的所有 API 下的 DeepSeek 消耗」。实测本机台账印证了这个缺口有多大：`bailian` 一个渠道的 DeepSeek 模型就有 **27.4 亿 tokens**，而官方家族只有 2.6 亿。
