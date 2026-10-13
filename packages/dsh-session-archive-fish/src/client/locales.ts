@@ -1,0 +1,328 @@
+/**
+ * dsh-session-archive locale dictionaries (zh/en). The zh dictionary is the
+ * key source; `en` mirrors its full key set (packages/AGENTS.md bilingual
+ * discipline). Russian copy ships centrally in dsh-i18n.
+ * @module @fish-under-sea/dsh-session-archive-fish/client/locales
+ */
+
+// Type-only: the locale service translate signature. The locale service
+// itself is injected by the host through ctx.locale, never imported here.
+import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
+
+/** Dictionary namespace this package registers. */
+export const NS = 'dsh-web-ui-session-archive'
+
+/** Chinese copy (key source). */
+export const zh = {
+  'arch.nav': '已归档会话',
+  'arch.title': '会话归档管理',
+  'arch.refresh': '刷新',
+  'arch.refreshing': '刷新中…',
+  'arch.loading': '正在加载会话列表…',
+  'arch.error': '加载失败：{error}',
+  'arch.retry': '重试',
+  'arch.close': '关闭',
+  'arch.empty': '当前条件下没有会话',
+  'arch.page.prev': '上一页',
+  'arch.page.next': '下一页',
+  'arch.page.info': '第 {page} / {pages} 页 · 共 {n} 条',
+  'arch.results.count': '共 {n} 条会话',
+  'arch.filter.all': '全部',
+  'arch.filter.active': '未归档',
+  'arch.filter.archived': '已归档',
+  'arch.filter.workspace': '工作区',
+  'arch.filter.workspace.any': '全部工作区',
+  'arch.filter.workspace.none': '不属于任何工作区',
+  'arch.filter.search': '搜索标题或会话 ID',
+  'arch.filter.issues': '仅看异常会话',
+  'arch.sort': '排序',
+  'arch.sort.lastActivity': '最后活动时间',
+  'arch.sort.archivedAt': '归档时间',
+  'arch.sort.createdAt': '创建时间',
+  'arch.sort.title': '标题',
+  'arch.sort.size': '占用空间',
+  'arch.sort.asc': '最早优先',
+  'arch.sort.desc': '最新优先',
+  'arch.row.noTitle': '（无标题）',
+  'arch.row.lastActivity': '最后活动：{time}',
+  'arch.row.lastActivity.unknown': '最后活动：未知',
+  'arch.row.archivedAt': '归档时间：{time}',
+  'arch.row.archivedAt.unknown': '归档时间：未知',
+  'arch.row.size': '大小：{size}',
+  'arch.row.children': '{n} 个子会话',
+  'arch.row.created': '创建于 {time}',
+  'arch.status.running': '运行中',
+  'arch.status.blank': '空白',
+  'arch.status.archived': '已归档',
+  'arch.status.active': '普通',
+  'arch.status.subagent': '子会话',
+  'arch.issue.no-title': '缺少标题',
+  'arch.issue.no-archive-time': '归档时间未知',
+  'arch.issue.unreadable': '元数据不完整',
+  'arch.issue.no-data': '无会话数据',
+  'arch.op.archive': '归档',
+  'arch.op.unarchive': '取消归档',
+  'arch.op.delete': '删除',
+  'arch.op.preview': '预览',
+  'arch.select.all': '全选当前结果',
+  'arch.select.clear': '清空选择',
+  'arch.select.selected': '已选 {n} 项',
+  'arch.select.holdNote': '已选 {selected} 项，其中 {outside} 项不在当前筛选结果中，操作时仍会包含它们',
+  'arch.batch.archive': '批量归档',
+  'arch.batch.unarchive': '批量取消归档',
+  'arch.batch.delete': '批量删除',
+  'arch.confirm.deleteTitle': '删除会话',
+  'arch.confirm.direct': '直接选中：{n} 个会话',
+  'arch.confirm.descendants': '因父子关系一并删除：{n} 个会话',
+  'arch.confirm.total': '最终删除总数：{n} 个会话',
+  'arch.confirm.skipped': '将被跳过的受保护会话：{n} 个',
+  'arch.confirm.freed': '预计释放空间：{size}',
+  'arch.confirm.irrecoverable': '物理删除不可恢复，会话内容将永久丢失，且无法从回收站找回。',
+  'arch.confirm.strongCheck': '我已知晓此操作不可恢复',
+  'arch.confirm.confirm': '确认删除',
+  'arch.confirm.cancel': '取消',
+  'arch.batch.title.archive': '批量归档',
+  'arch.batch.title.unarchive': '批量取消归档',
+  'arch.batch.title.delete': '批量删除',
+  'arch.batch.progress': '进度：{processed} / {total}',
+  'arch.batch.ok': '成功：{n}',
+  'arch.batch.skipped': '跳过：{n}',
+  'arch.batch.failed': '失败：{n}',
+  'arch.batch.freed': '已释放空间：{size}',
+  'arch.batch.running': '正在处理…',
+  'arch.batch.finished': '已完成',
+  'arch.batch.skipSummary': '跳过明细：{summary}',
+  'arch.batch.withError': '已完成（部分请求失败）',
+  'arch.batch.retryFailed': '仅重试失败项',
+  'arch.batch.reason': '原因',
+  'arch.reason.running': '会话正在运行',
+  'arch.reason.attached': '会话仍被 DSH 进程占用，重启服务或关闭该会话后可删除',
+  'arch.reason.current': '会话当前正在查看',
+  'arch.reason.in-flight': '会话正被其他操作处理',
+  'arch.reason.not-found': '会话不存在',
+  'arch.reason.already-archived': '会话已归档',
+  'arch.reason.not-archived': '会话未归档',
+  'arch.reason.family-protected': '会话族中存在受保护成员，已整族跳过',
+  'arch.reason.unreadable': '无法读取会话数据',
+  'arch.reason.missing-seam': '当前 SDK 环境不支持该操作',
+  'arch.reason.busy': '其他操作正在进行',
+  'arch.reason.error': '操作失败',
+  'arch.preview.title': '会话预览',
+  'arch.preview.messages': '共 {n} 条对话消息',
+  'arch.preview.empty': '该会话没有可展示的对话内容',
+  'arch.preview.loadError': '预览加载失败：{error}',
+  'arch.preview.basic': '基本信息',
+  'arch.preview.excerpt': '对话摘要（前几条）',
+  'arch.auto.title': '自动维护',
+  'arch.auto.defaultOff': '自动归档与自动删除默认关闭；未启用时不会修改任何会话状态。',
+  'arch.auto.archiveToggle': '自动归档超过阈值未活动的会话',
+  'arch.auto.archiveDays': '未活动天数阈值',
+  'arch.auto.deleteToggle': '自动物理删除超过保留期的归档会话',
+  'arch.auto.deleteDays': '归档保留天数',
+  'arch.auto.days.unit': '天',
+  'arch.auto.invalidDays': '天数必须是 {min} 到 {max} 之间的整数',
+  'arch.auto.preview': '按当前配置预览',
+  'arch.auto.preview.loading': '正在统计…',
+  'arch.auto.preview.archive': '预计自动归档：{n} 个会话',
+  'arch.auto.preview.delete': '预计自动删除：{n} 个会话，释放 {size}',
+  'arch.auto.preview.none': '按当前配置没有会话需要处理',
+  'arch.auto.runArchive': '立即执行一次自动归档',
+  'arch.auto.runDelete': '立即执行一次自动清理',
+  'arch.auto.lastArchive': '上次自动归档：{time}，共 {total}（成功 {ok} / 跳过 {skipped} / 失败 {failed}）',
+  'arch.auto.lastDelete': '上次自动清理：{time}，共 {total}（成功 {ok} / 跳过 {skipped} / 失败 {failed}）',
+  'arch.auto.nextRun': '下次预计检查：{time}',
+  'arch.auto.neverRun': '尚未运行',
+  'arch.auto.basis': '口径说明：自动归档按会话最后活动时间判断（不是创建时间）；自动删除按归档时间判断（不是文件时间）。归档时间未知的历史归档会话不会被自动删除，恢复后再次归档将重新计算保留期。运行中、当前正在查看以及有运行中子会话的会话始终受保护。',
+  'arch.auto.cycleRunning': '自动检查正在运行…',
+  'arch.auto.saveFailed': '保存失败：宿主未接受该设置，请重试',
+  'arch.auto.runError': '执行失败：{error}',
+  'arch.time.unknown': '未知',
+  'arch.current.badge': '当前',
+}
+
+export type ArchKey = keyof typeof zh
+
+/** English mirror (same key set). */
+export const en: Record<ArchKey, string> = {
+  'arch.nav': 'Archived sessions',
+  'arch.title': 'Session Archive Manager',
+  'arch.refresh': 'Refresh',
+  'arch.refreshing': 'Refreshing…',
+  'arch.loading': 'Loading sessions…',
+  'arch.error': 'Load failed: {error}',
+  'arch.retry': 'Retry',
+  'arch.close': 'Close',
+  'arch.empty': 'No sessions match the current conditions',
+  'arch.page.prev': 'Previous page',
+  'arch.page.next': 'Next page',
+  'arch.page.info': 'Page {page} / {pages} · {n} in total',
+  'arch.results.count': '{n} sessions in total',
+  'arch.filter.all': 'All',
+  'arch.filter.active': 'Unarchived',
+  'arch.filter.archived': 'Archived',
+  'arch.filter.workspace': 'Workspace',
+  'arch.filter.workspace.any': 'All workspaces',
+  'arch.filter.workspace.none': 'No workspace',
+  'arch.filter.search': 'Search title or session ID',
+  'arch.filter.issues': 'Only sessions with issues',
+  'arch.sort': 'Sort',
+  'arch.sort.lastActivity': 'Last activity',
+  'arch.sort.archivedAt': 'Archive time',
+  'arch.sort.createdAt': 'Created at',
+  'arch.sort.title': 'Title',
+  'arch.sort.size': 'Size',
+  'arch.sort.asc': 'Oldest first',
+  'arch.sort.desc': 'Newest first',
+  'arch.row.noTitle': '(untitled)',
+  'arch.row.lastActivity': 'Last activity: {time}',
+  'arch.row.lastActivity.unknown': 'Last activity: unknown',
+  'arch.row.archivedAt': 'Archived: {time}',
+  'arch.row.archivedAt.unknown': 'Archived: unknown',
+  'arch.row.size': 'Size: {size}',
+  'arch.row.children': '{n} sub-sessions',
+  'arch.row.created': 'Created {time}',
+  'arch.status.running': 'Running',
+  'arch.status.blank': 'Blank',
+  'arch.status.archived': 'Archived',
+  'arch.status.active': 'Normal',
+  'arch.status.subagent': 'Sub-session',
+  'arch.issue.no-title': 'Missing title',
+  'arch.issue.no-archive-time': 'Archive time unknown',
+  'arch.issue.unreadable': 'Incomplete metadata',
+  'arch.issue.no-data': 'No session data',
+  'arch.op.archive': 'Archive',
+  'arch.op.unarchive': 'Unarchive',
+  'arch.op.delete': 'Delete',
+  'arch.op.preview': 'Preview',
+  'arch.select.all': 'Select all results',
+  'arch.select.clear': 'Clear selection',
+  'arch.select.selected': '{n} selected',
+  'arch.select.holdNote': '{selected} selected; {outside} are outside the current filter and will still be included',
+  'arch.batch.archive': 'Archive selected',
+  'arch.batch.unarchive': 'Unarchive selected',
+  'arch.batch.delete': 'Delete selected',
+  'arch.confirm.deleteTitle': 'Delete sessions',
+  'arch.confirm.direct': 'Directly selected: {n} sessions',
+  'arch.confirm.descendants': 'Also deleted via parent-child relation: {n} sessions',
+  'arch.confirm.total': 'Total sessions to delete: {n}',
+  'arch.confirm.skipped': 'Protected sessions to skip: {n}',
+  'arch.confirm.freed': 'Estimated space freed: {size}',
+  'arch.confirm.irrecoverable': 'Physical deletion is not recoverable. Session content will be permanently lost.',
+  'arch.confirm.strongCheck': 'I understand this action cannot be undone',
+  'arch.confirm.confirm': 'Delete permanently',
+  'arch.confirm.cancel': 'Cancel',
+  'arch.batch.title.archive': 'Batch archive',
+  'arch.batch.title.unarchive': 'Batch unarchive',
+  'arch.batch.title.delete': 'Batch delete',
+  'arch.batch.progress': 'Progress: {processed} / {total}',
+  'arch.batch.ok': 'Succeeded: {n}',
+  'arch.batch.skipped': 'Skipped: {n}',
+  'arch.batch.failed': 'Failed: {n}',
+  'arch.batch.freed': 'Space freed: {size}',
+  'arch.batch.running': 'Processing…',
+  'arch.batch.finished': 'Finished',
+  'arch.batch.skipSummary': 'Skipped detail: {summary}',
+  'arch.batch.withError': 'Finished (some requests failed)',
+  'arch.batch.retryFailed': 'Retry failed only',
+  'arch.batch.reason': 'Reason',
+  'arch.reason.running': 'Session is running',
+  'arch.reason.attached': 'Session is still held open by the DSH process; restart the service or close the session before deleting',
+  'arch.reason.current': 'Session is currently open',
+  'arch.reason.in-flight': 'Session is being processed by another operation',
+  'arch.reason.not-found': 'Session not found',
+  'arch.reason.already-archived': 'Session already archived',
+  'arch.reason.not-archived': 'Session is not archived',
+  'arch.reason.family-protected': 'Family contains a protected member; the whole family was skipped',
+  'arch.reason.unreadable': 'Session data unreadable',
+  'arch.reason.missing-seam': 'Not supported by the current SDK environment',
+  'arch.reason.busy': 'Another operation is in progress',
+  'arch.reason.error': 'Operation failed',
+  'arch.preview.title': 'Session preview',
+  'arch.preview.messages': '{n} messages in total',
+  'arch.preview.empty': 'No conversation content to show',
+  'arch.preview.loadError': 'Preview failed: {error}',
+  'arch.preview.basic': 'Basic info',
+  'arch.preview.excerpt': 'Conversation excerpt (first messages)',
+  'arch.auto.title': 'Automatic maintenance',
+  'arch.auto.defaultOff': 'Auto-archive and auto-delete are off by default; nothing changes until you enable them.',
+  'arch.auto.archiveToggle': 'Auto-archive sessions inactive beyond the threshold',
+  'arch.auto.archiveDays': 'Inactivity threshold (days)',
+  'arch.auto.deleteToggle': 'Auto-delete archived sessions past their retention',
+  'arch.auto.deleteDays': 'Archive retention (days)',
+  'arch.auto.days.unit': 'days',
+  'arch.auto.invalidDays': 'Days must be an integer between {min} and {max}',
+  'arch.auto.preview': 'Preview with current settings',
+  'arch.auto.preview.loading': 'Counting…',
+  'arch.auto.preview.archive': 'Would auto-archive: {n} sessions',
+  'arch.auto.preview.delete': 'Would auto-delete: {n} sessions, freeing {size}',
+  'arch.auto.preview.none': 'Nothing to process with the current settings',
+  'arch.auto.runArchive': 'Run an archive check now',
+  'arch.auto.runDelete': 'Run a cleanup check now',
+  'arch.auto.lastArchive': 'Last auto-archive: {time}, total {total} (ok {ok} / skipped {skipped} / failed {failed})',
+  'arch.auto.lastDelete': 'Last auto-cleanup: {time}, total {total} (ok {ok} / skipped {skipped} / failed {failed})',
+  'arch.auto.nextRun': 'Next scheduled check: {time}',
+  'arch.auto.neverRun': 'Never run',
+  'arch.auto.basis': 'How it counts: auto-archive uses the session last-activity time (not creation time); auto-delete uses the recorded archive time (not file times). Historical archives with unknown archive time are never auto-deleted; restoring and re-archiving restarts the retention clock. Running sessions, the session you are viewing, and sessions with running children are always protected.',
+  'arch.auto.cycleRunning': 'An automatic check is running…',
+  'arch.auto.saveFailed': 'Save failed: the Host did not accept the setting; please retry',
+  'arch.auto.runError': 'Run failed: {error}',
+  'arch.time.unknown': 'unknown',
+  'arch.current.badge': 'current',
+}
+
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface LocaleNamespaceMap {
+    /** dsh-session-archive UI copy. */
+    'dsh-web-ui-session-archive': ArchKey
+  }
+}
+
+/**
+ * Unwired fallback dictionary, picked by the document language at call time.
+ * A zh/en-only pick, so it can only ever answer the two languages this
+ * package ships: it stays in force exactly while the locale service seat
+ * below is unwired.
+ */
+export function dictionary(): Record<ArchKey, string> {
+  const lang = typeof document !== 'undefined' ? document.documentElement.lang : 'zh'
+  return lang.toLowerCase().startsWith('en') ? en : zh
+}
+
+/**
+ * Locale-service translate seat, wired by the browser apply() through
+ * ctx.locale.bind(NS) (setRuntimeTranslate). The bound function resolves the
+ * ACTIVE language at call time, so every card surface reads the dictionary
+ * the host currently serves: this package's zh/en plus any language a pack
+ * registers for this namespace (dsh-i18n's ru), walked along that language's
+ * declared fallback chain. Reading the document language instead sent every
+ * non-en language into the zh branch, which left the card body Chinese while
+ * the nav label of the same namespace localized correctly.
+ *
+ * Undefined until wired, so the document-language fallback above stays in
+ * force when the locale service is absent or a caller runs before the
+ * plugin mounts.
+ */
+let runtimeT: Translate<string> | undefined
+
+/**
+ * Wire the locale-service translate seat; pass undefined to restore the
+ * document-language fallback.
+ */
+export function setRuntimeTranslate(translate: Translate<string> | undefined): void {
+  runtimeT = translate
+}
+
+/**
+ * Translate a key with optional `{name}` template params in the active
+ * language; a missing key degrades to the key itself.
+ */
+export function t(key: string, params?: Record<string, unknown>): string {
+  if (runtimeT !== undefined) return runtimeT(key, params)
+  let text: string = (dictionary() as Record<string, string>)[key] ?? key
+  if (params !== undefined) {
+    for (const [name, value] of Object.entries(params)) {
+      text = text.replaceAll(`{${name}}`, String(value))
+    }
+  }
+  return text
+}

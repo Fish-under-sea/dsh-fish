@@ -131,32 +131,28 @@
     # 任务看板：Host 权威账本、五维看板、子任务树级联执行、cron 定时与验收门。
     # 运行期参数在 设置 → 任务看板（存 $DSH_HOME/task-board/）。
     - id: ui-task-board
-      name: '@fish-under-sea/dsh-client-ui-task-board'
+      name: '@fish-under-sea/dsh-client-ui-task-board-fish'
 
     # Git 提交图谱 + 空白会话的分支选择胶囊（宿主侧真跑 git switch，含 worktree 守卫）。
     - id: ui-git-graph
-      name: '@fish-under-sea/dsh-client-ui-git-graph'
+      name: '@fish-under-sea/dsh-client-ui-git-graph-fish'
 
-    # 逐模型能力声明：在官方「模型」页的提供方卡片里编辑推理档位与图像输入声明，
-    # 写官方 llm-pi-ai 设置命名空间。
-    - id: ui-model-capabilities
-      name: '@fish-under-sea/dsh-client-ui-model-capabilities'
 
     # SSH 运维：主机库、连接池与跳板机、Web 终端、SFTP、端口转发、集群执行，
     # 另带 ssh_list / ssh_exec / ssh_upload / ssh_download / ssh_tunnel / ssh_cluster 工具。
     # 主机配置存 $DSH_HOME/dsh-ssh.json。
     - id: ssh
-      name: '@fish-under-sea/dsh-ssh'
+      name: '@fish-under-sea/dsh-ssh-fish'
 
     # 用量统计：分 provider / 模型的 token 台账、余额与编程套餐配额、峰谷计价估算、
     # 鲸元券「Token 银行」，以及侧栏底部的速览卡。台账存 $DSH_HOME/dsh-usage/。
     - id: usage
-      name: '@fish-under-sea/dsh-usage'
+      name: '@fish-under-sea/dsh-usage-fish'
 
     # 会话归档管理：全量清单、批量归档/取消归档、物理删除（含级联与保护规则）、
     # 可选的自动归档与自动清理策略。
     - id: session-archive
-      name: '@fish-under-sea/dsh-session-archive'
+      name: '@fish-under-sea/dsh-session-archive-fish'
 
     # 侧栏内嵌视频预览（Fork）—— 本仓库子包：上游 zemul/dsh-video-preview（MIT）的
     # 派生版，自带 /video 前缀路由，用流式响应实现 HTTP Range（206），进度条可拖动。
@@ -168,4 +164,4 @@
     # inject 移除，受信列表改为每请求惰性解析（webRuntime → connection → 空数组），
     # 空数组等价于只信回环 —— 只会收紧，绝不放宽信任边界。
     - id: video-preview
-      name: '@fish-under-sea/dsh-video-preview'
+      name: '@fish-under-sea/dsh-video-preview-fish'

@@ -4,6 +4,25 @@
 
 ---
 
+> **🆕 0.10.0（2026-10-13）**：**6 个派生包统一加 `-fish` 后缀；剔除 `dsh-client-ui-model-capabilities`。成员数 15 → 14。**
+>
+> - **为什么加 `-fish`**：本仓库里**非个人原创**的派生包（Fork 自他人仓库）此前命名不一致 —— 有的带 `-fish`（`dsh-skill-lens-fish`）、有的不带（5 个上游 Fork）。现统一约定：**派生包一律以 `-fish` 结尾**；个人原创包（`dsh-approval-guide` / `dsh-git-sync` / `dsh-settings-nav-order` / `dsh-visual-companion` / `dsh-session-title-refresh`）保持不变。
+> - **改名清单**（5 个上游 Fork：`0.4.x → 0.5.0`；video-preview：`0.1.5 → 0.2.0`）：
+>
+>   | 旧包名 | 新包名 |
+>   |---|---|
+>   | `@fish-under-sea/dsh-ssh` | **`@fish-under-sea/dsh-ssh-fish`** |
+>   | `@fish-under-sea/dsh-usage` | **`@fish-under-sea/dsh-usage-fish`** |
+>   | `@fish-under-sea/dsh-session-archive` | **`@fish-under-sea/dsh-session-archive-fish`** |
+>   | `@fish-under-sea/dsh-client-ui-task-board` | **`@fish-under-sea/dsh-client-ui-task-board-fish`** |
+>   | `@fish-under-sea/dsh-client-ui-git-graph` | **`@fish-under-sea/dsh-client-ui-git-graph-fish`** |
+>   | `@fish-under-sea/dsh-video-preview` | **`@fish-under-sea/dsh-video-preview-fish`** |
+>
+> - **改名必须重建 bundle（要紧）**：`dsh-client-modules` 是拿插件行解析出的**包名**去认领客户端 factory 的，注册 id 与包名不一致会抛 `loaded without registering "<包名>"`，**整个浏览器半区（设置页 / 面板）不加载**。本版 5 个带 `src/` 的包均已 `tsc + tsdown` 重建，注册 id 与包名逐字一致。
+> - **用户配置不受影响（同样要紧）**：settings 命名空间（`ssh` / `dsh-usage` / `usage` / `git-graph`）与插件 `name` 导出是**运行期配置契约**，**刻意不随包名变动** —— 因此 SSH 主机库、用量台账、Git 图谱偏好等既有配置**全部保留**，改名不会丢数据。
+> - **剔除 `dsh-client-ui-model-capabilities`**：从聚合包依赖与 bundle 层一并移除（逐模型思考强度与图片输入的编辑由 `dsh-better-reasoning-effort-fish` 承担，它同时提供 Composer 思考强度滑块与一键自动适配）。
+> - **旧包名已 deprecated**：npm 上这 6 个旧包名已 `npm deprecate` 并指向对应新包名，`npm install` / `pnpm add` 时会打印改名提示；`dsh-client-ui-model-capabilities` 则标记为「已从聚合包移除」。
+
 > **🆕 0.9.0（2026-10-13）**：**并入 `dsh-video-preview`（Fork），成员数 14 → 15。**
 >
 > - **新增 1 个上游 Fork**：把 [zemul/dsh-video-preview](https://github.com/zemul/dsh-video-preview)（MIT）fork 进本仓库 `packages/dsh-video-preview`，以 `@fish-under-sea/dsh-video-preview@0.1.5` 自主发布 —— 侧栏内嵌视频预览（`.mp4` / `.webm` / `.mov` / `.mkv` / `.avi` 等），自带 `/video` 路由用流式响应实现 HTTP Range，**进度条可拖动**。

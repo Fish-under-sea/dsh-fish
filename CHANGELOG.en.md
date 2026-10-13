@@ -4,6 +4,25 @@
 
 ---
 
+> **🆕 0.10.0 (2026-10-13):** **six forked sub-packages gain a uniform `-fish` suffix; `dsh-client-ui-model-capabilities` is dropped. Member count 15 → 14.**
+>
+> - **Why `-fish`**: the derivatives in this repository (**forks** of other people's packages) were named inconsistently — some carried `-fish` (`dsh-skill-lens-fish`), some did not (five upstream forks). The convention is now uniform: **every derivative ends in `-fish`**, while Fish's own original packages (`dsh-approval-guide` / `dsh-git-sync` / `dsh-settings-nav-order` / `dsh-visual-companion` / `dsh-session-title-refresh`) keep their names.
+> - **Rename list** (five upstream forks: `0.4.x → 0.5.0`; video-preview: `0.1.5 → 0.2.0`):
+>
+>   | Old name | New name |
+>   |---|---|
+>   | `@fish-under-sea/dsh-ssh` | **`@fish-under-sea/dsh-ssh-fish`** |
+>   | `@fish-under-sea/dsh-usage` | **`@fish-under-sea/dsh-usage-fish`** |
+>   | `@fish-under-sea/dsh-session-archive` | **`@fish-under-sea/dsh-session-archive-fish`** |
+>   | `@fish-under-sea/dsh-client-ui-task-board` | **`@fish-under-sea/dsh-client-ui-task-board-fish`** |
+>   | `@fish-under-sea/dsh-client-ui-git-graph` | **`@fish-under-sea/dsh-client-ui-git-graph-fish`** |
+>   | `@fish-under-sea/dsh-video-preview` | **`@fish-under-sea/dsh-video-preview-fish`** |
+>
+> - **A rename REQUIRES rebuilding the bundle (important)**: `dsh-client-modules` claims a browser factory by the **package name** resolved from the plugin entry, so a registration id that disagrees with the name throws `loaded without registering "<name>"` and the **entire browser half (settings pages, panels) fails to load**. All five packages with a `src/` tree were rebuilt here with `tsc + tsdown`, so each registration id matches its package name exactly.
+> - **Existing user configuration is untouched (equally important)**: the settings namespaces (`ssh` / `dsh-usage` / `usage` / `git-graph`) and each plugin's `name` export are **runtime configuration contracts** that deliberately **do not follow the package name** — so SSH hosts, the usage ledger and Git-graph preferences all survive the rename.
+> - **`dsh-client-ui-model-capabilities` dropped**: removed from both the bundle's dependencies and its bundle layer (per-model reasoning efforts and image modality are covered by `dsh-better-reasoning-effort-fish`, which also provides the composer reasoning-effort slider and one-click auto-adaptation).
+> - **Old names deprecated**: the six old npm names are `npm deprecate`d and point at their new names, so `npm install` / `pnpm add` prints the rename notice; `dsh-client-ui-model-capabilities` is instead marked as removed from the bundle.
+
 > **🆕 0.9.0 (2026-10-13):** **`dsh-video-preview` (forked) merged in; member count 14 → 15.**
 >
 > - **1 new upstream fork**: [zemul/dsh-video-preview](https://github.com/zemul/dsh-video-preview) (MIT) is forked into this repository under `packages/dsh-video-preview` and published independently as `@fish-under-sea/dsh-video-preview@0.1.5` — inline video preview in the sidebar (`.mp4` / `.webm` / `.mov` / `.mkv` / `.avi` and more), with its own `/video` route streaming HTTP Range responses so **seeking works**.
