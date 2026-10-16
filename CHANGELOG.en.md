@@ -4,6 +4,15 @@
 
 ---
 
+> **🆕 0.10.1 (2026-10-16):** **`dsh-agent-teams-fish` 0.7.0 → 0.7.1 — fixes "a blank optional field makes team creation impossible".**
+>
+> - **Symptom**: a captain model that materializes every optional parameter as `""` instead of omitting it could never call `agent_teams_create`: it failed with `profiles.inline-plan.members[0].tool_policy must not be empty`, and switching to the literal `"default"` failed with `unknown tool policy "default" (no toolPolicies are configured in this deployment)`. The model then retried between the two errors (one real session: 34 consecutive failures, 0 successes, before it gave up and called it its own mistake) — **no member ever spawned**.
+> - **Root cause**: the `add_member` / `edit_plan` path runs blank strings through `trimmedOptional()`, which normalizes them to `undefined` (accepted), while the inline-plan path uses `optionalNonEmptyString()`, which rejects any blank string — **the two paths disagreed**. The defect lives in `src/profiles.ts` and still exists unfixed in upstream v0.1.23.
+> - **Fix**: `optionalNonEmptyString` now returns `undefined` for blank/whitespace-only values, matching the edit path. Required fields (`name`, task `id` / `subject`, `fallback.provider|model`, dependency ids) stay strict, and non-string values remain hard errors. Adds `scripts/inline-plan-blank-optional-tdd.mjs` (23 assertions), wired into `pnpm verify`.
+> - **Also fixes two pre-existing `pnpm verify` failures**: `MTIME_TOLERANCE_MS` goes from 1 to 4 (`mtime` and `Date.now()` come from two different clocks; on Windows the filesystem clock runs up to 2.2 ms ahead, so a 1 ms tolerance misread files written *before* a verdict as modified *after* it — the precondition failed about 57.75% of the time); and a new `scripts/symlink-support.mjs` probes symlink permission uniformly so Windows without Developer Mode skips with a stated reason instead of failing outright.
+> - **Verification**: full `pnpm verify` chain exits 0; `pnpm build` and `pnpm typecheck` pass; the README version gate passes.
+> - **Alignment**: this release only widens the bundle dependency range (`dsh-agent-teams-fish: ^0.7.0 → ^0.7.1`); the bundle itself has no code change.
+
 > **🆕 0.10.0 (2026-10-13):** **six forked sub-packages gain a uniform `-fish` suffix; `dsh-client-ui-model-capabilities` is dropped. Member count 15 → 14.**
 >
 > - **Why `-fish`**: the derivatives in this repository (**forks** of other people's packages) were named inconsistently — some carried `-fish` (`dsh-skill-lens-fish`), some did not (five upstream forks). The convention is now uniform: **every derivative ends in `-fish`**, while Fish's own original packages (`dsh-approval-guide` / `dsh-git-sync` / `dsh-settings-nav-order` / `dsh-visual-companion` / `dsh-session-title-refresh`) keep their names.

@@ -4,6 +4,15 @@
 
 ---
 
+> **🆕 0.10.1（2026-10-16）**：**`dsh-agent-teams-fish` 0.7.0 → 0.7.1 —— 修掉「可选字段填空串就建不起团队」。**
+>
+> - **症状**：队长模型（尤其把每个可选参数都填成 `""` 而不是省略的模型）调用 `agent_teams_create` 时必失败，报 `profiles.inline-plan.members[0].tool_policy must not be empty`；改成字面量 `"default"` 又报 `unknown tool policy "default" (no toolPolicies are configured in this deployment)`。模型于是在两种错之间反复重试（实测某会话连败 34 次、0 次成功，最终自认操作错误并放弃），**成员一个都没启动**。
+> - **根因**：`add_member` / `edit_plan` 路径用 `trimmedOptional()` 把空串洗成 `undefined`（放行），而内联计划路径用 `optionalNonEmptyString()` 对空串一律抛错 —— **两条路径口径不一致**。缺陷在 `src/profiles.ts`，上游 v0.1.23 同样存在且未修。
+> - **修法**：`optionalNonEmptyString` 对空串/纯空白改为返回 `undefined`，与编辑路径统一。必填字段（`name` / 任务 `id` / `subject` / `fallback.provider|model` / 依赖 id）保持严格，非字符串值仍是硬错误。新增 `scripts/inline-plan-blank-optional-tdd.mjs`（23 项断言）并挂进 `pnpm verify`。
+> - **同时修掉两处会打红 `pnpm verify` 的既有失败**：`MTIME_TOLERANCE_MS` 由 1 提到 4（`mtime` 与 `Date.now()` 来自两个时钟，Windows 上文件系统时钟最多领先 2.2ms，1ms 容差会把「判决前写好的文件」误判为「判决后被改」，前置断言约 57.75% 概率失败）；新增 `scripts/symlink-support.mjs` 统一探测符号链接权限，无开发者模式的 Windows 上按明确原因跳过而非必红。
+> - **验证**：`pnpm verify` 全链 exit 0；`pnpm build` 与 `pnpm typecheck` 通过；README 版本门禁通过。
+> - **对齐**：本版只升聚合包依赖范围（`dsh-agent-teams-fish: ^0.7.0 → ^0.7.1`），聚合包自身无代码改动。
+
 > **🆕 0.10.0（2026-10-13）**：**6 个派生包统一加 `-fish` 后缀；剔除 `dsh-client-ui-model-capabilities`。成员数 15 → 14。**
 >
 > - **为什么加 `-fish`**：本仓库里**非个人原创**的派生包（Fork 自他人仓库）此前命名不一致 —— 有的带 `-fish`（`dsh-skill-lens-fish`）、有的不带（5 个上游 Fork）。现统一约定：**派生包一律以 `-fish` 结尾**；个人原创包（`dsh-approval-guide` / `dsh-git-sync` / `dsh-settings-nav-order` / `dsh-visual-companion` / `dsh-session-title-refresh`）保持不变。

@@ -18,6 +18,14 @@
 
 ---
 
+> **🆕 0.10.1（2026-10-16）**：**`dsh-agent-teams-fish` 0.7.0 → 0.7.1 —— 修掉「可选字段填空串就建不起团队」。**
+>
+> - **症状**：队长模型（尤其把每个可选参数都填成 `""` 而不是省略的模型）调用 `agent_teams_create` 时必失败，报 `profiles.inline-plan.members[0].tool_policy must not be empty`；改成字面量 `"default"` 又报 `unknown tool policy "default" (no toolPolicies are configured in this deployment)`。模型于是在两种错之间反复重试（实测某会话连败 34 次、0 次成功，最终自认操作错误并放弃），**成员一个都没启动**。
+> - **根因**：`add_member` / `edit_plan` 路径用 `trimmedOptional()` 把空串洗成 `undefined`（放行），而内联计划路径用 `optionalNonEmptyString()` 对空串一律抛错 —— **两条路径口径不一致**。缺陷在 `src/profiles.ts`，上游 v0.1.23 同样存在且未修。
+> - **修法**：`optionalNonEmptyString` 对空串/纯空白改为返回 `undefined`，与编辑路径统一。必填字段（`name` / 任务 `id` / `subject` / `fallback.provider|model` / 依赖 id）保持严格，非字符串值仍是硬错误。新增 `scripts/inline-plan-blank-optional-tdd.mjs`（23 项断言）并挂进 `pnpm verify`。
+> - **同时修掉两处会打红 `pnpm verify` 的既有失败**：`MTIME_TOLERANCE_MS` 由 1 提到 4（`mtime` 与 `Date.now()` 来自两个时钟，Windows 上文件系统时钟最多领先 2.2ms，1ms 容差会把「判决前写好的文件」误判为「判决后被改」，前置断言约 57.75% 概率失败）；新增 `scripts/symlink-support.mjs` 统一探测符号链接权限，无开发者模式的 Windows 上按明确原因跳过而非必红。
+> - **升级方式**：`dsh plugin --profile <profile> add @fish-under-sea/dsh-fish`（或按 README 的其它安装路线）；`0.7.0` 无需任何配置迁移，本次只放宽校验。
+
 > **🆕 0.10.0（2026-10-13）**：**6 个派生包统一加 `-fish` 后缀；剔除 `dsh-client-ui-model-capabilities`。成员数 15 → 14。**
 >
 > - **为什么加 `-fish`**：本仓库里**非个人原创**的派生包（Fork 自他人仓库）此前命名不一致 —— 有的带 `-fish`（`dsh-skill-lens-fish`）、有的不带（5 个上游 Fork）。现统一约定：**派生包一律以 `-fish` 结尾**；个人原创包（`dsh-approval-guide` / `dsh-git-sync` / `dsh-settings-nav-order` / `dsh-visual-companion` / `dsh-session-title-refresh`）保持不变。
@@ -97,7 +105,7 @@ Fish 自建 [DSH](https://github.com/Fish-under-sea/DSH)（DeepSeek Harness）�
 | [`dsh-usage-fish`](packages/dsh-usage-fish) | 0.5.0 | **用量统计**（上游 `@linxin666/dsh-usage@0.4.6` 的 **Fork**，Apache-2.0）：分 provider / 模型的 token 台账（输入/输出/缓存读/缓存写分桶）、余额与**编程套餐配额**（Kimi / GLM / OpenCode Go / MiniMax / Codex）、DeepSeek 峰谷计价估算、「Token 银行」鲸元券，以及侧栏底部的紧凑速览卡。台账存 `$DSH_HOME/dsh-usage/` |
 | [`dsh-session-archive-fish`](packages/dsh-session-archive-fish) | 0.5.0 | **会话归档管理**（上游 `@linxin666/dsh-session-archive@0.4.6` 的 **Fork**，Apache-2.0）：全量清单（含子代理会话与无工作区会话）、筛选搜索排序、跨结果集多选、批量归档/取消归档、**物理删除（含级联与保护规则）**，以及可选的自动归档与自动清理策略。**修正了上游的依赖声明错误**（源码 import 带 scope 的 `@deepseek-ai/schemastery`，上游 dependencies 却写无 scope 的 `schemastery`，导致构建期类型解析失败） |
 | [`dsh-video-preview-fish`](packages/dsh-video-preview-fish) | 0.2.0 | **侧栏内嵌视频预览**（上游 [zemul/dsh-video-preview](https://github.com/zemul/dsh-video-preview) 的 **Fork**，MIT）：在侧栏编辑器里直接播 `.mp4` / `.webm` / `.mov` / `.mkv` / `.avi` 等，自带 `/video` 前缀路由用 `createReadStream` 流式响应实现 **HTTP Range（206）**，进度条可拖动（侧栏自带的媒体路由把整文件读进内存、只回 200 且受 20MB 上限，放视频是错的）。**本 Fork 修掉「装上永不激活」** —— 上游把已被内核移除的 `webRuntime` 写进 `inject`，在新内核上 apply 永不执行、`/video` 从不注册、视频请求得到空体 405；本版改为每请求惰性解析受信列表（`webRuntime` → `connection` → 空数组=只信回环），只收紧不放宽 |
-| [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) | 0.7.0 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；**厂商头像素材随包分发**（**17 厂商** × 10 岗位 + 厂商通用图 + 立绘 + 队长 + 商标 SVG，**286 个文件 / 约 29.3 MB**，含 1024×1024 高清 WebP 族），装完即有，跨机不再依赖 `artworkDir`；自定义目录仍可整套覆盖；商标 SVG 按扩展名送达；**队长头像跟随队长自己的模型路由**；`0.5.1` 修掉降级链序（`厂商+岗位 → 厂商 → 岗位`）；`0.6.0` 并入上游 v0.1.23（成员工具策略、质量门契约与修订绑定、lineage 身份沿 fork 链、工作区审计、损坏 `team.json` 降级）；**⚠️ `0.6.1` 修掉「升级 DSH 到 0.2.1-alpha.2 后插件被整行禁用」** —— 该版本的宿主白名单此前未收录新运行时，DSH 判定不兼容并自动停用插件行（症状：显示「异常」、团队协作毫无反应） |
+| [`dsh-agent-teams-fish`](https://github.com/Fish-under-sea/dsh-agent-teams-fish) | 0.7.1 | **AgentTeams 多智能体团队协作**（上游 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) 的**补充版**）：自然语言组队、成员/任务依赖 DAG、信箱通信、右侧栏树状监测；**厂商头像素材随包分发**（**17 厂商** × 10 岗位 + 厂商通用图 + 立绘 + 队长 + 商标 SVG，**286 个文件 / 约 29.3 MB**，含 1024×1024 高清 WebP 族），装完即有，跨机不再依赖 `artworkDir`；自定义目录仍可整套覆盖；商标 SVG 按扩展名送达；**队长头像跟随队长自己的模型路由**；`0.5.1` 修掉降级链序（`厂商+岗位 → 厂商 → 岗位`）；`0.6.0` 并入上游 v0.1.23（成员工具策略、质量门契约与修订绑定、lineage 身份沿 fork 链、工作区审计、损坏 `team.json` 降级）；**⚠️ `0.6.1` 修掉「升级 DSH 到 0.2.1-alpha.2 后插件被整行禁用」** —— 该版本的宿主白名单此前未收录新运行时，DSH 判定不兼容并自动停用插件行（症状：显示「异常」、团队协作毫无反应）；**⚠️ `0.7.1` 修掉「可选字段填空串就建不起团队」** —— 部分模型把 `tool_policy` / `provider` / `model` 等**可选**参数一律填成 `""` 而非省略，而 `add_member` / `edit_plan` 路径会把空串洗成 `undefined`（放行）、内联计划路径却对空串直接抛 `must not be empty`，两条路径口径不一致；模型遂在 `""` 与 `"default"` 之间反复重试（实测某会话连败 34 次、成员一个未启动）。现两条路径统一按「空串＝未提供」处理；必填字段仍严格 |
 | [`dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish) | 0.5.8 | **思考强度与输入模态**（上游 [HaoyueQin/dsh-better-reasoning-effort](https://github.com/HaoyueQin/dsh-better-reasoning-effort) 的**Fork**）：在官方「模型」页编辑卡里直接编辑每模型的 `reasoningEfforts` 与 `input` 声明，并支持一键自动适配；本 Fork 把 `settings.models.provider-card` 席位完整让给模型能力面板；0.5.8 并入上游三条安装路线说明（冷静期下写明版本号、release tarball 路线、GitHub 源码安装） |
 | [`dsh-our-free-model`](https://github.com/Fish-under-sea/dsh-our-free-model-fish) | 2.1.0 | **免费模型与渠道聚合**（上游 [Ebony-Vinyl/dsh-our-free-model](https://github.com/Ebony-Vinyl/dsh-our-free-model) 的**Fork**）：把 13 个免费渠道（CodeArts / CodeBuddy / Loomy / Raccoon / MiniMax / Gemini 等）与免费模型并入官方模型选择器，并自带渠道网关供其它本地 harness 反代。本 Fork 新增「**隐藏渠道模型分组**」总开关 —— 渠道分组会与你自己配的 provider 混在一起把选择器撑长，打开即一次收起 13 组；**只影响展示不影响路由**（网关请求走 `resolveModelInfo()`，被隐藏的模型照常收发），渠道设置页的「显示列表 / 关闭全部」读 `listAllModels()` 也不受影响；默认关闭，升级不会静默改变你看到的列表。**2.1.0 并入上游 v2.1.0** —— combos 组合链、token-saver 省 token、原生 Anthropic 网关、`standalone` 拆分、渠道包与 Kilo 渠道、升级器 snapshot SHA 修复；Fish 自建的隐藏渠道分组与按面积计价完整保留 |
 
@@ -313,7 +321,7 @@ DSH 的浏览器半区扫描器（`@deepseek-ai/dsh-client-modules` 的 `locateP
 
 ```text
 dsh-fish/                 # 仓库目录名（npm 包名是 @fish-under-sea/dsh-fish）
-├── package.json          # 聚合包清单（version 0.10.0，dsh.bundle.patch 指向 cordis.patch.yml）
+├── package.json          # 聚合包清单（version 0.10.1，dsh.bundle.patch 指向 cordis.patch.yml）
 ├── cordis.patch.yml      # bundle 层：插入十四个插件的插件行
 ├── CHANGELOG.md          # 完整版本记录（README 顶部只留最近一版）
 ├── pnpm-workspace.yaml   # workspace 声明（仅本地开发用；并放行 esbuild 安装脚本）
@@ -392,4 +400,4 @@ pnpm --filter @fish-under-sea/dsh-client-ui-model-capabilities build
 
 ---
 
-<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.10.0 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
+<sub>聚合包 <code>@fish-under-sea/dsh-fish</code> v0.10.1 · DSH ≥ 0.2.0-rc.2 · Node ≥ 20</sub>
