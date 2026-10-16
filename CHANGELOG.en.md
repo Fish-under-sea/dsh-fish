@@ -4,6 +4,15 @@
 
 ---
 
+## 0.10.2（2026-10-17）
+
+- 团队插件依赖从 `^0.7.1` 更新为 `^0.7.2`；聚合包仍包含 14 个插件，其余依赖及插件行不变。
+- 团队插件适配新版 `startActivation` / `drainChildren`，兼容旧宿主启动与停止接口，修复派发时调用不存在方法的故障。
+- 成员最终及备用模型路由受当前会话捕获的子代理白名单约束；可选投影服务缺失时兼容持久事件读取，不绕过模型策略。
+- 团队插件已通过本机真实领取、执行、回报、归档与模型路由验收，32/32 回归通过；Ubuntu / Windows 静态检查和全部 9 个精确宿主的真实运行时矩阵通过。
+- 同步两份 README 的版本、插件表与升级说明。升级后重启 DSH，无需迁移团队数据，不自动恢复失败或暂停的团队。
+- 团队插件完整说明：[v0.7.2](https://github.com/Fish-under-sea/dsh-agent-teams-fish/releases/tag/v0.7.2)。
+
 > **🆕 0.10.1 (2026-10-16):** **`dsh-agent-teams-fish` 0.7.0 → 0.7.1 — fixes "a blank optional field makes team creation impossible".**
 >
 > - **Symptom**: a captain model that materializes every optional parameter as `""` instead of omitting it could never call `agent_teams_create`: it failed with `profiles.inline-plan.members[0].tool_policy must not be empty`, and switching to the literal `"default"` failed with `unknown tool policy "default" (no toolPolicies are configured in this deployment)`. The model then retried between the two errors (one real session: 34 consecutive failures, 0 successes, before it gave up and called it its own mistake) — **no member ever spawned**.

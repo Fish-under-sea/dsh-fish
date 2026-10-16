@@ -42,8 +42,8 @@ importers:
         specifier: ^0.1.7
         version: 0.1.7(@deepseek-ai/dsh-llm@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-tools@0.2.0-rc.2(a9811ab68f93eb0313fc54869402c050))(@deepseek-ai/schemastery@3.18.4)
       dsh-agent-teams-fish:
-        specifier: ^0.7.1
-        version: 0.7.1(65718bfe430c60bb9c42a897e16b51ff)
+        specifier: ^0.7.2
+        version: 0.7.2(65718bfe430c60bb9c42a897e16b51ff)
       dsh-better-reasoning-effort-fish:
         specifier: ^0.5.8
         version: 0.5.8(@deepseek-ai/dsh-api-remotes@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-scope@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.2.0-rc.2(@deepseek-ai/cordis@4.0.4))))(@deepseek-ai/dsh-settings@0.2.0-rc.2(5069cf031e2e276fb8e8f3bd237ace19))(@deepseek-ai/schemastery@3.18.4)(react@18.3.1)
@@ -4632,8 +4632,8 @@ packages:
   dom-accessibility-api@0.5.16:
     resolution: {integrity: sha512-X7BJ2yElsnOJ30pZF4uIIDfBEVgF4XEBxL9Bxhy6dnrm5hkzqmsWHGTiHqRiITNhMyFLyAiWndIJP7Z1NTteDg==}
 
-  dsh-agent-teams-fish@0.7.1:
-    resolution: {integrity: sha512-Xw1xFL1ShwIZVX34wBq/Su+nJLyhtKWPmcVa+kn0qTVQ3+c8/fvK3loX6+CHZoIIhduHVpE88OiHjgD3xVKOpg==}
+  dsh-agent-teams-fish@0.7.2:
+    resolution: {integrity: sha512-J4R7JLJj6mh75Gd7zTGF+YsRFuZcBTe8IiumvDv17/rYmWvCxb3a7sWXLdB/GjNv5yVItuJaExVB4uWN2I9rlQ==}
     engines: {node: ^22.19.0 || >=24}
     hasBin: true
     peerDependencies:
@@ -11095,7 +11095,7 @@ snapshots:
 
   dom-accessibility-api@0.5.16: {}
 
-  dsh-agent-teams-fish@0.7.1(65718bfe430c60bb9c42a897e16b51ff):
+  dsh-agent-teams-fish@0.7.2(65718bfe430c60bb9c42a897e16b51ff):
     optionalDependencies:
       '@deepseek-ai/cordis': 4.0.4(@deepseek-ai/cordis-plugin-include@1.0.9)(@deepseek-ai/cordis-plugin-loader@1.0.5)
       '@deepseek-ai/dsh-agent': 0.2.0-rc.2(fee0e653b72a3883e0f0da2d9a46bb50)
