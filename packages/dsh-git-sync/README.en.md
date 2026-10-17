@@ -100,7 +100,7 @@ The allowlist lists paths relative to `$DSH_HOME`. `<profile>` is enumerated dyn
 | `dsh-usage/` | Usage ledger |
 | `dsh-settings-nav-order/state.json` | Settings navigation order preference (see dedicated section below) |
 | `dsh-session-title-refresh/config.json` | Title auto-refresh user settings: **which model writes the title** (`provider` / `model`) plus every tuning knob (first-round rounds, interval, window, output budget, timeout, target length, skip-subagent-sessions). The sibling `history.json` is a machine-local run log and is **not** on the allowlist |
-| `our-free-model/settings.json` | Free-model plugin (`dsh-our-free-model`) user settings: enable switch, probe interval, forwarding, egress, channel gateway, default maxTokens (see dedicated section below) |
+| `our-free-model/settings.json` | Free-model plugin (`dsh-our-free-model-fish`) user settings: enable switch, probe interval, forwarding, egress, channel gateway, default maxTokens (see dedicated section below) |
 | `our-free-model/catalog.json` | Free-model catalog snapshot (model id list + timestamp), no secrets |
 | `our-free-model/availability.json` | Free-model availability snapshot (egress IP + per-model probe results), no secrets |
 | `our-free-model/stats.json` | Free-model usage ledger (see the dedicated section below for the cross-machine caveat) |
@@ -164,7 +164,7 @@ Explicitly **not** collected: the wallpaper engine's `cache/` (~2.8 GB of derive
 
 ### Free-model plugin (`our-free-model`)
 
-`dsh-our-free-model`'s config directory `$DSH_HOME/our-free-model/` lives **inside** home, so it is named by an ordinary relative path and needs no extra scan root. Four files are collected:
+`dsh-our-free-model-fish`'s config directory `$DSH_HOME/our-free-model/` lives **inside** home, so it is named by an ordinary relative path and needs no extra scan root. Four files are collected:
 
 - `our-free-model/settings.json` — user settings: enable switch, probe interval, forwarding, egress, channel gateway, default maxTokens;
 - `our-free-model/catalog.json` — model catalog snapshot (model id list + timestamp);

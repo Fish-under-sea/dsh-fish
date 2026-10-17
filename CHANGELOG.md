@@ -4,14 +4,21 @@
 
 ---
 
-## 0.10.2（2026-10-17）
+## 0.10.3（2026-10-17）
 
-- 团队插件依赖从 `^0.7.1` 更新为 `^0.7.2`；聚合包仍包含 14 个插件，其余依赖及插件行不变。
-- 团队插件适配新版 `startActivation` / `drainChildren`，兼容旧宿主启动与停止接口，修复派发时调用不存在方法的故障。
-- 成员最终及备用模型路由受当前会话捕获的子代理白名单约束；可选投影服务缺失时兼容持久事件读取，不绕过模型策略。
-- 团队插件已通过本机真实领取、执行、回报、归档与模型路由验收，32/32 回归通过；Ubuntu / Windows 静态检查和全部 9 个精确宿主的真实运行时矩阵通过。
-- 同步两份 README 的版本、插件表与升级说明。升级后重启 DSH，无需迁移团队数据，不自动恢复失败或暂停的团队。
-- 团队插件完整说明：[v0.7.2](https://github.com/Fish-under-sea/dsh-agent-teams-fish/releases/tag/v0.7.2)。
+- **免费模型插件改名**：依赖从 `dsh-our-free-model@^2.1.0` 改为 `dsh-our-free-model-fish@^2.2.0`；插件行的 `name` 同步改名，行 `id` 仍是 `our-free-model`。
+- **为什么改**：`dsh-our-free-model` 是上游 Ebony-Vinyl 的 npm 包名，本仓库那个包是它的 Fork，继续占用同名会与上游正版冲突。改名后上游仍可用原名发布，Fork 以 `dsh-our-free-model-fish` 独立发布。
+- **升级不丢设置**：数据目录名仍是 `$DSH_HOME/our-free-model/`（`src/store.js` 的 `DATA_DIR_NAME` 未变），从旧包切换过来设置、渠道与出口配置原样保留。
+- **旧包已 deprecated**：`npm deprecate dsh-our-free-model` 已加迁移提示，指向 `dsh-our-free-model-fish`；新装用户请直接用新包名。
+- 同步两份 README 的插件表、安装示例（npmmirror 同步 URL、GitHub 安装写法）与页脚版本；聚合包仍包含 14 个插件，其余依赖及插件行不变。
+
+> **🆕 0.10.2（2026-10-17）**：**`dsh-agent-teams-fish` 0.7.1 → 0.7.2。**
+>
+> - 团队插件适配新版 `startActivation` / `drainChildren`，兼容旧宿主启动与停止接口，修复派发时调用不存在方法的故障。
+> - 成员最终及备用模型路由受当前会话捕获的子代理白名单约束；可选投影服务缺失时兼容持久事件读取，不绕过模型策略。
+> - 团队插件已通过本机真实领取、执行、回报、归档与模型路由验收，32/32 回归通过；Ubuntu / Windows 静态检查和全部 9 个精确宿主的真实运行时矩阵通过。
+> - 同步两份 README 的版本、插件表与升级说明。升级后重启 DSH，无需迁移团队数据，不自动恢复失败或暂停的团队。
+> - 完整说明：[v0.7.2](https://github.com/Fish-under-sea/dsh-agent-teams-fish/releases/tag/v0.7.2)。
 
 > **🆕 0.10.1（2026-10-16）**：**`dsh-agent-teams-fish` 0.7.0 → 0.7.1 —— 修掉「可选字段填空串就建不起团队」。**
 >

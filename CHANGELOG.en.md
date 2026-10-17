@@ -4,14 +4,21 @@
 
 ---
 
-## 0.10.2（2026-10-17）
+## 0.10.3 (2026-10-17)
 
-- 团队插件依赖从 `^0.7.1` 更新为 `^0.7.2`；聚合包仍包含 14 个插件，其余依赖及插件行不变。
-- 团队插件适配新版 `startActivation` / `drainChildren`，兼容旧宿主启动与停止接口，修复派发时调用不存在方法的故障。
-- 成员最终及备用模型路由受当前会话捕获的子代理白名单约束；可选投影服务缺失时兼容持久事件读取，不绕过模型策略。
-- 团队插件已通过本机真实领取、执行、回报、归档与模型路由验收，32/32 回归通过；Ubuntu / Windows 静态检查和全部 9 个精确宿主的真实运行时矩阵通过。
-- 同步两份 README 的版本、插件表与升级说明。升级后重启 DSH，无需迁移团队数据，不自动恢复失败或暂停的团队。
-- 团队插件完整说明：[v0.7.2](https://github.com/Fish-under-sea/dsh-agent-teams-fish/releases/tag/v0.7.2)。
+- **Free-model plugin renamed**: the dependency moves from `dsh-our-free-model@^2.1.0` to `dsh-our-free-model-fish@^2.2.0`, and the plugin entry's `name` follows; the entry `id` stays `our-free-model`.
+- **Why**: `dsh-our-free-model` is upstream Ebony-Vinyl's npm package name. This repository's copy is a fork of it, so continuing to hold the same name collides with the upstream release. After the rename upstream keeps its original name and the fork publishes independently as `dsh-our-free-model-fish`.
+- **No settings lost on upgrade**: the data directory stays `$DSH_HOME/our-free-model/` (`DATA_DIR_NAME` in `src/store.js` is unchanged), so settings, channels and egress configuration carry over as-is.
+- **The old name is deprecated**: `npm deprecate dsh-our-free-model` now carries a migration notice pointing at `dsh-our-free-model-fish`; new installs should use the new name directly.
+- Both READMEs updated for the plugin table, install examples (npmmirror sync URL, GitHub install form) and footer version. The bundle still ships 14 plugins; no other dependency or entry changed.
+
+> **🆕 0.10.2（2026-10-17）**：**`dsh-agent-teams-fish` 0.7.1 → 0.7.2。**
+>
+> - 团队插件适配新版 `startActivation` / `drainChildren`，兼容旧宿主启动与停止接口，修复派发时调用不存在方法的故障。
+> - 成员最终及备用模型路由受当前会话捕获的子代理白名单约束；可选投影服务缺失时兼容持久事件读取，不绕过模型策略。
+> - 团队插件已通过本机真实领取、执行、回报、归档与模型路由验收，32/32 回归通过；Ubuntu / Windows 静态检查和全部 9 个精确宿主的真实运行时矩阵通过。
+> - 同步两份 README 的版本、插件表与升级说明。升级后重启 DSH，无需迁移团队数据，不自动恢复失败或暂停的团队。
+> - 完整说明：[v0.7.2](https://github.com/Fish-under-sea/dsh-agent-teams-fish/releases/tag/v0.7.2)。
 
 > **🆕 0.10.1 (2026-10-16):** **`dsh-agent-teams-fish` 0.7.0 → 0.7.1 — fixes "a blank optional field makes team creation impossible".**
 >

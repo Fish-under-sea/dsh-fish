@@ -100,7 +100,7 @@ dsh plugin --profile <profile> add "file:<仓库路径>/packages/dsh-git-sync"
 | `dsh-usage/` | 用量账本 |
 | `dsh-settings-nav-order/state.json` | 设置导航顺序偏好（详见下方专节） |
 | `dsh-session-title-refresh/config.json` | 标题自动刷新的用户设置：**用哪个模型起标题**（`provider` / `model`）与全部调参（首轮轮次、间隔、窗口、输出预算、超时、目标字数、是否跳过子代理会话）。同目录的 `history.json` 是本机运行记录，**不进白名单** |
-| `our-free-model/settings.json` | 免费模型插件（`dsh-our-free-model`）的用户设置：开关、探测间隔、转发、出口、渠道网关、默认 maxTokens（详见下方专节） |
+| `our-free-model/settings.json` | 免费模型插件（`dsh-our-free-model-fish`）的用户设置：开关、探测间隔、转发、出口、渠道网关、默认 maxTokens（详见下方专节） |
 | `our-free-model/catalog.json` | 免费模型目录快照（模型 id 列表 + 时间戳），无密钥 |
 | `our-free-model/availability.json` | 免费模型可用性快照（出口 IP + 各模型探测结果），无密钥 |
 | `our-free-model/stats.json` | 免费模型用量统计账本（详见下方专节，含跨机覆盖说明） |
@@ -164,7 +164,7 @@ dsh plugin --profile <profile> add "file:<仓库路径>/packages/dsh-git-sync"
 
 ### 免费模型插件（`our-free-model`）
 
-`dsh-our-free-model` 的配置目录 `$DSH_HOME/our-free-model/` 在 home **之内**，所以按普通相对路径点名，不需要额外扫描根。收录四份：
+`dsh-our-free-model-fish` 的配置目录 `$DSH_HOME/our-free-model/` 在 home **之内**，所以按普通相对路径点名，不需要额外扫描根。收录四份：
 
 - `our-free-model/settings.json` —— 用户设置：启用开关、探测间隔、转发、出口、渠道网关、默认 maxTokens；
 - `our-free-model/catalog.json` —— 模型目录快照（模型 id 列表 + 时间戳）；
