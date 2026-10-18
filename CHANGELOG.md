@@ -4,6 +4,16 @@
 
 ---
 
+## 0.10.4（2026-10-18）
+
+- **团队插件 0.7.2 → 0.7.3**：新版宿主的 `spawn` 子代理 provider 只声明 `agentPreset`（没有 persona / toolFilter 能力位），旧版插件仍通过 `startActivation` 交付成员人格，于是每个成员都以 `agent-teams: provider "spawn" cannot apply a member persona` 失败 —— 团队建得起来、成员一个都起不来。0.7.3 在预设型宿主上改由插件自己的 activation 回调安装人格段与工具过滤器。
+- **不再写坏子会话**：旧版把组合快照写成 `agent-teams/member-composition` 会话事件，而宿主 2.0.19 **不认识该类型且它未标 ignorable**，读取该子会话直接抛 `SessionFormatUnsupportedError: … refusing to interpret the log`，成员提示词派发随之报 `subagent "…" is unavailable`。0.7.3 改走宿主的插件记录通道（`appendPluginRecord`，自动 `ignorable: true`），冷恢复改为从 `team.json` 重建组合。
+- **兼容矩阵收录 `0.2.1-rc.2`**（DSH NEXT 2.0.19 内置的 `dshVersion`），21 条 `@deepseek-ai/dsh-*` peer 范围同步放宽到该版本。
+- **`dsh-our-free-model-fish` 移出聚合包**：成员数 14 → 13。它的 13 个渠道 provider 与渠道网关是重度的按需配置，绑在全量包里等于强制只用单一模型的人也一起背上，且它的发版节奏比聚合包快。需要时单独装 `dsh plugin --profile <profile> add dsh-our-free-model-fish`；行 id（`our-free-model`）与数据目录（`$DSH_HOME/our-free-model/`）不变，**既有渠道配置、签到与账本不受影响**。
+- **其余依赖不动**：11 个子包与 `dsh-better-reasoning-effort-fish@0.5.8` 均已是 npm 最新版，本版没有更新可对。
+- 同步两份 README（版本块、插件表、安装示例、配置说明、仓库结构与页脚）、`cordis.patch.yml` 头部计数与 `lib/index.js` 注释；顺带修掉 README「开发」段里指向已移除子包 `dsh-client-ui-model-capabilities` 的过时构建命令。
+- 完整说明：[v0.7.3](https://github.com/Fish-under-sea/dsh-agent-teams-fish/releases/tag/v0.7.3)。
+
 ## 0.10.3（2026-10-17）
 
 - **免费模型插件改名**：依赖从 `dsh-our-free-model@^2.1.0` 改为 `dsh-our-free-model-fish@^2.2.0`；插件行的 `name` 同步改名，行 `id` 仍是 `our-free-model`。

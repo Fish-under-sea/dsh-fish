@@ -1,7 +1,8 @@
 # @fish-under-sea/dsh-fish bundle layer —— Fish 自建插件聚合包的 bundle 入口。
 #
-# 本文件把五个自建插件与三个外部补充版的宿主行一次性插入 web profile 的 roster，
-# 装一个 @fish-under-sea/dsh-fish 就等于装齐下面八个插件。
+# 本文件把十一个自建插件与两个外部补充版的宿主行一次性插入 web profile 的 roster，
+# 装一个 @fish-under-sea/dsh-fish 就等于装齐下面十三个插件。
+# （`dsh-our-free-model-fish` 自 0.10.4 起已移出本聚合包，需单独安装，见下方说明。）
 #
 # 行为什么必须写「子包自己的包名」，不能改写成聚合包的子路径
 # （`@fish-under-sea/dsh-fish/approval-guide`）：
@@ -18,9 +19,11 @@
 #
 # dsh-web-all 之所以能用子路径，是因为它把全部浏览器半区预先打包进了自己
 # 唯一的 client bundle（lib/client.js 是一个 __ModuleLoader__.load 大包），
-# 由包自身那条行承载。本包没有那套打包流程，四个带浏览器半区的子插件
-# （approval-guide / git-sync / settings-nav-order / skill-lens-fish）的
-# client.js 各自独立，所以必须让 loader 按各自的包名去认领 —— 这也是本包要求
+# 由包自身那条行承载。本包没有那套打包流程，各带浏览器半区的子插件
+# （approval-guide / git-sync / settings-nav-order / skill-lens-fish /
+# task-board-fish / git-graph-fish / ssh-fish / usage-fish /
+# session-archive-fish / video-preview-fish）的 client.js 各自独立，
+# 所以必须让 loader 按各自的包名去认领 —— 这也是本包要求
 # 子包被提升到 profile 顶层（link: 或 github:...#path: 显式声明）的原因。
 #
 # 关于「子包的 cordis.patch.yml 为什么在这里重写一遍」：
@@ -29,7 +32,7 @@
 # 所以聚合包必须自己把子包的插行动作复述一遍，否则装了聚合包却一个插件
 # 都不生效。
 #
-# 八个插件的运行期参数都写在 $DSH_HOME 下的各自 config.json 里
+# 十三个插件的运行期参数都写在 $DSH_HOME 下的各自 config.json 里
 # （在 GUI 设置页改），不写在这里，因此不会跟着本包同步到别的机器。
 
 # 2026-10-12：原先此处停用 DSH 内置的「首条消息」标题提供方
@@ -59,6 +62,9 @@
     # AgentTeams 多智能体团队协作 —— **外部补充版，不是本仓库子包**：
     # 上游 NanmiCoder/dsh-agent-teams 的补充版，新增自定义美术目录、
     # 十七厂商头像（十个有厂商 × 岗位全套，另七个只有通用图与立绘）与厂商商标徽标。行名 = 它的 npm 包名。
+    # 0.7.3 起在「预设型宿主」（DSH NEXT 2.0.x 的 spawn provider 只声明
+    # agentPreset、不给 persona/toolFilter 能力位）上改由插件自己安装成员组合，
+    # 不再报 `provider "spawn" cannot apply a member persona`。
     # artworkDir（自定义美术目录）是机器相关绝对路径，故意不写在这里：
     # 需要时在自己 profile 的 patch 层覆盖同一个 id 行即可。
     - id: agent-teams
@@ -97,21 +103,19 @@
     - id: dsh-better-reasoning-effort-fish
       name: dsh-better-reasoning-effort-fish
 
-    # 免费模型与渠道聚合（Fork）—— **外部补充版，不是本仓库子包**。
-    # 上游 Ebony-Vinyl/dsh-our-free-model 的 Fork：本 Fork 新增「隐藏渠道模型分组」
-    # 总开关，把 13 个渠道 provider 分组从模型选择器里一次性收起来
-    # （**只影响展示，不影响路由** —— 网关请求走 resolveModelInfo，被隐藏的模型照常收发）。
-    # 行名 = 它的 npm 包名（无 scope，不涉及子路径两段式限制）。
-    # 包名带 -fish 后缀是为了不占用上游的 npm 包名；行 id 仍是 `our-free-model`，
-    # 与数据目录名（`$DSH_HOME/our-free-model/`）一致，从上游切换过来不丢设置。
+    # 免费模型与渠道聚合（Fork）—— **0.10.4 起已移出本聚合包，此处不再插入**。
     #
-    # ⚠️ 本行插入后，profile 的 `dsh.profile.bundles` 里**不得**再单列
-    # `dsh-our-free-model-fish`：那个 bundle 层会展开它自己的 patch（同样插入
-    # `id: our-free-model`），而 composeEntries 只做 push、**不去重** ——
-    # 同一 id 插两次即重复挂载，而重复挂载会让应用启动失败。按本仓库既有约定，
-    # 把该包写进 profile 的 `devDependencies` 即可（装得到，且不会被对账提升为 bundle 层）。
-    - id: our-free-model
-      name: 'dsh-our-free-model-fish'
+    # 为什么移出：它的 13 个渠道 provider 分组与渠道网关属于「按需装」的重配置项，
+    # 挂在全家桶里会让不用免费渠道的人也背上整包依赖与启动行。需要的用户请单独安装：
+    #
+    #   dsh plugin --profile <profile> add dsh-our-free-model-fish
+    #
+    # ⚠️ 单独安装时仍要守住「同一 id 不插两行」：它自己的 cordis.patch.yml 插入的
+    # id 就是 `our-free-model`。本包已不再插这一行，但若你在 profile 的
+    # `dependencies` 里同时声明了 `dsh-our-free-model-fish`，对账逻辑会把它提升为
+    # bundle 层并展开它自己的 patch —— 那一行只出现一次，属正常；只有「两个来源都
+    # 插 `our-free-model`」才会重复挂载并让应用启动失败（`composeEntries` 只做
+    # push、不去重）。
 
     # ── 以下六个是上游 DSH Web GUI 全家桶（dsh-web）插件的 Fork ──────────────
     # 来源：https://github.com/zhu1090093659/dsh-web（Apache-2.0），基线版本 0.4.6。

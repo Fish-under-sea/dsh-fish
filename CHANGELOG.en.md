@@ -4,6 +4,16 @@
 
 ---
 
+## 0.10.4 (2026-10-18)
+
+- **Team plugin 0.7.2 → 0.7.3**: the new host's `spawn` subagent provider declares only `agentPreset` (no persona / toolFilter capability), while the old plugin still delivered member personas through `startActivation` — so every member failed with `agent-teams: provider "spawn" cannot apply a member persona`: teams could be created but no member could start. 0.7.3 installs the persona section and tool filter from the plugin's own activation hook on such preset-only hosts.
+- **No more corrupted child sessions**: the old plugin wrote the composition snapshot as an `agent-teams/member-composition` session event; host 2.0.19 does not know that type and it was not marked ignorable, so reading the child session threw `SessionFormatUnsupportedError: … refusing to interpret the log` and prompt delivery reported `subagent "…" is unavailable`. 0.7.3 uses the host's plugin-record channel (`appendPluginRecord`, automatically `ignorable: true`) and rebuilds compositions from `team.json` on cold resume.
+- **Compatibility matrix accepts `0.2.1-rc.2`** (the `dshVersion` bundled with DSH NEXT 2.0.19); all 21 `@deepseek-ai/dsh-*` peer ranges were widened accordingly.
+- **`dsh-our-free-model-fish` removed from the bundle**: member count 14 → 13. Its 13 channel providers and channel gateway are heavy opt-in configuration; bundling it forced that load on people who only ever use one model, and it releases faster than the bundle. Install it separately with `dsh plugin --profile <profile> add dsh-our-free-model-fish`; the entry id (`our-free-model`) and data directory (`$DSH_HOME/our-free-model/`) stay the same, so **existing channel settings, check-ins and ledgers are untouched**.
+- **No other dependency moved**: the 11 sub-packages and `dsh-better-reasoning-effort-fish@0.5.8` are all already the latest on npm, so this release has no other updates to match.
+- Both READMEs updated (version block, plugin table, install examples, configuration, repository layout, footer), plus the `cordis.patch.yml` header counts and the `lib/index.js` comment; the stale "Development" command for the removed `dsh-client-ui-model-capabilities` sub-package is gone too.
+- Full notes: [v0.7.3](https://github.com/Fish-under-sea/dsh-agent-teams-fish/releases/tag/v0.7.3).
+
 ## 0.10.3 (2026-10-17)
 
 - **Free-model plugin renamed**: the dependency moves from `dsh-our-free-model@^2.1.0` to `dsh-our-free-model-fish@^2.2.0`, and the plugin entry's `name` follows; the entry `id` stays `our-free-model`.
