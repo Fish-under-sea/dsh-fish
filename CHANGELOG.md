@@ -4,6 +4,15 @@
 
 ---
 
+## 1.0.0（2026-10-19）
+
+- 聚合与十个仓内成员、独立 AgentTeams 统一版本为 `1.0.0`，依赖精确固定。
+- AgentTeams npm 名迁为 `@fish-under-sea/dsh-agent-teams-fish`，保留 `agent-teams` 行 id、数据目录和配置键。
+- 移除 Better Reasoning Effort Fish Fork 和 Video Preview；推理插件需要时请安装 HaoyueQin 官方版本，不再保留 Fish 替代依赖。
+- 清除已退出聚合的旧标题子包源码；OFM 不恢复进聚合。用户现有 profile、数据和历史日志不会随本次代码整理自动删除。
+- 全面重写聚合及十一成员的中英文 README，去掉旧版本长块并保留原作者、许可证与历史入口。
+- 新增版本、scope、依赖清单和挂载行一致性回归测试。本版不声称合并所有上游最新提交，不扩大宿主支持范围。
+
 ## 0.10.4（2026-10-18）
 
 - **团队插件 0.7.2 → 0.7.3**：新版宿主的 `spawn` 子代理 provider 只声明 `agentPreset`（没有 persona / toolFilter 能力位），旧版插件仍通过 `startActivation` 交付成员人格，于是每个成员都以 `agent-teams: provider "spawn" cannot apply a member persona` 失败 —— 团队建得起来、成员一个都起不来。0.7.3 在预设型宿主上改由插件自己的 activation 回调安装人格段与工具过滤器。

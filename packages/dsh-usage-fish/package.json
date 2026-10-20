@@ -1,7 +1,7 @@
 {
   "name": "@fish-under-sea/dsh-usage-fish",
   "description": "Usage statistics plugin for the dsh web GUI: per-provider balance and coding-plan quota detection plus a live token usage ledger, with a compact price glance card above the sidebar's Settings row",
-  "version": "0.5.0",
+  "version": "1.0.0",
   "icon": "icon.svg",
   "type": "module",
   "packageManager": "pnpm@11.7.0",
@@ -29,7 +29,10 @@
     "lib/**/*.d.ts.map",
     "src",
     "cordis.patch.yml",
-    "icon.svg"
+    "icon.svg",
+    "README.en.md",
+    "LICENSE",
+    "NOTICE"
   ],
   "publishConfig": {
     "access": "public"
@@ -94,6 +97,6 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/Fish-under-sea/dsh-fish.git",
-    "directory": "packages/dsh-usage"
+    "directory": "packages/dsh-usage-fish"
   }
 }

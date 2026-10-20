@@ -1,72 +1,29 @@
-# dsh-session-archive · Full-Text Session Search, Batch Archiving & Lifecycle Manager for DeepSeek Harness (DSH)
+# @fish-under-sea/dsh-session-archive-fish
 
-English | [中文](README.zh.md)
+**1.0.0 · 会话归档**
 
-<p align="center">
-  <img src="https://img.shields.io/npm/v/@fish-under-sea/dsh-session-archive-fish?style=flat-square" alt="Version">
-  &nbsp;
-  <img src="https://img.shields.io/badge/DSH-%3E%3D0.2.0--rc.2-4c6ef5?style=flat-square&amp;labelColor=454a54" alt="DSH">
-  &nbsp;
-  <img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License">
-</p>
+[English](README.en.md)
 
-<p align="center">
-  <strong>Full-Text Session Search, Batch Archiving & Lifecycle Manager for DeepSeek Harness (DSH)</strong><br>
-  <em>Centralized Session View · Faceted Search & Filtering · Batch Archive & Cascade Delete · Automated Retention Rules</em>
-</p>
+## 功能
 
-A comprehensive session lifecycle and archive management plugin for DeepSeek Harness (DSH) Web GUI and official desktop client: centralized session inventory, batch archive/unarchive, and verifiable cascade physical deletion pipelines with disk space reclamation. Optional automated policies automatically archive inactive sessions and prune expired archives based on retention schedules.
+集中检索和筛选会话、批量归档和取消归档、受保护的级联物理删除，以及可选自动归档和保留策略。
 
-## What it does
-
-- **Complete inventory**: every session the host can see — active, archived, blank, sub-agent, workspace-less, and historical sessions with incomplete metadata — with title, session ID, workspace, last activity, status, archive time (or an explicit "unknown"), size, and child-session counts.
-- **Filter, search, sort**: by status (all / unarchived / archived), workspace (including no workspace), title or ID search, last-activity / archive-time / creation-time / title / size sorting, and a "sessions with issues" quick filter. The result count is always shown.
-- **True multi-select**: per-row checkboxes, per-workspace select/deselect, and select-all that covers the complete filtered result set — not just rendered rows. Selection is kept across filter changes with an explicit note when selected items fall outside the current filter.
-- **Batch operations**: archive, unarchive, and physical delete over the selected set, executed as bounded server-side chunks with live progress, per-session results (success / skipped with reason / failed with reason), and a retry-failed-only action. The current session, running sessions, and sessions with running descendants are always protected and skipped with an explanation.
-- **Physical delete with cascade semantics**: deleting a session also removes its storage (jsonl.zstd directory or session-rdb rows), workspace accounting, archive-set entries, projection cache, and the plugin's archive ledger. Deleting a parent pulls in all descendants; a family containing any protected member is skipped whole — never half-deleted. Deletion requires an explicit confirmation that states the direct count, the cascade count, the final total, the skipped protected count, and the estimated freed space; large deletes require an extra acknowledgement.
-- **Optional automatic maintenance (off by default)**: auto-archive sessions inactive beyond a threshold (by last-activity time, never creation time) and auto-delete archived sessions past their retention (by the recorded archive time, never file times). Manual and automatic archiving both support bare UUID and `session-`-prefixed IDs, while the archive ledger uses canonical IDs. Both are independent switches with pre-enable previews, run-now buttons, and persisted last-run/next-check status. Sessions archived before this plugin existed have no reliable archive time, are shown as "unknown", and are never auto-deleted.
-- **Safe by construction**: all routes are loopback-fenced (tunnels and LAN clients get 403), deletion never follows symlinks outside the sessions root, and operations serialize so two batches can never interleave.
-
-## Install
+## 安装
 
 ```sh
-pnpm add @fish-under-sea/dsh-session-archive-fish
+dsh plugin --profile <profile> add @fish-under-sea/dsh-session-archive-fish@1.0.0
 ```
 
-The family bundle (`dsh-web-all`) includes this plugin. For a standalone profile mount:
+也可安装聚合包 `@fish-under-sea/dsh-fish@1.0.0`。聚合与独立安装不要重复展开相同插件行；安装完成后重启 DSH。桌面环境无 CLI 时使用插件管理器。
 
-```sh
-dsh plugin --profile web add link:/path/to/dsh-web/packages/dsh-session-archive
-```
+## 配置与边界
 
-Restart `dsh web`. The plugin **owns the "Archived sessions" Settings entry** instead of adding a parallel first-level one: it seats the official `settings.section` id (`archived-sessions`) at nav order (25), so Settings shows a single archive entry carrying both the native restore behaviour (the section opens on the archived view) and this plugin's management surface. DSH `0.1.7-alpha.2` no longer mounts the official `@deepseek-ai/dsh-client-ui-settings-unarchive-sessions` page that used to own that id, so no composition-layer retirement is needed.
+物理删除不可撤回。运行中、当前会话或在途操作保护整族；归档时间未知的会话不进入自动删除。归档时间以 $DSH_HOME/dsh-session-archive/archive-ledger.json 为准，不能用文件时间代替。
 
-A standalone install mounts the same single entry: nothing else registers the `archived-sessions` section id on the supported cohort.
+Node 要求: `^22.19.0 || >=24.0.0`. DSH 支持范围以本包声明为准；聚合包不覆盖宿主兼容性检查。
 
-## Configuration
+## 维护与来源
 
-The settings section exposes:
+1.0.0 统一发布版本，不表示已合并上游所有最新提交。历史说明保留在 Git 历史中；聚合变更见 [聚合变更记录](https://github.com/Fish-under-sea/dsh-fish/blob/main/CHANGELOG.md).
 
-- `enabled` — turn the whole management surface off.
-- `autoArchiveEnabled` + `autoArchiveDays` (1–3650, default 7) — auto-archive threshold by last activity.
-- `autoDeleteEnabled` + `autoDeleteDays` (1–3650, default 7) — archive retention before physical deletion.
-- `checkIntervalMin` (15–1440, default 60) — scheduler cadence for the automatic checks.
-
-Invalid or out-of-range values are never saved; the form shows a validation message.
-
-## Semantics you should know
-
-- **Archiving never deletes data.** An archived session only disappears from grouping surfaces; unarchiving restores it with its workspace slot intact.
-- **Physical delete is unrecoverable.** It removes the session history, metadata, workspace association, archive records, projection cache, and other session-owned data. Shared, content-addressed attachments are left alone (they may be referenced by other sessions); orphaned attachment objects are not garbage-collected by this plugin.
-- **Archive times are recorded by this plugin.** Sessions archived before installation show "archive time unknown" and stay outside auto-delete until a human deletes them or they are unarchived and re-archived (which restarts the retention clock).
-- **Protected sessions are never deleted, manually or automatically**: running sessions, the session you are currently viewing, sessions with running children, and sessions already inside another archive operation. Forced stops never happen.
-
-## Security model
-
-All HTTP routes (`/api/dsh-session-archive/*`) are fenced to loopback sockets with a loopback Host header and browser same-origin markers; `X-Forwarded-For` is never trusted. Deletion resolves storage paths only through the plugin's own sessions-root index, re-validates realpaths before removal, and rejects anything outside `$DSH_HOME/sessions`. Clients send session IDs only — never file paths. The session-rdb store (SQLite) is fingerprint-checked before any row deletion.
-
-## Known limitations
-
-- Remote-browser users (LAN or `dsh-remote-web-ui` tunnels) cannot operate this section; every route is loopback-only by design, because it can destroy local session data.
-- Sessions missing from the host feed and the projection cache are flagged "incomplete metadata" and excluded from automatic flows.
-- Attachments under `$DSH_HOME/attachments` are shared and content-addressed; this plugin does not reclaim orphaned ones.
+派生自 [zhu1090093659/dsh-web](https://github.com/zhu1090093659/dsh-web). 保留原作者署名、LICENSE 与 NOTICE；Fish 修改包括包名与对应适配。 许可证: Apache-2.0.

@@ -4,6 +4,15 @@
 
 ---
 
+## 1.0.0 (2026-10-19)
+
+- Coordinates the aggregate, ten in-repository members and standalone AgentTeams at `1.0.0`, with exact dependency pins.
+- Renames AgentTeams to `@fish-under-sea/dsh-agent-teams-fish`, preserving its `agent-teams` row id, state directory and configuration keys.
+- Removes the Better Reasoning Effort Fish fork and Video Preview. Use HaoyueQin upstream for reasoning controls; no Fish replacement is bundled.
+- Removes the retired session-title package source. OFM stays outside the bundle. This source cleanup does not delete user profiles, data or historical logs.
+- Rewrites Chinese and English READMEs for the aggregate and all eleven members, removing long historical release blocks while preserving authorship, licenses and history links.
+- Adds regression contracts for versions, scope, dependencies and bundle rows. This release neither claims every upstream HEAD is merged nor expands Host support.
+
 ## 0.10.4 (2026-10-18)
 
 - **Team plugin 0.7.2 → 0.7.3**: the new host's `spawn` subagent provider declares only `agentPreset` (no persona / toolFilter capability), while the old plugin still delivered member personas through `startActivation` — so every member failed with `agent-teams: provider "spawn" cannot apply a member persona`: teams could be created but no member could start. 0.7.3 installs the persona section and tool filter from the plugin's own activation hook on such preset-only hosts.

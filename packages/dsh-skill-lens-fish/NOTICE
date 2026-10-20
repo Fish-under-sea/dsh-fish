@@ -1,0 +1,12 @@
+Skill Lens (Fish fork)
+
+Derived from x-feichen/dsh-skill-lens:
+https://github.com/x-feichen/dsh-skill-lens
+Upstream package dsh-skill-lens@0.1.0 declares license: MIT.
+The upstream repository does not provide a separate LICENSE or NOTICE file
+at commit ea7b6402300de0e61db1b8eb0fbad6311615f5e7.
+
+Fish-under-sea maintains the scoped name and DSH integration changes,
+including DSH_HOME-aware skill locations, flat Markdown skills and shared
+skill references. Upstream attribution is retained in the README and this
+notice. This notice is added by Fish-under-sea, not copied from upstream.
