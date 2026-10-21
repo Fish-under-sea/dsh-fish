@@ -2,29 +2,29 @@
 
 <img src="icon.png" alt="Fish" width="96">
 
-**1.0.2 · Eleven plugins, one bundle**
+**1.0.3 · Twelve plugins, one bundle**
 
 [简体中文](README.md)
 
 ## Installation
 
 ```sh
-dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@1.0.2
+dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@1.0.3
 ```
 
-Restart DSH after installation. With no desktop CLI, add the same package in the plugin manager. Requires Node `^22.19.0 || >=24`. AgentTeams recommends Host `0.2.0-rc.2`; `0.2.1-rc.2` remains preview-supported. Every member retains its own Host compatibility declaration.
+Restart DSH after installation. With no desktop CLI, add the same package in the plugin manager. Requires Node `^22.19.0 || >=24`. AgentTeams recommends Host `0.2.0-rc.2`; `0.2.1-rc.2` remains preview-supported. Jailbreak targets `dshTarget` `0.2.1-rc.2` (upstream 1.1.71 baseline, with that release’s prompt-variable incompatibility fixed here). Every member retains its own Host compatibility declaration.
 
 ## What's New
 
-Settings Navigation now owns icons, localized titles and ordering for four extension commands. The default is **Agent Teams → Visual Companion → Context Compression → Cache Statistics** (`agent-teams → companion → acp → acp-cache`). ACP descriptions follow the interface language as well.
+Adds a twelfth member, **Jailbreak** (`@fish-under-sea/dsh-purge-fish`): injects replaceable cleaning prompts for every model, with one preset per model, plus a red-team bench (presets, skills, SQLite fact store and HTTP bridge). It is the only member that rewrites the host prompt — it disables the harness identity section, clears `personaPrefix`, replaces `personaSuffix` with a non-interpolating sentence, and disables five legacy red-team rows.
 
-Open **Settings → 设置导航顺序 → 斜杠菜单顺序**, move rows with ↑ / ↓ and save. The command section has separate enable and reset controls. Preferences persist in the browser and `$DSH_HOME/dsh-settings-nav-order/state.json`, preserving existing navigation order and hidden entries. Restart DSH after upgrading.
+Retained from the previous release: Settings Navigation owns icons, localized titles and ordering for four extension commands, defaulting to **Agent Teams → Visual Companion → Context Compression → Cache Statistics** (`agent-teams → companion → acp → acp-cache`). Adjust and save under **Settings → 设置导航顺序 → 斜杠菜单顺序**; preferences live in the browser and `$DSH_HOME/dsh-settings-nav-order/state.json`.
 
-All **eleven members are published and verified at 1.0.2 before the aggregate**, which pins each version exactly.
+All twelve members are currently **1.0.2**; the aggregate itself is **1.0.3** and still pins every dependency exactly.
 
 ## Included Plugins
 
-All eleven members and this aggregate are **1.0.2**, with exact dependency pins. Ten members live here; AgentTeams has its own repository.
+All twelve members are currently **1.0.2**, with exact dependency pins. Ten members live here; AgentTeams and Jailbreak have their own repositories. The aggregate itself is **1.0.3**.
 
 | Plugin | npm | Capabilities |
 | --- | --- | --- |
@@ -39,11 +39,13 @@ All eleven members and this aggregate are **1.0.2**, with exact dependency pins.
 | [Usage Monitor](https://www.npmjs.com/package/@fish-under-sea/dsh-usage-fish) | `@fish-under-sea/dsh-usage-fish` | Tracks token usage by provider and model, balances, subscription quotas, peak/off-peak cost estimates, Token Bank and a sidebar summary. |
 | [Session Archive](https://www.npmjs.com/package/@fish-under-sea/dsh-session-archive-fish) | `@fish-under-sea/dsh-session-archive-fish` | Central session inventory and filtering, batch archive/unarchive, guarded cascade physical deletion, and optional automatic archival and retention rules. |
 | [AgentTeams](https://www.npmjs.com/package/@fish-under-sea/dsh-agent-teams-fish) | `@fish-under-sea/dsh-agent-teams-fish` | Approved member dispatch, task DAGs, mailboxes, quality gates and repair rounds, durable recovery, Fish vendor/role artwork, eighteen vendor identities and route-aware captain avatars. |
+| [Jailbreak](https://www.npmjs.com/package/@fish-under-sea/dsh-purge-fish) | `@fish-under-sea/dsh-purge-fish` | Injects replaceable cleaning prompts for every model with per-model presets; ships a red-team bench (presets, skills, SQLite fact store, HTTP bridge) and one-click rollback. Disables the harness identity section and legacy red-team rows. |
 
 ## Migration
 
 - Securely back up `$DSH_HOME`, profile manifests and patches; separately back up local linked plugin source.
 - AgentTeams moves to `@fish-under-sea/dsh-agent-teams-fish`. Replace old direct dependencies and bundle references, including any profile row overriding the old `name`. The `agent-teams` row id, `.agent-teams` state directory and configuration keys stay unchanged. Never mount old and new packages together.
+- Jailbreak comes from upstream [YuJunZhiXue/dsh-purge](https://github.com/YuJunZhiXue/dsh-purge) (MIT) v1.1.71, maintained here as `@fish-under-sea/dsh-purge-fish`; the `dsh-purge` row id and the `$DSH_HOME/redteam` data directory are unchanged. If the unscoped `dsh-purge` was installed standalone, remove that dependency in the plugin manager before adding this bundle so the row is not mounted twice.
 - Better Reasoning Effort is no longer bundled. Use `dsh-better-reasoning-effort` from [HaoyueQin upstream](https://github.com/HaoyueQin/dsh-better-reasoning-effort), not the Fish fork.
 - Video Preview is discontinued. OFM and the retired session-title plugin are not included and have no replacement dependency here. This release does not delete existing user data.
 - Updating the aggregate does not automatically remove old standalone dependencies, bundles or profile overrides. Review and remove those entries in the plugin manager before restarting.
@@ -51,7 +53,7 @@ All eleven members and this aggregate are **1.0.2**, with exact dependency pins.
 
 ## Coexistence and Data
 
-Do not co-enable equivalent upstream `dsh-web-all` and Fish rows: distinct ids can still register the same services twice. Upstream Skill Lens shares the `skill-lens` id. This bundle inserts only its eleven rows and never disables another package or the built-in title service.
+Do not co-enable equivalent upstream `dsh-web-all` and Fish rows: distinct ids can still register the same services twice. Upstream Skill Lens shares the `skill-lens` id. This bundle inserts its own fifteen rows (Jailbreak alone accounts for four) and additionally disables five legacy red-team row ids (`redteam-store`, `redteam-ui`, `redteam-mode`, `redteam-mode/store`, `redteam-mode/ui`) and rewrites the `system-prompt` row to drop the harness identity section. Turn off the single `dsh-purge` row to skip Jailbreak. It never disables another package or the built-in title service.
 
 Configuration and data stay in `$DSH_HOME` or the workspace without hard-coded machine paths. SSH credentials may be plaintext; physical session deletion is irreversible; Git sync is not a full backup; scheduling and teams consume real model quota. Read each member safety section.
 
@@ -67,12 +69,13 @@ pnpm -r --if-present test
 pnpm -r --if-present build
 ```
 
-The aggregate has no runtime implementation: `cordis.patch.yml` mounts independently built and published members. Rebuild client modules for their real package identity. 1.0.2 coordinates version management; it does not claim every upstream HEAD is merged.
+The aggregate has no runtime implementation: `cordis.patch.yml` mounts independently built and published members. Rebuild client modules for their real package identity. The aggregate version moves separately from member versions: 1.0.3 is the bundle’s own version, members stay pinned to their published versions, and no claim is made that every upstream HEAD is merged.
 
 Fish-native: Approval Guide, Git Sync, Settings Navigation and Visual Companion. Fork sources:
 
 - [x-feichen/dsh-skill-lens](https://github.com/x-feichen/dsh-skill-lens) · MIT
 - [zhu1090093659/dsh-web](https://github.com/zhu1090093659/dsh-web) · Apache-2.0
 - [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) · MIT
+- [YuJunZhiXue/dsh-purge](https://github.com/YuJunZhiXue/dsh-purge) · MIT
 
 Original copyrights, member LICENSE files and NOTICE files are preserved. The aggregate is MIT. Historical changes are in [Changelog](CHANGELOG.en.md).

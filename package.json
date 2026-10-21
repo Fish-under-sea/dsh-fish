@@ -1,7 +1,7 @@
 {
   "name": "@fish-under-sea/dsh-fish",
-  "version": "1.0.2",
-  "description": "Fish DSH 插件聚合包：十个本仓库子包与独立 AgentTeams，共十一个 @fish-under-sea 成员，统一 1.0.2。",
+  "version": "1.0.3",
+  "description": "Fish DSH 插件聚合包：十个本仓库子包、独立 AgentTeams 与破甲，共十二个 @fish-under-sea 成员，成员精确固定各自版本。",
   "type": "module",
   "main": "./lib/index.js",
   "exports": {
@@ -33,7 +33,8 @@
     "@fish-under-sea/dsh-ssh-fish": "1.0.2",
     "@fish-under-sea/dsh-usage-fish": "1.0.2",
     "@fish-under-sea/dsh-visual-companion": "1.0.2",
-    "@fish-under-sea/dsh-agent-teams-fish": "1.0.2"
+    "@fish-under-sea/dsh-agent-teams-fish": "1.0.2",
+    "@fish-under-sea/dsh-purge-fish": "1.0.2"
   },
   "devDependencies": {
     "lightningcss": "^1.32.0",

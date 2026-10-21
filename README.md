@@ -2,29 +2,29 @@
 
 <img src="icon.png" alt="Fish" width="96">
 
-**1.0.2 · 十一个插件，一个聚合入口**
+**1.0.3 · 十二个插件，一个聚合入口**
 
 [English](README.en.md)
 
 ## 安装
 
 ```sh
-dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@1.0.2
+dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@1.0.3
 ```
 
-安装后重启 DSH。桌面版无 CLI 时在插件管理器添加同名包。需要 Node `^22.19.0 || >=24`；AgentTeams 推荐宿主 `0.2.0-rc.2`，`0.2.1-rc.2` 保持预览支持。各成员的宿主声明仍分别生效。
+安装后重启 DSH。桌面版无 CLI 时在插件管理器添加同名包。需要 Node `^22.19.0 || >=24`；AgentTeams 推荐宿主 `0.2.0-rc.2`，`0.2.1-rc.2` 保持预览支持。破甲的 `dshTarget` 为 `0.2.1-rc.2`（上游 1.1.71 基线，已修该版插值变量兼容）。各成员的宿主声明仍分别生效。
 
 ## 本次更新
 
-四条扩展命令的图标、中文标题与顺序现由「设置导航顺序」插件统一管理，并随发布包交付。默认顺序为 **智能体团队 `agent-teams` → 视觉伴侣 `companion` → 上下文压缩 `acp` → 缓存统计 `acp-cache`**，ACP 两条说明也跟随界面语言显示。
+新增第 12 个成员**破甲** `@fish-under-sea/dsh-purge-fish`：给所有模型注入可替换的清洗提示词，不同模型可各配一份，并带红队演练台（预设、技能、SQLite 事实库与 HTTP 桥）。它是本聚合唯一改写宿主内置提示的成员 —— 会关闭 harness 身份段、清空 `personaPrefix`、把 `personaSuffix` 换成不插值的固定句，同时停用五个旧独立红队行。
 
-在 **设置 → 设置导航顺序 → 斜杠菜单顺序** 用 ↑ / ↓ 调整并保存，可单独关闭或恢复命令默认顺序。偏好保存在浏览器与 `$DSH_HOME/dsh-settings-nav-order/state.json`；旧版设置导航的顺序和隐藏偏好继续保留。升级后重启 DSH 即可使用。
+上一版内容保留：四条扩展命令的图标、中文标题与顺序由「设置导航顺序」插件统一管理，默认顺序为 **智能体团队 `agent-teams` → 视觉伴侣 `companion` → 上下文压缩 `acp` → 缓存统计 `acp-cache`**，ACP 两条说明跟随界面语言显示；在 **设置 → 设置导航顺序 → 斜杠菜单顺序** 用 ↑ / ↓ 调整并保存，偏好存于浏览器与 `$DSH_HOME/dsh-settings-nav-order/state.json`。
 
-所有 **11 个子包均先发布并核对为 1.0.2**，聚合包随后精确固定这些版本。
+十二个成员当前均为 **1.0.2**；聚合包自身为 **1.0.3**，依赖仍逐项精确固定。
 
 ## 插件清单
 
-以下 11 个成员与聚合包统一为 **1.0.2**。其中 10 个在本仓库，AgentTeams 在独立仓库。聚合依赖精确固定版本。
+以下 12 个成员当前均为 **1.0.2**。其中 10 个在本仓库，AgentTeams 与破甲在各自独立仓库；聚合包本身是 **1.0.3**，依赖逐项精确固定。
 
 | 插件 | npm | 功能 |
 | --- | --- | --- |
@@ -39,11 +39,13 @@ dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@1.0.2
 | [用量统计](https://www.npmjs.com/package/@fish-under-sea/dsh-usage-fish) | `@fish-under-sea/dsh-usage-fish` | 按渠道和模型展示 token 台账、余额、订阅配额、峰谷成本估算、Token 银行与侧栏速览。 |
 | [会话归档](https://www.npmjs.com/package/@fish-under-sea/dsh-session-archive-fish) | `@fish-under-sea/dsh-session-archive-fish` | 集中检索和筛选会话、批量归档和取消归档、受保护的级联物理删除，以及可选自动归档和保留策略。 |
 | [团队协作](https://www.npmjs.com/package/@fish-under-sea/dsh-agent-teams-fish) | `@fish-under-sea/dsh-agent-teams-fish` | 审批后派发成员、任务依赖 DAG、信箱通信、质量门与修复轮次、持久恢复；Fish 厂商和岗位美术、十八厂商识别、队长头像跟随模型路由。 |
+| [破甲](https://www.npmjs.com/package/@fish-under-sea/dsh-purge-fish) | `@fish-under-sea/dsh-purge-fish` | 为所有模型注入可替换的清洗提示词，可按模型分别配置；附红队演练台（预设、技能、SQLite 事实库、HTTP 桥）与一键回滚。关闭 harness 身份段与旧红队行。 |
 
 ## 从旧版迁移
 
 - 先安全备份 `$DSH_HOME`、profile 清单和补丁；本地 link 插件源码需另外备份。
 - AgentTeams 包名改为 `@fish-under-sea/dsh-agent-teams-fish`。替换旧直接依赖和 bundle 引用；若 profile 覆盖行中写了旧 `name`，一并修改。行 id `agent-teams`、状态目录 `.agent-teams` 和配置键不变。不要把新旧包同时挂载。
+- 破甲来自上游 [YuJunZhiXue/dsh-purge](https://github.com/YuJunZhiXue/dsh-purge)（MIT）v1.1.71 的 Fish 维护版，包名 `@fish-under-sea/dsh-purge-fish`，行 id `dsh-purge` 与数据目录 `$DSH_HOME/redteam` 不变。此前单装过无 scope 的 `dsh-purge` 时，请先在插件管理器移除旧依赖再装聚合，避免同一行被两次挂载。
 - Better Reasoning Effort 不再内置。需要时从 [HaoyueQin 官方仓库](https://github.com/HaoyueQin/dsh-better-reasoning-effort)安装 `dsh-better-reasoning-effort`，不要继续使用 Fish Fork。
 - Video Preview 不再提供；OFM 与旧会话标题插件也不在本聚合中，不提供替代依赖。已有用户数据不会因发布本包被删除。
 - 更新聚合包不会自动清掉 profile 中单独添加的旧包、bundle 或覆盖行。请在插件管理器核对并移除对应旧项后再重启。
@@ -51,7 +53,7 @@ dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@1.0.2
 
 ## 共存与数据
 
-不要同时启用同功能的上游 `dsh-web-all` 行和 Fish 行；不同 id 也可能重复注册服务。Skill Lens 与上游版共用 `skill-lens` 行 id，不能重复插入。本聚合只插入自己的 11 行，不停用其他包，也不改变宿主内置标题功能。
+不要同时启用同功能的上游 `dsh-web-all` 行和 Fish 行；不同 id 也可能重复注册服务。Skill Lens 与上游版共用 `skill-lens` 行 id，不能重复插入。本聚合插入自己的 15 行（破甲一个成员占 4 行），并额外做两件事：停用五个旧独立红队行 id（`redteam-store`、`redteam-ui`、`redteam-mode`、`redteam-mode/store`、`redteam-mode/ui`），把 `system-prompt` 行改为不含 harness 身份段。不想用破甲时在 profile 里关掉 `dsh-purge` 一行即可。不改变宿主内置标题功能。
 
 配置与业务数据保留在 `$DSH_HOME` 或工作区中，不写死机器路径。SSH 凭据可能明文保存；会话物理删除不可撤回；Git 同步不等于完整备份；调度和团队执行消耗真实模型额度。详见各成员 README 的安全边界。
 
@@ -67,12 +69,13 @@ pnpm -r --if-present test
 pnpm -r --if-present build
 ```
 
-聚合自身是空实现，挂载入口是 `cordis.patch.yml`。成员独立构建、独立发布；浏览器模块必须以实际包名重新构建。1.0.2 是管理版本统一，不是“已同步所有上游 HEAD”的声明。
+聚合自身是空实现，挂载入口是 `cordis.patch.yml`。成员独立构建、独立发布；浏览器模块必须以实际包名重新构建。聚合包版本与成员版本分开推进：1.0.3 是聚合包自身版本，成员按各自发布版本精确固定，不声称已同步所有上游 HEAD。
 
 Fish 原生：审批说明、Git 同步、设置排序、视觉伴侣。Fork 来源：
 
 - [x-feichen/dsh-skill-lens](https://github.com/x-feichen/dsh-skill-lens) · MIT
 - [zhu1090093659/dsh-web](https://github.com/zhu1090093659/dsh-web) · Apache-2.0
 - [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) · MIT
+- [YuJunZhiXue/dsh-purge](https://github.com/YuJunZhiXue/dsh-purge) · MIT
 
 原作者版权、各成员 LICENSE 和 NOTICE 保留。聚合入口采用 MIT。历史变更移至 [更新记录](CHANGELOG.md).

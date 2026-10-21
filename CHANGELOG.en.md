@@ -4,6 +4,14 @@
 
 ---
 
+## 1.0.3 (2026-10-21)
+
+- **Adds a twelfth member: Jailbreak** `@fish-under-sea/dsh-purge-fish@1.0.2` — the Fish-maintained build of upstream `YuJunZhiXue/dsh-purge` v1.1.71 (MIT). It fixes that release’s prompt-variable incompatibility on `0.2.1-rc.2`: `{{cwd}}` is not registered in that version’s interpolation table, so it fails the whole turn with `unknown prompt variable "{{cwd}}"`; `personaSuffix` is now a fixed, non-interpolating sentence.
+- The aggregate itself moves to **`1.0.3`** and still pins every dependency exactly. All twelve members are currently `1.0.2`; the other members are unchanged and therefore not republished.
+- `cordis.patch.yml` gains the four Jailbreak insert rows (`dsh-purge`, `dsh-purge-redteam`, `dsh-purge-redteam-store`, `dsh-purge-redteam-ui`) plus verbatim copies of its top-level rewrites: disables the harness identity section (`includeHarnessIdentity: false`), clears `personaPrefix`, replaces `personaSuffix`, and disables five legacy red-team row ids (`redteam-store`, `redteam-ui`, `redteam-mode`, `redteam-mode/store`, `redteam-mode/ui`).
+- The release contract now separates aggregate and member versions, and adds three assertions: all four Jailbreak rows are present, the `system-prompt` rewrite and `inject: [systemPrompt, tools]` declaration exist, and the `!!js` custom tag parses.
+- Both READMEs are updated with the twelfth member, an explicit note that Jailbreak rewrites the host prompt, migration and coexistence caveats, and the source attribution.
+- **Verification**: `pnpm test:release` passes; `npm pack` includes the updated `cordis.patch.yml` and both READMEs.
 ## 1.0.2 (2026-10-21)
 
 - Moves icons, localized titles and default ordering for `agent-teams`, `companion`, `acp` and `acp-cache` into Settings Navigation. ACP descriptions follow the interface locale.

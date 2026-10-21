@@ -4,6 +4,14 @@
 
 ---
 
+## 1.0.3（2026-10-21）
+
+- **新增第 12 个成员：破甲** `@fish-under-sea/dsh-purge-fish@1.0.2` —— 上游 `YuJunZhiXue/dsh-purge` v1.1.71（MIT）的 Fish 维护版。本机修过 `0.2.1-rc.2` 的插值变量兼容：`{{cwd}}` 未注册进该版插值表，会以 `unknown prompt variable "{{cwd}}"` 让整轮失败，故 `personaSuffix` 改为不插值的固定句。
+- 聚合包自身升为 **`1.0.3`**，依赖仍逐项精确固定；十二个成员当前均为 `1.0.2`，其余成员无改动因此不重发。
+- `cordis.patch.yml` 追加破甲四行插入（`dsh-purge`、`dsh-purge-redteam`、`dsh-purge-redteam-store`、`dsh-purge-redteam-ui`），并逐字搬运其顶层改写：关闭 harness 身份段（`includeHarnessIdentity: false`）、清空 `personaPrefix`、`personaSuffix` 换成固定句，停用五个旧独立红队行 id（`redteam-store`、`redteam-ui`、`redteam-mode`、`redteam-mode/store`、`redteam-mode/ui`）。
+- 发布契约测试改为「聚合版本独立推进 + 成员按各自版本精确固定」，新增三条断言：破甲四行齐全、`system-prompt` 改写与 `inject: [systemPrompt, tools]` 声明必须存在、`!!js` 自定义标签可解析。
+- 中英文 README 同步：第 12 成员、破甲改写宿主内置提示的显式说明、迁移与共存注意事项、来源出处。
+- **验证**：`pnpm test:release` 全部通过；`npm pack` 产物含更新后的 `cordis.patch.yml` 与中英文 README。
 ## 1.0.2（2026-10-21）
 
 - 将 `agent-teams`、`companion`、`acp`、`acp-cache` 的图标、中文标题与默认顺序收进设置导航顺序插件；ACP 的两条说明跟随界面语言。
