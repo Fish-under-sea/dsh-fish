@@ -4,6 +4,15 @@
 
 ---
 
+## 1.0.5（2026-10-21）
+
+- **不再内置破甲**：`@fish-under-sea/dsh-purge-fish` 从 `dependencies` 与 `cordis.patch.yml` 中一并移除。npm 对该新包名启用了 staged publish 审核，`1.0.2`、`1.0.4` 均只落 `0.0.0-stage` 占位、真实版本无法上架，导致聚合包安装时依赖解析失败、整个包装不上，故本版将其移出。
+- 聚合包自身升为 **`1.0.5`**，依赖精确固定 11 项（10 个仓内成员 + 独立 AgentTeams），成员版本仍为 `1.0.2`。
+- `cordis.patch.yml` 回到 11 行插入：不再改写宿主 `system-prompt`（`includeHarnessIdentity` / `personaPrefix` / `personaSuffix` 均不触碰），也不再停用五个旧红队行 id（`redteam-store`、`redteam-ui`、`redteam-mode`、`redteam-mode/store`、`redteam-mode/ui`）；这些改写随破甲移交给它自己的单装包。
+- 发布契约测试同步：成员数由 12 降为 11，删除破甲四行与 `system-prompt` 改写断言，新增「聚合不再改写宿主 system-prompt」断言。
+- 中英文 README：安装段、成员清单、迁移与共存说明改为「破甲需单独安装」，并给出 npm 与 GitHub 两种安装途径。
+- **验证**：`node --test scripts/release-contract.test.mjs` 7 项全部通过；`npm pack` 产物含更新后的 `cordis.patch.yml` 与中英文 README。
+
 ## 1.0.3（2026-10-21）
 
 - **新增第 12 个成员：破甲** `@fish-under-sea/dsh-purge-fish@1.0.2` —— 上游 `YuJunZhiXue/dsh-purge` v1.1.71（MIT）的 Fish 维护版。本机修过 `0.2.1-rc.2` 的插值变量兼容：`{{cwd}}` 未注册进该版插值表，会以 `unknown prompt variable "{{cwd}}"` 让整轮失败，故 `personaSuffix` 改为不插值的固定句。

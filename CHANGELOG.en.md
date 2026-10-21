@@ -4,6 +4,15 @@
 
 ---
 
+## 1.0.5 (2026-10-21)
+
+- **Jailbreak is no longer bundled**: `@fish-under-sea/dsh-purge-fish` is removed from both `dependencies` and `cordis.patch.yml`. npm subjects that new package name to staged publishing review, so `1.0.2` and `1.0.4` only produced a `0.0.0-stage` placeholder and the real versions never shipped; the bundle then failed dependency resolution and could not be installed at all, so this release takes it out.
+- The aggregate itself moves to **`1.0.5`** and pins exactly eleven dependencies (ten in-repository members plus standalone AgentTeams); member versions stay at `1.0.2`.
+- `cordis.patch.yml` is back to eleven insert rows: it no longer rewrites the host `system-prompt` (`includeHarnessIdentity`, `personaPrefix` and `personaSuffix` are untouched) and no longer disables the five legacy red-team row ids (`redteam-store`, `redteam-ui`, `redteam-mode`, `redteam-mode/store`, `redteam-mode/ui`); those rewrites now belong to the standalone Jailbreak package.
+- The release contract follows: twelve members drop to eleven, the Jailbreak row and `system-prompt` assertions are gone, and a new assertion requires the bundle to stop rewriting the host system prompt.
+- Both READMEs now say Jailbreak must be installed separately, with npm and GitHub install paths.
+- **Verification**: `node --test scripts/release-contract.test.mjs` passes all 7 checks; `npm pack` includes the updated `cordis.patch.yml` and both READMEs.
+
 ## 1.0.3 (2026-10-21)
 
 - **Adds a twelfth member: Jailbreak** `@fish-under-sea/dsh-purge-fish@1.0.2` — the Fish-maintained build of upstream `YuJunZhiXue/dsh-purge` v1.1.71 (MIT). It fixes that release’s prompt-variable incompatibility on `0.2.1-rc.2`: `{{cwd}}` is not registered in that version’s interpolation table, so it fails the whole turn with `unknown prompt variable "{{cwd}}"`; `personaSuffix` is now a fixed, non-interpolating sentence.

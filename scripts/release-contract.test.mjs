@@ -8,13 +8,12 @@ const json = path => JSON.parse(readFileSync(new URL(path, root), 'utf8'))
 const require = createRequire(new URL('packages/dsh-skill-lens-fish/package.json', root))
 const { parse } = require('yaml')
 
-// 本聚合插入的成员版本。聚合包自身版本独立推进（1.0.3），
+// 本聚合插入的成员版本。聚合包自身版本独立推进（1.0.5），
 // 成员按各自发布版本精确固定。
 const MEMBER_VERSION = '1.0.2'
 // 不在本仓库的成员：自带 patch 无法在仓库内校验，只校验挂载行本身。
 const externalMembers = [
   '@fish-under-sea/dsh-agent-teams-fish',
-  '@fish-under-sea/dsh-purge-fish',
 ]
 const workspaceMembers = [
   'dsh-approval-guide', 'dsh-client-ui-git-graph-fish',
@@ -23,18 +22,14 @@ const workspaceMembers = [
   'dsh-usage-fish', 'dsh-visual-companion',
 ].map(name => `@fish-under-sea/${name}`)
 const members = [...workspaceMembers, ...externalMembers]
-// 破甲成员一次占用四行：主插件、演练台、事实库、HTTP 桥。
-const purgeRows = [
-  'dsh-purge', 'dsh-purge-redteam', 'dsh-purge-redteam-store', 'dsh-purge-redteam-ui',
-]
 
 const parsePatch = path => parse(readFileSync(new URL(path, root), 'utf8'), {
   customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: value => value }],
 })
 
-test('aggregate pins exactly twelve scoped members at their published version', () => {
+test('aggregate pins exactly eleven scoped members at their published version', () => {
   const pkg = json('package.json')
-  assert.equal(pkg.version, '1.0.3')
+  assert.equal(pkg.version, '1.0.5')
   assert.equal(pkg.publishConfig.access, 'public')
   assert.deepEqual(Object.keys(pkg.dependencies).sort(), [...members].sort())
   for (const [name, version] of Object.entries(pkg.dependencies)) {
@@ -69,11 +64,16 @@ const packageRoot = name => name.split('/').slice(0, 2).join('/')
 test('bundle rows mount every member under unique row ids', () => {
   const patch = parsePatch('cordis.patch.yml')
   const rows = patch.flatMap(layer => layer.insert ?? [])
-  assert.equal(rows.length, members.length + purgeRows.length - 1)
+  assert.equal(rows.length, members.length)
   const ids = rows.map(row => row.id)
   assert.equal(new Set(ids).size, ids.length)
   assert.deepEqual([...new Set(rows.map(row => packageRoot(row.name)))].sort(), [...members].sort())
-  for (const id of purgeRows) assert.ok(ids.includes(id), id)
+})
+
+test('bundle no longer rewrites the host system prompt', () => {
+  const patch = parsePatch('cordis.patch.yml')
+  const topLevel = patch.filter(layer => typeof layer.id === 'string')
+  assert.equal(topLevel.length, 0)
 })
 
 test('in-repository members keep their own patch row id and name', () => {
@@ -89,24 +89,6 @@ test('in-repository members keep their own patch row id and name', () => {
         .some(candidate => candidate.name === row.name && candidate.id === row.id),
       row.name,
     )
-  }
-})
-
-test('purge member ships its host prompt rewrite and injection declaration', () => {
-  const patch = parsePatch('cordis.patch.yml')
-  const topLevel = patch.filter(layer => typeof layer.id === 'string')
-  const prompt = topLevel.find(layer => layer.id === 'system-prompt')
-  assert.ok(prompt, 'system-prompt 改写缺失')
-  assert.equal(prompt.config.includeHarnessIdentity, false)
-  assert.equal(prompt.config.personaPrefix, '')
-  assert.equal(prompt.config.personaSuffix, 'Your working directory is the session workspace.')
-  const purge = topLevel.find(layer => layer.id === 'dsh-purge')
-  assert.deepEqual(purge?.inject, ['systemPrompt', 'tools'])
-  const disabled = topLevel
-    .filter(layer => layer.disabled === true)
-    .map(layer => layer.id)
-  for (const id of ['redteam-store', 'redteam-ui', 'redteam-mode', 'redteam-mode-store', 'redteam-mode-ui']) {
-    assert.ok(disabled.includes(id), id)
   }
 })
 
