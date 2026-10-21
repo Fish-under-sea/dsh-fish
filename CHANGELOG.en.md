@@ -4,6 +4,13 @@
 
 ---
 
+## 1.0.2 (2026-10-21)
+
+- Moves icons, localized titles and default ordering for `agent-teams`, `companion`, `acp` and `acp-cache` into Settings Navigation. ACP descriptions follow the interface locale.
+- Adds independent command-order controls with save, enable and reset actions; browser and Host state persistence preserve existing navigation preferences.
+- Publishes and verifies all eleven members at `1.0.2` before the aggregate pins the eleven exact versions. Updates Chinese and English installation documentation.
+- **Verification**: 80 menu-plugin regressions pass against both source and the actual npm tarball; 19 standalone AgentTeams release/documentation checks pass. The other ten members have 365 runtime files byte-identical to the `1.0.1` archives, with complete package entrypoints.
+
 ## 1.0.1 (2026-10-21)
 
 - Fixes task-board launches on the newer API Gateway by passing the real `connection.operator` Peer through unary and stream calls, with regression coverage.

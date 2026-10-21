@@ -2,27 +2,35 @@
 
 <img src="icon.png" alt="Fish" width="96">
 
-**1.0.1 · Eleven plugins, one bundle**
+**1.0.2 · Eleven plugins, one bundle**
 
 [简体中文](README.md)
 
 ## Installation
 
 ```sh
-dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@1.0.1
+dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@1.0.2
 ```
 
 Restart DSH after installation. With no desktop CLI, add the same package in the plugin manager. Requires Node `^22.19.0 || >=24`. AgentTeams recommends Host `0.2.0-rc.2`; `0.2.1-rc.2` remains preview-supported. Every member retains its own Host compatibility declaration.
 
+## What's New
+
+Settings Navigation now owns icons, localized titles and ordering for four extension commands. The default is **Agent Teams → Visual Companion → Context Compression → Cache Statistics** (`agent-teams → companion → acp → acp-cache`). ACP descriptions follow the interface language as well.
+
+Open **Settings → 设置导航顺序 → 斜杠菜单顺序**, move rows with ↑ / ↓ and save. The command section has separate enable and reset controls. Preferences persist in the browser and `$DSH_HOME/dsh-settings-nav-order/state.json`, preserving existing navigation order and hidden entries. Restart DSH after upgrading.
+
+All **eleven members are published and verified at 1.0.2 before the aggregate**, which pins each version exactly.
+
 ## Included Plugins
 
-All eleven members and this aggregate are **1.0.1**, with exact dependency pins. Ten members live here; AgentTeams has its own repository.
+All eleven members and this aggregate are **1.0.2**, with exact dependency pins. Ten members live here; AgentTeams has its own repository.
 
 | Plugin | npm | Capabilities |
 | --- | --- | --- |
 | [Approval Guide](https://www.npmjs.com/package/@fish-under-sea/dsh-approval-guide) | `@fish-under-sea/dsh-approval-guide` | Adds Chinese action, risk and rationale explanations to approval prompts for files, commands, network access and privilege changes. |
 | [Git Sync](https://www.npmjs.com/package/@fish-under-sea/dsh-git-sync) | `@fish-under-sea/dsh-git-sync` | Previews, commits, pulls and restores selected DSH configuration through a private Git repository; exports only `$DSH_HOME/.credentials.yaml` locally to a user-selected or dynamically resolved Desktop folder, never through Git sync. |
-| [Settings Navigation](https://www.npmjs.com/package/@fish-under-sea/dsh-settings-nav-order) | `@fish-under-sea/dsh-settings-nav-order` | Reorders and hides settings navigation entries, persists presentation preferences and leaves other plugins unchanged. |
+| [Settings Navigation](https://www.npmjs.com/package/@fish-under-sea/dsh-settings-nav-order) | `@fish-under-sea/dsh-settings-nav-order` | Reorders and hides settings entries; manages four extension commands’ icons, localized titles, descriptions and persisted default order. |
 | [Visual Companion](https://www.npmjs.com/package/@fish-under-sea/dsh-visual-companion) | `@fish-under-sea/dsh-visual-companion` | Binds a visual-companion directory and delivers submitted selections and notes as a user message that wakes the target session; exposes arm, disarm, status and wake. |
 | [Skill Lens](https://www.npmjs.com/package/@fish-under-sea/dsh-skill-lens-fish) | `@fish-under-sea/dsh-skill-lens-fish` | Lists, inspects, edits, creates, imports and deletes skills; graphs dependencies, supports directory SKILL.md and flat .md skills plus shared references, and follows DSH_HOME. |
 | [Task Board](https://www.npmjs.com/package/@fish-under-sea/dsh-client-ui-task-board-fish) | `@fish-under-sea/dsh-client-ui-task-board-fish` | Host-authoritative task ledger, Kanban and subtasks; real DSH session execution, recurring cron and one-shot schedules with run budgets, opt-in goals, acceptance, team execution and idle-sleep protection. |
@@ -59,7 +67,7 @@ pnpm -r --if-present test
 pnpm -r --if-present build
 ```
 
-The aggregate has no runtime implementation: `cordis.patch.yml` mounts independently built and published members. Rebuild client modules for their real package identity. 1.0.1 coordinates version management; it does not claim every upstream HEAD is merged.
+The aggregate has no runtime implementation: `cordis.patch.yml` mounts independently built and published members. Rebuild client modules for their real package identity. 1.0.2 coordinates version management; it does not claim every upstream HEAD is merged.
 
 Fish-native: Approval Guide, Git Sync, Settings Navigation and Visual Companion. Fork sources:
 

@@ -1,7 +1,7 @@
 {
   "name": "@fish-under-sea/dsh-client-ui-task-board-fish",
   "description": "Host-authoritative task board for the DSH Web GUI with real session execution, Host cron scheduling, and optional cross-platform idle-sleep protection; mounted without DSH source changes.",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "icon": "icon.svg",
   "type": "module",
   "main": "lib/index.js",

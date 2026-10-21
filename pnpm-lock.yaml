@@ -9,37 +9,37 @@ importers:
   .:
     dependencies:
       '@fish-under-sea/dsh-agent-teams-fish':
-        specifier: 1.0.1
-        version: 1.0.1(353059eca21752ec577e6f7bd65875b2)
+        specifier: 1.0.2
+        version: 1.0.2(353059eca21752ec577e6f7bd65875b2)
       '@fish-under-sea/dsh-approval-guide':
-        specifier: 1.0.1
+        specifier: 1.0.2
         version: link:packages/dsh-approval-guide
       '@fish-under-sea/dsh-client-ui-git-graph-fish':
-        specifier: 1.0.1
+        specifier: 1.0.2
         version: link:packages/dsh-client-ui-git-graph-fish
       '@fish-under-sea/dsh-client-ui-task-board-fish':
-        specifier: 1.0.1
+        specifier: 1.0.2
         version: link:packages/dsh-client-ui-task-board-fish
       '@fish-under-sea/dsh-git-sync':
-        specifier: 1.0.1
+        specifier: 1.0.2
         version: link:packages/dsh-git-sync
       '@fish-under-sea/dsh-session-archive-fish':
-        specifier: 1.0.1
+        specifier: 1.0.2
         version: link:packages/dsh-session-archive-fish
       '@fish-under-sea/dsh-settings-nav-order':
-        specifier: 1.0.1
+        specifier: 1.0.2
         version: link:packages/dsh-settings-nav-order
       '@fish-under-sea/dsh-skill-lens-fish':
-        specifier: 1.0.1
+        specifier: 1.0.2
         version: link:packages/dsh-skill-lens-fish
       '@fish-under-sea/dsh-ssh-fish':
-        specifier: 1.0.1
+        specifier: 1.0.2
         version: link:packages/dsh-ssh-fish
       '@fish-under-sea/dsh-usage-fish':
-        specifier: 1.0.1
+        specifier: 1.0.2
         version: link:packages/dsh-usage-fish
       '@fish-under-sea/dsh-visual-companion':
-        specifier: 1.0.1
+        specifier: 1.0.2
         version: link:packages/dsh-visual-companion
     devDependencies:
       lightningcss:
@@ -3427,8 +3427,8 @@ packages:
       '@noble/hashes':
         optional: true
 
-  '@fish-under-sea/dsh-agent-teams-fish@1.0.1':
-    resolution: {integrity: sha512-KlkhH3GOLd7ZileBcWh8FVe8ni3mJZSU32GTW17obWNDeinrY1gfJJj+2wmks45Dir4M1hoFsaH/8JLQSjEhkA==}
+  '@fish-under-sea/dsh-agent-teams-fish@1.0.2':
+    resolution: {integrity: sha512-1ZJLiscyu/neIZkUtWZEM1DVx47xkPXiPzZW7VKkuNCAjwhKMhy0LP/tqs9XSuhlPrNZuDVOkeRtZ+zW5o97kA==}
     engines: {node: ^22.19.0 || >=24}
     hasBin: true
     peerDependencies:
@@ -9688,7 +9688,7 @@ snapshots:
 
   '@exodus/bytes@1.16.0': {}
 
-  '@fish-under-sea/dsh-agent-teams-fish@1.0.1(353059eca21752ec577e6f7bd65875b2)':
+  '@fish-under-sea/dsh-agent-teams-fish@1.0.2(353059eca21752ec577e6f7bd65875b2)':
     optionalDependencies:
       '@deepseek-ai/cordis': 4.0.4(@deepseek-ai/cordis-plugin-include@1.0.9)(@deepseek-ai/cordis-plugin-loader@1.0.5)
       '@deepseek-ai/dsh-agent': 0.2.0-rc.2(fee0e653b72a3883e0f0da2d9a46bb50)

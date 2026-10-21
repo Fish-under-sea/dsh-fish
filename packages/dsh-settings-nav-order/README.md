@@ -1,29 +1,44 @@
 # @fish-under-sea/dsh-settings-nav-order
 
-**1.0.1 · 设置导航排序**
+**1.0.2 · 设置导航与命令菜单顺序**
 
 [English](README.en.md)
 
 ## 功能
 
-重排设置侧栏、隐藏不常用设置项，并持久化显示偏好；不修改其他插件源码。
+重排设置侧栏、隐藏不常用设置项，并持久化显示偏好。
+
+`1.0.2` 新增四条扩展命令的图标、中文标题和默认顺序，与桌宠命令采用相同的「图标 + 中文标题 + 灰色命令名」形式：
+
+| 默认顺序 | 中文标题 | 命令名 |
+| --- | --- | --- |
+| 1 | 智能体团队 | `agent-teams` |
+| 2 | 视觉伴侣 | `companion` |
+| 3 | 上下文压缩 | `acp` |
+| 4 | 缓存统计 | `acp-cache` |
+
+`acp` 和 `acp-cache` 的说明跟随中文或英文界面语言显示。原始命令名、参数与执行方式保持一致；宿主已提供图标的条目保留原有展示。
 
 ## 安装
 
 ```sh
-dsh plugin --profile <profile> add @fish-under-sea/dsh-settings-nav-order@1.0.1
+dsh plugin --profile <profile> add @fish-under-sea/dsh-settings-nav-order@1.0.2
 ```
 
-也可安装聚合包 `@fish-under-sea/dsh-fish@1.0.1`。聚合与独立安装不要重复展开相同插件行；安装完成后重启 DSH。桌面环境无 CLI 时使用插件管理器。
+也可安装聚合包 `@fish-under-sea/dsh-fish@1.0.2`。聚合与独立安装不要重复展开相同插件行；安装完成后重启 DSH。桌面环境无 CLI 时使用插件管理器。
 
 ## 配置与边界
 
-状态存 $DSH_HOME/dsh-settings-nav-order/state.json，并配合浏览器本地状态；隐藏不等于禁用插件。
+打开 **设置 → 设置导航顺序 → 斜杠菜单顺序**，用 ↑ / ↓ 调整这四条命令，再点「保存命令顺序」。关闭该区域的启用开关可恢复宿主菜单；「恢复命令默认顺序」恢复上表。搜索时仍按宿主相关性排序，其他命令的位置与分区不变。
+
+状态存 `$DSH_HOME/dsh-settings-nav-order/state.json`，并配合浏览器本地状态；设置导航和命令菜单分别保存、分别恢复默认。旧版导航排序与隐藏偏好在升级后继续保留。同步该宿主文件并安装本插件后可在其他机器恢复偏好，插件更新不会依赖壁纸插件的本地补丁。
+
+隐藏设置项不等于禁用插件。
 
 Node 要求: `>=20`. DSH 支持范围以本包声明为准；聚合包不覆盖宿主兼容性检查。
 
 ## 维护与来源
 
-1.0.1 统一发布版本，不表示已合并上游所有最新提交。历史说明保留在 Git 历史中；聚合变更见 [聚合变更记录](https://github.com/Fish-under-sea/dsh-fish/blob/main/CHANGELOG.md).
+1.0.2 统一发布版本，不表示已合并上游所有最新提交。历史说明保留在 Git 历史中；聚合变更见 [聚合变更记录](https://github.com/Fish-under-sea/dsh-fish/blob/main/CHANGELOG.md).
 
 Fish 原生插件。 许可证: MIT.

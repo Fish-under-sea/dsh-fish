@@ -1,6 +1,6 @@
 {
   "name": "@fish-under-sea/dsh-skill-lens-fish",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Skill Lens（Fish 版）：在 DSH Web GUI 的会话页签里浏览本机全部 Agent Skill——同时识别目录式 <名称>/SKILL.md 与扁平 <名称>.md，解析技能对共享资源（skill-refs/）的引用并画成依赖图，另有概览、文件浏览/编辑、新建/导入/删除。基于 x-feichen/dsh-skill-lens（MIT）改造。",
   "type": "module",
   "main": "./lib/index.js",

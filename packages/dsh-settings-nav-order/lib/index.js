@@ -71,7 +71,16 @@ export function normalizeState(value) {
       .filter((row) => row !== null && typeof row === 'object' && typeof row.name === 'string')
       .map((row) => ({ name: row.name, index: Number.isInteger(row.index) ? row.index : 0 }));
   };
-  return { enabled: value.enabled !== false, order: rows(value.order), hidden: rows(value.hidden) };
+  const state = { enabled: value.enabled !== false, order: rows(value.order), hidden: rows(value.hidden) };
+  if (value.commands && typeof value.commands === 'object' && !Array.isArray(value.commands)) {
+    const defaults = ['agent-teams', 'companion', 'acp', 'acp-cache'];
+    const input = Array.isArray(value.commands.order) ? value.commands.order : [];
+    state.commands = {
+      enabled: value.commands.enabled !== false,
+      order: [...new Set([...input.filter((name) => defaults.includes(name)), ...defaults])],
+    };
+  }
+  return state;
 }
 
 /**

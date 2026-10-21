@@ -1,6 +1,6 @@
 # @fish-under-sea/dsh-visual-companion
 
-**1.0.1 · Visual Companion**
+**1.0.2 · Visual Companion**
 
 [简体中文](README.md)
 
@@ -11,10 +11,10 @@ Binds a visual-companion directory and delivers submitted selections and notes a
 ## Installation
 
 ```sh
-dsh plugin --profile <profile> add @fish-under-sea/dsh-visual-companion@1.0.1
+dsh plugin --profile <profile> add @fish-under-sea/dsh-visual-companion@1.0.2
 ```
 
-Also included in `@fish-under-sea/dsh-fish@1.0.1`. Do not expand duplicate rows through both aggregate and standalone bundles. Restart DSH after installation; use the desktop plugin manager when no CLI is available.
+Also included in `@fish-under-sea/dsh-fish@1.0.2`. Do not expand duplicate rows through both aggregate and standalone bundles. Restart DSH after installation; use the desktop plugin manager when no CLI is available.
 
 ## Configuration and Safety
 
@@ -24,6 +24,6 @@ Node requirement: `^22.19.0 || >=24.0.0`. Host compatibility follows this packag
 
 ## Maintenance and Attribution
 
-1.0.1 is a coordinated release number, not a claim that all latest upstream commits are merged. Historical documentation remains in Git; see [aggregate changelog](https://github.com/Fish-under-sea/dsh-fish/blob/main/CHANGELOG.en.md).
+1.0.2 is a coordinated release number, not a claim that all latest upstream commits are merged. Historical documentation remains in Git; see [aggregate changelog](https://github.com/Fish-under-sea/dsh-fish/blob/main/CHANGELOG.en.md).
 
 Fish-native plugin. License: MIT.

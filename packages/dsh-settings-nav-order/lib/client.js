@@ -64,6 +64,106 @@ window.__ModuleLoader__.load({
 			return { enabled: true, order: [], hidden: [] };
 		}
 
+		const COMMAND_ORDER = ['agent-teams', 'companion', 'acp', 'acp-cache'];
+		const COMMAND_FACES = {
+			'agent-teams': { zh: '智能体团队', en: 'Agent Teams', icon: 'IconUsersOutlineRegular' },
+			companion: { zh: '视觉伴侣', en: 'Visual Companion', icon: 'IconPanelLeftOutlineRegular' },
+			acp: { zh: '上下文压缩', en: 'Context Compression', icon: 'IconCompactOutlineRegular',
+				descriptionZh: '查看 bili 上下文压缩状态', descriptionEn: 'Show bili context-compression status' },
+			'acp-cache': { zh: '缓存统计', en: 'Cache Statistics', icon: 'IconDataOutlineRegular',
+				descriptionZh: '查看提示词缓存统计（与 acp_cache 工具报告一致）',
+				descriptionEn: 'Prompt-cache statistics (same report as the acp_cache tool)' },
+		};
+
+		/** 老配置没有 commands 时沿用默认；保存的顺序去重、补齐，并忽略已经移除的命令。 */
+		function normalizeCommands(value) {
+			const input = Array.isArray(value?.order) ? value.order : [];
+			return {
+				enabled: value?.enabled !== false,
+				order: [...new Set([...input.filter((name) => COMMAND_ORDER.includes(name)), ...COMMAND_ORDER])],
+			};
+		}
+
+		/** 不向旧偏好强加字段，保留旧版对账指纹与设置导航顺序。 */
+		function commandField(value) {
+			return value && typeof value === 'object' && !Array.isArray(value)
+				? { commands: normalizeCommands(value) } : {};
+		}
+
+		/** 候选展示层沿用桌宠的包装方式，执行、参数与搜索排名仍由宿主处理。 */
+		function installCommandFaces(ctx) {
+			if (typeof ctx?.get !== 'function') return undefined;
+			let icons;
+			try {
+				icons = require('@deepseek-ai/dsh-client-ui-primitives');
+			} catch {
+				return undefined;
+			}
+			let disposed = false;
+			let timer = 0;
+			let restore;
+			const warn = (error) => window.console?.warn?.('dsh-settings-nav-order: 命令菜单增强不可用，保留宿主菜单', error);
+			const attempt = () => {
+				if (disposed) return;
+				try {
+					const ui = ctx.get('commandUi');
+					if (!ui) {
+						if (typeof window.setTimeout === 'function') timer = window.setTimeout(attempt, 250);
+						return;
+					}
+					if (typeof ui.candidates !== 'function') return;
+					const original = ui.candidates;
+					const descriptor = Object.getOwnPropertyDescriptor(ui, 'candidates');
+					const wrapped = async function (...args) {
+						const rows = await original.apply(this, args);
+						if (disposed || !Array.isArray(rows)) return rows;
+						try {
+							const config = normalizeCommands(loadConfig().commands);
+							if (!config.enabled) return rows;
+							const locale = ctx.get('locale')?.getSnapshot?.().active;
+							const zh = !locale || String(locale).toLowerCase().startsWith('zh');
+							const decorated = rows.map((row) => {
+								if (!row || row.icon != null || !COMMAND_ORDER.includes(row.name)) return row;
+								const face = COMMAND_FACES[row.name];
+								const icon = icons[face.icon];
+								if (typeof icon !== 'function') return row;
+								return { ...row, label: zh ? face.zh : face.en, icon,
+									...(face.descriptionZh ? { description: zh ? face.descriptionZh : face.descriptionEn } : {}) };
+							});
+							if (args[1]?.query !== '') return decorated;
+							// 只重排同一分区里这四项原有的槽位，不挪动其他命令或跨越标题。
+							const groups = new Map();
+							for (const row of decorated) {
+								if (!row || !COMMAND_ORDER.includes(row.name)) continue;
+								if (!groups.has(row.section)) groups.set(row.section, []);
+								groups.get(row.section).push(row);
+							}
+							for (const group of groups.values()) group.sort((a, b) => config.order.indexOf(a.name) - config.order.indexOf(b.name));
+							return decorated.map((row) => row && COMMAND_ORDER.includes(row.name) ? groups.get(row.section).shift() : row);
+						} catch (error) {
+							warn(error);
+							return rows;
+						}
+					};
+					Object.defineProperty(ui, 'candidates', { value: wrapped, writable: true, configurable: true,
+						enumerable: descriptor?.enumerable ?? false });
+					restore = () => {
+						if (ui.candidates !== wrapped) return;
+						if (descriptor) Object.defineProperty(ui, 'candidates', descriptor);
+						else delete ui.candidates;
+					};
+				} catch (error) {
+					warn(error);
+				}
+			};
+			attempt();
+			return () => {
+				disposed = true;
+				if (timer) window.clearTimeout?.(timer);
+				restore?.();
+			};
+		}
+
 		/**
 		 * 保存后宿主文件的三种回执文案。
 		 *
@@ -97,6 +197,7 @@ window.__ModuleLoader__.load({
 					enabled: parsed.enabled !== false,
 					order: normalizeRows(parsed.order),
 					hidden: normalizeRows(parsed.hidden),
+					...commandField(parsed.commands),
 				};
 			} catch {
 				return defaultConfig();
@@ -166,6 +267,7 @@ window.__ModuleLoader__.load({
 				enabled: value.enabled !== false,
 				order: normalizeRows(value.order),
 				hidden: normalizeRows(value.hidden),
+				...commandField(value.commands),
 			};
 			return { raw: JSON.stringify(config), config };
 		}
@@ -484,6 +586,10 @@ window.__ModuleLoader__.load({
 .sno-hide:hover{border-color:var(--dsw-alias-brand-primary)}
 .sno-row-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .sno-chk{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--dsw-alias-label-secondary)}
+.sno-command-list{display:flex;flex-direction:column;gap:4px}
+.sno-command-token{color:var(--dsw-alias-label-tertiary);font-size:12px}
+.sno-command-up,.sno-command-down{min-width:28px;min-height:28px}
+.sno-btn:focus-visible,.sno-command-toggle:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
 `;
 
 		/** 注入一次样式（重复调用无副作用）。 */
@@ -616,6 +722,7 @@ window.__ModuleLoader__.load({
 			const [syncNote, setSyncNote] = react.useState('');
 			const [dragFrom, setDragFrom] = react.useState(-1);
 			const [dropAt, setDropAt] = react.useState(-1);
+			const [commandDraft, setCommandDraft] = react.useState(() => normalizeCommands(loadConfig().commands));
 
 			react.useEffect(() => {
 				ensureStyles(document);
@@ -658,6 +765,7 @@ window.__ModuleLoader__.load({
 			};
 
 			const commit = (next) => {
+				next = { ...next, ...commandField(loadConfig().commands) };
 				setConfig(next);
 				saveConfig(next);
 				applyToNav(document);
@@ -665,6 +773,19 @@ window.__ModuleLoader__.load({
 				// 落盘之后顺手推给宿主：dsh-git-sync 采集的是那个文件，不是 localStorage。
 				syncToHost();
 			};
+
+			const saveCommands = (commands) => {
+				const normalized = normalizeCommands(commands);
+				const next = { ...loadConfig(), commands: normalized };
+				saveConfig(next);
+				setConfig(next);
+				setCommandDraft(normalized);
+				syncToHost();
+			};
+			const moveCommand = (from, to) => setCommandDraft({
+				...commandDraft, order: moveTo(commandDraft.order, from, to),
+			});
+			const commandDirty = JSON.stringify(commandDraft) !== JSON.stringify(normalizeCommands(loadConfig().commands));
 
 			const move = (from, to) => change(moveTo(draft, from, to));
 
@@ -780,7 +901,7 @@ window.__ModuleLoader__.load({
 							type: 'button',
 							className: 'sno-btn sno-reset',
 							onClick: () => {
-								const reset = defaultConfig();
+								const reset = { ...defaultConfig(), ...commandField(loadConfig().commands) };
 								setConfig(reset);
 								saveConfig(reset);
 								const live = collectItems(document);
@@ -797,6 +918,32 @@ window.__ModuleLoader__.load({
 					),
 					h('span', { className: 'sno-note' }, `已检测到 ${items.length} 个菜单项`),
 				),
+				h('h3', null, '斜杠菜单顺序'),
+				h('div', { className: 'sno-note' },
+					'管理下面四条命令的图标、中文标题和默认顺序。用 ↑ / ↓ 调整后保存，下次打开命令菜单即生效；搜索时保留宿主相关性排序。命令名称和执行方式保持原样。'),
+				h('label', { className: 'sno-chk' },
+					h('input', { type: 'checkbox', className: 'sno-command-toggle', checked: commandDraft.enabled,
+						onChange: (event) => setCommandDraft({ ...commandDraft, enabled: Boolean(event.target.checked) }) }),
+					'启用命令图标、中文标题与自定义顺序'),
+				h('div', { className: 'sno-command-list' }, commandDraft.order.map((name, index) =>
+					h('div', { key: name, className: 'sno-row sno-command-row' },
+						h('span', { className: 'sno-pos' }, index + 1),
+						h('span', { className: 'sno-name' }, COMMAND_FACES[name].zh,
+							h('span', { className: 'sno-command-token' }, ` /${name}`)),
+						h('button', { type: 'button', className: 'sno-btn sno-command-up',
+							'aria-label': `${COMMAND_FACES[name].zh}上移`, disabled: index === 0,
+							onClick: () => moveCommand(index, index - 1) }, '↑'),
+						h('button', { type: 'button', className: 'sno-btn sno-command-down',
+							'aria-label': `${COMMAND_FACES[name].zh}下移`, disabled: index === commandDraft.order.length - 1,
+							onClick: () => moveCommand(index, index + 1) }, '↓'),
+					))),
+				h('div', { className: 'sno-note', role: 'status' }, commandDirty
+					? '未保存：命令菜单偏好尚未写入配置。' : '命令菜单偏好与已保存的一致。'),
+				h('div', { className: 'sno-row-actions' },
+					h('button', { type: 'button', className: 'sno-btn primary sno-command-save', disabled: !commandDirty,
+						onClick: () => saveCommands(commandDraft) }, '保存命令顺序'),
+					h('button', { type: 'button', className: 'sno-btn sno-command-reset',
+						onClick: () => saveCommands(normalizeCommands()) }, '恢复命令默认顺序')),
 			);
 		}
 
@@ -805,6 +952,8 @@ window.__ModuleLoader__.load({
 		 * 用 MutationObserver 而不是定时器：面板是 portal，打开/关闭都表现为 body 子树变化。
 		 */
 		function apply(ctx) {
+			ctx.effect(() => typeof document === 'undefined' ? undefined : installCommandFaces(ctx),
+				'dsh-settings-nav-order: 命令菜单图标与顺序');
 			ctx.effect(() => ctx.slots.inject('settings.section', () =>
 				ctx.slots.register({
 					name: 'settings.section',
