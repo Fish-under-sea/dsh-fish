@@ -12,24 +12,24 @@ const members = [
   'dsh-usage-fish', 'dsh-visual-companion', 'dsh-agent-teams-fish',
 ].map(name => `@fish-under-sea/${name}`)
 
-test('aggregate pins exactly eleven scoped 1.0.0 members', () => {
+test('aggregate pins exactly eleven scoped 1.0.1 members', () => {
   const pkg = json('package.json')
-  assert.equal(pkg.version, '1.0.0')
+  assert.equal(pkg.version, '1.0.1')
   assert.deepEqual(Object.keys(pkg.dependencies).sort(), [...members].sort())
-  for (const version of Object.values(pkg.dependencies)) assert.equal(version, '1.0.0')
+  for (const version of Object.values(pkg.dependencies)) assert.equal(version, '1.0.1')
 })
 
-test('all remaining workspace packages use scoped 1.0.0 identities', () => {
+test('all remaining workspace packages use scoped 1.0.1 identities', () => {
   const directories = readdirSync(new URL('packages/', root), { withFileTypes: true }).filter(entry => entry.isDirectory())
   assert.equal(directories.length, 10)
   for (const entry of directories) {
     const pkg = json(`packages/${entry.name}/package.json`)
     assert.ok(members.includes(pkg.name), pkg.name)
-    assert.equal(pkg.version, '1.0.0', pkg.name)
+    assert.equal(pkg.version, '1.0.1', pkg.name)
     assert.equal(pkg.publishConfig.access, 'public', pkg.name)
     for (const name of ['README.md', 'README.en.md']) {
       const body = readFileSync(new URL(`packages/${entry.name}/${name}`, root), 'utf8')
-      assert.ok(body.includes('1.0.0'), `${entry.name}/${name}`)
+      assert.ok(body.includes('1.0.1'), `${entry.name}/${name}`)
     }
   }
 })

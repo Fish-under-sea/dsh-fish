@@ -1,4 +1,5 @@
 import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
+import type { PeerScope } from '@deepseek-ai/dsh-client-connection'
 import { DEFAULT_SESSION_POLL_SECONDS, normalizeSessionPollSeconds, sessionPollMs } from './core/poll-cadence.ts'
 import { reusableSessionId } from './core/session-reuse.ts'
 import { HostTaskLedger, type OpenedRun, type OpenExecutionReference } from './host-ledger.ts'
@@ -216,12 +217,13 @@ export class TaskBoardHostService {
     verificationSettings?: () => VerificationSettings
     /** The host model catalog the acceptance contract resolves its route from. */
     verificationCatalog?: () => Promise<ModelCatalogView | undefined>
+    operatorPeer?: () => PeerScope | undefined
   } = {}) {
     this.ledger = options.ledger ?? new HostTaskLedger(undefined, undefined, {
       sessionDefaultPermission: options.sessionDefaultPermission,
       maxSubtaskDepth: options.maxSubtaskDepth,
     })
-    this.runner = new HostExecutionRunner(gateway, options.commandDispatcher, options.workspaceRegistry)
+    this.runner = new HostExecutionRunner(gateway, options.commandDispatcher, options.workspaceRegistry, undefined, options.operatorPeer)
     this.workspaceRegistry = options.workspaceRegistry
     this.team = options.team
     this.timers = options.timers ?? PROCESS_TIMERS

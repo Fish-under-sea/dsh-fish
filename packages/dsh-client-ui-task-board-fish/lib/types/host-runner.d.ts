@@ -1,4 +1,5 @@
 import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway';
+import type { PeerScope } from '@deepseek-ai/dsh-client-connection';
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/types';
 import type { CommandResult } from '@deepseek-ai/dsh-commands/types';
 import type { Workspace } from '@deepseek-ai/dsh-workspace/types';
@@ -14,6 +15,7 @@ interface GatewayRequest {
     namespace: string;
     method: string;
     args: Record<string, unknown>;
+    peer?: PeerScope;
     signal?: AbortSignal;
 }
 interface SessionGateway {
@@ -111,6 +113,7 @@ export declare class HostExecutionRunner {
     private readonly gateway;
     private readonly commands?;
     private readonly workspaceRegistry?;
+    private readonly operatorPeer?;
     /** Newest scanned event sequence per session with no matching execution end. */
     private readonly scanMemos;
     private readonly unavailableAttempts;
@@ -119,7 +122,7 @@ export declare class HostExecutionRunner {
     constructor(gateway: SessionGateway | TypertGateway, commands?: SessionCommandDispatcher | undefined, workspaceRegistry?: TaskBoardWorkspaceRegistry | undefined, unavailableRetry?: {
         attempts?: number;
         backoffMs?: number;
-    });
+    }, operatorPeer?: (() => PeerScope | undefined) | undefined);
     private invoke;
     private stream;
     /**

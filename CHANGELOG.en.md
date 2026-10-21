@@ -4,6 +4,13 @@
 
 ---
 
+## 1.0.1 (2026-10-21)
+
+- Fixes task-board launches on the newer API Gateway by passing the real `connection.operator` Peer through unary and stream calls, with regression coverage.
+- Restricts Git Sync private export to `$DSH_HOME/.credentials.yaml` in the user-selected directory or dynamically resolved Desktop folder. It no longer copies other configuration or generates a README; credentials remain excluded from Git sync.
+- Aligns the aggregate, ten in-repository members and standalone AgentTeams at `1.0.1` with exact dependency pins.
+- **Verification**: typecheck, declared tests and builds pass for all ten workspace packages; the extra Usage pricing scenario suite passes 6/6; standalone AgentTeams `verify`, typecheck and build pass. One symlink test is skipped because this Windows host does not permit symlink creation.
+
 ## 1.0.0 (2026-10-19)
 
 - Coordinates the aggregate, ten in-repository members and standalone AgentTeams at `1.0.0`, with exact dependency pins.

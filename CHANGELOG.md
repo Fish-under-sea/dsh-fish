@@ -4,6 +4,13 @@
 
 ---
 
+## 1.0.1（2026-10-21）
+
+- 修复任务看板在新版 API Gateway 上启动任务时缺少 Peer 的故障；Host 现在将真实的 `connection.operator` 传给 unary 与 stream 调用，并以回归测试覆盖。
+- Git 同步私密导出改为只复制 `$DSH_HOME/.credentials.yaml` 到用户指定目录或动态解析的桌面目录；不再导出其他配置或生成 README，凭据仍不进入 Git 同步。
+- 聚合包、十个仓内成员与独立 AgentTeams 对齐为 `1.0.1`，依赖保持精确固定。
+- **验证**：十个工作区包的类型检查、声明测试与构建通过；Usage 额外场景测试 6/6；独立 AgentTeams 的 `verify`、类型检查与构建通过。Windows 禁止创建符号链接，因此 AgentTeams 一项 symlink 测试按预期跳过。
+
 ## 1.0.0（2026-10-19）
 
 - 聚合与十个仓内成员、独立 AgentTeams 统一版本为 `1.0.0`，依赖精确固定。

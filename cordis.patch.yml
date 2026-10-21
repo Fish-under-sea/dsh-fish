@@ -1,4 +1,4 @@
-# Fish 1.0.0 mounts eleven separately addressable packages.
+# Fish 1.0.1 mounts eleven separately addressable packages.
 # Full package names are required by the client scanner.
 # Keep stable row ids to preserve existing profile overrides.
 - insert:

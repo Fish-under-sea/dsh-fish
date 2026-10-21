@@ -1,4 +1,5 @@
 import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway';
+import type { PeerScope } from '@deepseek-ai/dsh-client-connection';
 import { HostTaskLedger } from './host-ledger.ts';
 import { HostExecutionRunner, type SessionCommandDispatcher, type TaskBoardWorkspaceRegistry } from './host-runner.ts';
 import { PowerInhibitor } from './power-inhibitor.ts';
@@ -156,6 +157,7 @@ export declare class TaskBoardHostService {
         verificationSettings?: () => VerificationSettings;
         /** The host model catalog the acceptance contract resolves its route from. */
         verificationCatalog?: () => Promise<ModelCatalogView | undefined>;
+        operatorPeer?: () => PeerScope | undefined;
     });
     start(): void;
     /**

@@ -2,26 +2,26 @@
 
 <img src="icon.png" alt="Fish" width="96">
 
-**1.0.0 · 十一个插件，一个聚合入口**
+**1.0.1 · 十一个插件，一个聚合入口**
 
 [English](README.en.md)
 
 ## 安装
 
 ```sh
-dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@1.0.0
+dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@1.0.1
 ```
 
 安装后重启 DSH。桌面版无 CLI 时在插件管理器添加同名包。需要 Node `^22.19.0 || >=24`；AgentTeams 推荐宿主 `0.2.0-rc.2`，`0.2.1-rc.2` 保持预览支持。各成员的宿主声明仍分别生效。
 
 ## 插件清单
 
-以下 11 个成员与聚合包统一为 **1.0.0**。其中 10 个在本仓库，AgentTeams 在独立仓库。聚合依赖精确固定版本。
+以下 11 个成员与聚合包统一为 **1.0.1**。其中 10 个在本仓库，AgentTeams 在独立仓库。聚合依赖精确固定版本。
 
 | 插件 | npm | 功能 |
 | --- | --- | --- |
 | [审批说明](https://www.npmjs.com/package/@fish-under-sea/dsh-approval-guide) | `@fish-under-sea/dsh-approval-guide` | 为审批弹窗补充中文动作、风险与依据说明；覆盖文件、命令、网络及权限升级等常见请求。 |
-| [Git 同步](https://www.npmjs.com/package/@fish-under-sea/dsh-git-sync) | `@fish-under-sea/dsh-git-sync` | 将选定的 DSH 配置同步到私有 Git 仓库，支持预览、提交、拉取和换机还原；凭据导出与普通同步分开。 |
+| [Git 同步](https://www.npmjs.com/package/@fish-under-sea/dsh-git-sync) | `@fish-under-sea/dsh-git-sync` | 将选定的 DSH 配置同步到私有 Git 仓库，支持预览、提交、拉取和还原；仅在本机将 `$DSH_HOME/.credentials.yaml` 导出到用户指定或动态桌面目录，凭据不随 Git 同步。 |
 | [设置导航排序](https://www.npmjs.com/package/@fish-under-sea/dsh-settings-nav-order) | `@fish-under-sea/dsh-settings-nav-order` | 重排设置侧栏、隐藏不常用设置项，并持久化显示偏好；不修改其他插件源码。 |
 | [视觉伴侣](https://www.npmjs.com/package/@fish-under-sea/dsh-visual-companion) | `@fish-under-sea/dsh-visual-companion` | 绑定视觉伴侣目录，把网页上提交的选择和备注合并为用户消息并唤醒目标会话；提供 arm、disarm、status 和 wake。 |
 | [技能中心](https://www.npmjs.com/package/@fish-under-sea/dsh-skill-lens-fish) | `@fish-under-sea/dsh-skill-lens-fish` | 技能清单、概览、文件浏览和编辑、依赖图、新建、导入与删除；识别目录式 SKILL.md、扁平 .md 和共享引用资源，跟随 DSH_HOME。 |
@@ -59,7 +59,7 @@ pnpm -r --if-present test
 pnpm -r --if-present build
 ```
 
-聚合自身是空实现，挂载入口是 `cordis.patch.yml`。成员独立构建、独立发布；浏览器模块必须以实际包名重新构建。1.0.0 是管理版本统一，不是“已同步所有上游 HEAD”的声明。
+聚合自身是空实现，挂载入口是 `cordis.patch.yml`。成员独立构建、独立发布；浏览器模块必须以实际包名重新构建。1.0.1 是管理版本统一，不是“已同步所有上游 HEAD”的声明。
 
 Fish 原生：审批说明、Git 同步、设置排序、视觉伴侣。Fork 来源：
 

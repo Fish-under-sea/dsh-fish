@@ -1,4 +1,5 @@
 import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
+import type { PeerScope } from '@deepseek-ai/dsh-client-connection'
 import type { SessionAddress, SessionHistoryRecord, SessionListValue, SessionPage, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { CommandResult } from '@deepseek-ai/dsh-commands/types'
 import type { Workspace } from '@deepseek-ai/dsh-workspace/types'
@@ -18,6 +19,7 @@ interface GatewayRequest {
   namespace: string
   method: string
   args: Record<string, unknown>
+  peer?: PeerScope
   signal?: AbortSignal
 }
 
@@ -324,18 +326,21 @@ export class HostExecutionRunner {
     private readonly commands?: SessionCommandDispatcher,
     private readonly workspaceRegistry?: TaskBoardWorkspaceRegistry,
     unavailableRetry?: { attempts?: number; backoffMs?: number },
+    private readonly operatorPeer?: () => PeerScope | undefined,
   ) {
     this.unavailableAttempts = unavailableRetry?.attempts ?? SERVICE_UNAVAILABLE_ATTEMPTS
     this.unavailableBackoffMs = unavailableRetry?.backoffMs ?? SERVICE_UNAVAILABLE_BACKOFF_MS
   }
 
   private invoke(namespace: string, method: string, request: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
-    return this.gateway.invoke({ namespace, method, args: invokeWireArgs(namespace, method, request), ...(signal === undefined ? {} : { signal }) })
+    const peer = this.operatorPeer?.()
+    return this.gateway.invoke({ namespace, method, args: invokeWireArgs(namespace, method, request), ...(peer === undefined ? {} : { peer }), ...(signal === undefined ? {} : { signal }) })
   }
 
   private stream(namespace: string, method: string, request: Record<string, unknown>, signal?: AbortSignal): Promise<AsyncIterable<unknown>> {
     if (!('stream' in this.gateway) || this.gateway.stream === undefined) throw new Error('gateway stream is unavailable')
-    return this.gateway.stream({ namespace, method, args: { request }, ...(signal === undefined ? {} : { signal }) })
+    const peer = this.operatorPeer?.()
+    return this.gateway.stream({ namespace, method, args: { request }, ...(peer === undefined ? {} : { peer }), ...(signal === undefined ? {} : { signal }) })
   }
 
   /**

@@ -5417,32 +5417,38 @@ var HostExecutionRunner = class {
 	gateway;
 	commands;
 	workspaceRegistry;
+	operatorPeer;
 	/** Newest scanned event sequence per session with no matching execution end. */
 	scanMemos = /* @__PURE__ */ new Map();
 	unavailableAttempts;
 	unavailableBackoffMs;
 	unsupportedSessionListWarned = false;
-	constructor(gateway, commands, workspaceRegistry, unavailableRetry) {
+	constructor(gateway, commands, workspaceRegistry, unavailableRetry, operatorPeer) {
 		this.gateway = gateway;
 		this.commands = commands;
 		this.workspaceRegistry = workspaceRegistry;
+		this.operatorPeer = operatorPeer;
 		this.unavailableAttempts = unavailableRetry?.attempts ?? SERVICE_UNAVAILABLE_ATTEMPTS;
 		this.unavailableBackoffMs = unavailableRetry?.backoffMs ?? SERVICE_UNAVAILABLE_BACKOFF_MS;
 	}
 	invoke(namespace, method, request, signal) {
+		const peer = this.operatorPeer?.();
 		return this.gateway.invoke({
 			namespace,
 			method,
 			args: invokeWireArgs(namespace, method, request),
+			...peer === void 0 ? {} : { peer },
 			...signal === void 0 ? {} : { signal }
 		});
 	}
 	stream(namespace, method, request, signal) {
 		if (!("stream" in this.gateway) || this.gateway.stream === void 0) throw new Error("gateway stream is unavailable");
+		const peer = this.operatorPeer?.();
 		return this.gateway.stream({
 			namespace,
 			method,
 			args: { request },
+			...peer === void 0 ? {} : { peer },
 			...signal === void 0 ? {} : { signal }
 		});
 	}
@@ -6655,7 +6661,7 @@ var TaskBoardHostService = class {
 			sessionDefaultPermission: options.sessionDefaultPermission,
 			maxSubtaskDepth: options.maxSubtaskDepth
 		});
-		this.runner = new HostExecutionRunner(gateway, options.commandDispatcher, options.workspaceRegistry);
+		this.runner = new HostExecutionRunner(gateway, options.commandDispatcher, options.workspaceRegistry, void 0, options.operatorPeer);
 		this.workspaceRegistry = options.workspaceRegistry;
 		this.team = options.team;
 		this.timers = options.timers ?? PROCESS_TIMERS;
@@ -10072,6 +10078,7 @@ const DEFAULT_PROXY_TOKEN_ENV = "DSH_TASK_BOARD_PROXY_TOKEN";
 const inject = [
 	"systemPrompt",
 	"typertGateway",
+	"connection",
 	"workspaceRegistry",
 	"webServer",
 	"agents",
@@ -10335,6 +10342,7 @@ function applyImpl(ctx, config) {
 	const goalRunEnabled = () => readConfigField(config?.goalRunEnabled, false);
 	const host = new TaskBoardHostService(ctx.typertGateway, {
 		workspaceRegistry: ctx.workspaceRegistry,
+		operatorPeer: () => ctx.connection.operator,
 		sessionDefaultPermission,
 		maxSubtaskDepth: maxSubtaskDepth(),
 		goalRunEnabled,

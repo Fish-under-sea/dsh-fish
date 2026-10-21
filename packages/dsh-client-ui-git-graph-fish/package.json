@@ -1,7 +1,7 @@
 {
   "name": "@fish-under-sea/dsh-client-ui-git-graph-fish",
   "description": "External dsh web GUI plugin: a blank-session git branch selector + Git graph, with real host-side git operations and guards, as a dsh profile bundle",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "icon": "icon.svg",
   "type": "module",
   "packageManager": "pnpm@11.7.0",
