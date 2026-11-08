@@ -282,6 +282,7 @@ function readArchiveConfig(config) {
 		autoArchiveDays: readConfigField(config?.autoArchiveDays),
 		autoDeleteEnabled: readConfigField(config?.autoDeleteEnabled),
 		autoDeleteDays: readConfigField(config?.autoDeleteDays),
+		recordManualArchive: readConfigField(config?.recordManualArchive),
 		checkIntervalMin: readConfigField(config?.checkIntervalMin)
 	};
 }
@@ -294,6 +295,7 @@ const DEFAULT_AUTO_CONFIG = {
 	autoArchiveDays: 7,
 	autoDeleteEnabled: false,
 	autoDeleteDays: 7,
+	recordManualArchive: false,
 	checkIntervalMin: 60
 };
 /** Validate one day-threshold field; returns the rounded value or undefined when invalid. */
@@ -318,6 +320,7 @@ function resolveAutoConfig(config) {
 		autoArchiveDays: days ?? DEFAULT_AUTO_CONFIG.autoArchiveDays,
 		autoDeleteEnabled: config?.autoDeleteEnabled ?? DEFAULT_AUTO_CONFIG.autoDeleteEnabled,
 		autoDeleteDays: retain ?? DEFAULT_AUTO_CONFIG.autoDeleteDays,
+		recordManualArchive: config?.recordManualArchive ?? DEFAULT_AUTO_CONFIG.recordManualArchive,
 		checkIntervalMin: interval ?? DEFAULT_AUTO_CONFIG.checkIntervalMin
 	};
 }
@@ -518,6 +521,37 @@ function titleFromProjcache(entry) {
 	return typeof val === "string" && val !== "" ? val : void 0;
 }
 /**
+* The file names one session's per-session projection cache may carry. The
+* harness names the file from the id form it is holding, so a session's cache
+* lives under the canonical `session-<id>` spelling or the bare one. The
+* canonical spelling is tried first: it is what every archive id already is,
+* so a cache written under it costs exactly one read. `scrubProjcache` deletes
+* under both spellings for the same reason.
+*/
+function projcacheSpellings(id) {
+	const canonical = canonicalSessionId(id);
+	const bare = canonical.startsWith("session-") ? canonical.slice(8) : canonical;
+	return bare === canonical ? [canonical] : [canonical, bare];
+}
+/** Parse one projection-cache file; unreadable or shapeless files yield undefined. */
+async function readProjcacheEntry(path) {
+	try {
+		const parsed = JSON.parse(await readFile(path, "utf8"));
+		const record = parsed.record ?? parsed;
+		const title = typeof record.rows?.title?.val === "string" && record.rows.title.val !== "" ? record.rows.title.val : void 0;
+		const createdAt = typeof record.identity?.createdAt === "number" ? record.identity.createdAt : void 0;
+		const cwd = typeof record.identity?.cwd === "string" && record.identity.cwd !== "" ? record.identity.cwd : void 0;
+		if (title === void 0 && createdAt === void 0 && cwd === void 0) return void 0;
+		return {
+			...title !== void 0 ? { title } : {},
+			...createdAt !== void 0 ? { createdAt } : {},
+			...cwd !== void 0 ? { cwd } : {}
+		};
+	} catch {
+		return;
+	}
+}
+/**
 * Fallback enrichment from one per-session projection-cache file
 * (`storages/session_projcache/sessions/<id>.json`). The aggregate index
 * only covers recent sessions, so older/archived rows fall back to these
@@ -526,21 +560,11 @@ function titleFromProjcache(entry) {
 */
 async function readProjcacheFile(dshHome, id, cache) {
 	if (cache !== void 0 && cache.has(id)) return cache.get(id) ?? void 0;
-	const path = join(dshHome, "storages", "session_projcache", "sessions", `${id}.json`);
+	const dir = join(dshHome, "storages", "session_projcache", "sessions");
 	let entry;
-	try {
-		const parsed = JSON.parse(await readFile(path, "utf8"));
-		const record = parsed.record ?? parsed;
-		const title = typeof record.rows?.title?.val === "string" && record.rows.title.val !== "" ? record.rows.title.val : void 0;
-		const createdAt = typeof record.identity?.createdAt === "number" ? record.identity.createdAt : void 0;
-		const cwd = typeof record.identity?.cwd === "string" && record.identity.cwd !== "" ? record.identity.cwd : void 0;
-		if (title !== void 0 || createdAt !== void 0 || cwd !== void 0) entry = {
-			...title !== void 0 ? { title } : {},
-			...createdAt !== void 0 ? { createdAt } : {},
-			...cwd !== void 0 ? { cwd } : {}
-		};
-	} catch {
-		entry = void 0;
+	for (const spelling of projcacheSpellings(id)) {
+		entry = await readProjcacheEntry(join(dir, `${spelling}.json`));
+		if (entry !== void 0) break;
 	}
 	if (cache !== void 0) cache.set(id, entry ?? null);
 	return entry;
@@ -654,12 +678,15 @@ async function buildInventory(sources, signal) {
 		const issues = [];
 		if (draft.title === void 0) issues.push("no-title");
 		const archived = archivedSet.has(draft.id);
-		const archivedAt = (archived ? ledgerEntryFor(sources.ledger, draft.id, nativeIds[draft.id]) : void 0)?.archivedAt;
+		const ledgerEntry = archived ? ledgerEntryFor(sources.ledger, draft.id, nativeIds[draft.id]) : void 0;
+		const archivedAt = ledgerEntry?.archivedAt;
+		const archivedAtSource = ledgerEntry?.source;
 		if (archived && archivedAt === void 0) issues.push("no-archive-time");
 		if (draft.fromFeed === false) issues.push("unreadable");
 		if (draft.fromFeed === false && draft.hasDir === false) issues.push("no-data");
 		const childList = childIds.get(draft.id) ?? [];
 		const sizeBytes = dirIndex.sizes.get(draft.id);
+		const hostProtectedReason = sources.hostProtectedReason?.get(draft.id);
 		rows.push({
 			id: draft.id,
 			...draft.title !== void 0 ? { title: draft.title } : {},
@@ -668,10 +695,12 @@ async function buildInventory(sources, signal) {
 			workspaceIds: workspaceOf.get(draft.id) ?? [],
 			archived,
 			...archivedAt !== void 0 ? { archivedAt } : {},
+			...archivedAt !== void 0 && archivedAtSource !== void 0 ? { archivedAtSource } : {},
 			...draft.lastActivityAt !== void 0 ? { lastActivityAt: draft.lastActivityAt } : {},
 			lastActivityReliable: draft.lastActivityReliable,
 			...sizeBytes !== void 0 ? { sizeBytes } : {},
 			running: draft.running,
+			...hostProtectedReason !== void 0 ? { hostProtectedReason } : {},
 			blank: draft.blank,
 			...draft.origin !== void 0 ? { origin: draft.origin } : {},
 			...draft.parentId !== void 0 ? { parentId: draft.parentId } : {},
@@ -721,7 +750,7 @@ function deserializeLedger(raw) {
 		if (typeof value !== "object" || value === null) continue;
 		const entry = value;
 		if (typeof entry.archivedAt !== "number" || !Number.isFinite(entry.archivedAt)) continue;
-		if (entry.source !== "manual" && entry.source !== "auto") continue;
+		if (entry.source !== "manual" && entry.source !== "auto" && entry.source !== "observed") continue;
 		entries[id] = {
 			archivedAt: entry.archivedAt,
 			source: entry.source
@@ -965,6 +994,47 @@ var BusyError = class extends Error {
 const PREVIEW_MESSAGE_CAP = 6;
 const PREVIEW_TEXT_CAP = 400;
 /**
+* Ids whose archive time is unknown to the ledger even though the session is
+* archived - sessions archived from the official sidebar, which never reaches
+* this plugin. Their rows carry no `archivedAt`, so the retention clock cannot
+* start for them (`autoDeleteSeedCandidates` skips them) until something
+* records one. The order follows the row order, so a backfill is deterministic.
+*
+* Rows flagged `unreadable` or `no-data` are deliberately excluded. Those flags
+* say the plugin could not read the session's data on this pass, which is
+* usually transient (an unmounted volume, a drive that is not ready, a failed
+* read on a busy host) - the session itself is still there. Recording an
+* archive time for such a row would start a clock that ends in an
+* unrecoverable physical delete, turning a temporary read failure into
+* permanent data loss. They keep "archive time unknown" and stay outside
+* auto-delete, exactly as before this switch existed; once the data reads
+* again the flag clears and the next pass can record the time.
+*/
+function observedArchiveIds(rows) {
+	const ids = [];
+	for (const row of rows) {
+		if (row.archived !== true) continue;
+		if (row.archivedAt !== void 0) continue;
+		if (row.issues.includes("unreadable") || row.issues.includes("no-data")) continue;
+		ids.push(row.id);
+	}
+	return ids;
+}
+/**
+* Project a set of just-backfilled ids onto a row array: the named rows gain the
+* observation time and its `observed` source, every other row is returned as the
+* very same object. Pure - this is the read-side half of a backfill, so the
+* candidate rules of one cycle see the archive time that cycle records without a
+* second inventory pass, and the preview can show it without writing.
+*/
+function projectObservedArchives(rows, backfilled, now) {
+	return rows.map((row) => backfilled.has(row.id) ? {
+		...row,
+		archivedAt: now,
+		archivedAtSource: "observed"
+	} : row);
+}
+/**
 * How long one sessions-root directory scan may be reused. The panel loads the
 * inventory, then issues one batch request per chunk (each rebuilding the
 * inventory), then refreshes; every one of those passes re-walked the same
@@ -1074,6 +1144,31 @@ var ArchiveService = class {
 		if (!this.loaded) return;
 		await writeJsonAtomic(this.statePath, this.autoState).catch(() => {});
 	}
+	/**
+	* Record an `observed` ledger entry for every archived row whose archive
+	* time is unknown, then persist once - and only when something was written,
+	* so a backfill that finds nothing never touches the ledger file.
+	*
+	* The recorded time is the moment of observation, which is a lower bound on
+	* the real archive moment (the session was archived at or before it). Because
+	* `autoDeleteSeedCandidates` skips archive times at or after the run start,
+	* this also keeps a row out of the delete set of the very cycle that records
+	* it.
+	*
+	* Callers inside a cycle must NOT hold the operation lock (runAutoCycle holds
+	* it); this method deliberately takes none.
+	* @returns the ids written, in row order.
+	*/
+	async recordObservedArchives(built, now) {
+		if (!this.config.recordManualArchive) return [];
+		const ids = observedArchiveIds(built.rows);
+		for (const id of ids) this.ledger.entries[id] = {
+			archivedAt: now,
+			source: "observed"
+		};
+		if (ids.length > 0) await this.flushLedger();
+		return ids;
+	}
 	sources() {
 		return {
 			feed: this.serviceFace("sessionController"),
@@ -1082,7 +1177,8 @@ var ArchiveService = class {
 			ledger: this.ledger,
 			projcacheFiles: this.projcacheFiles,
 			dirIndex: this.dirIndex.get(),
-			projcacheIndex: this.projcacheIndex.get()
+			projcacheIndex: this.projcacheIndex.get(),
+			hostProtectedReason: this.hostProtectedReasons()
 		};
 	}
 	serviceFace(name) {
@@ -1104,6 +1200,19 @@ var ArchiveService = class {
 			}
 		} catch {}
 		return ids;
+	}
+	/**
+	* Row-level host protection facts the browser half cannot observe: live-store
+	* members are `attached`, sessions a mutating operation owns are `in-flight`.
+	* `running` (feed flag) and `current` (the client's own session) travel on
+	* their own, so the wire carries only what the client cannot see. The
+	* `in-flight` write lands last, matching {@link protectedReason}'s precedence.
+	*/
+	hostProtectedReasons() {
+		const map = /* @__PURE__ */ new Map();
+		for (const id of this.liveSessionIds()) map.set(id, "attached");
+		for (const id of this.busy) map.set(canonicalSessionId(id), "in-flight");
+		return map;
 	}
 	/** Protection map shared by manual delete and auto cycles. */
 	protectedReason(currentSessionId, rows) {
@@ -1435,7 +1544,8 @@ var ArchiveService = class {
 			now,
 			protectedIds: protectedSet
 		}) : [];
-		const deleteSeeds = this.config.autoDeleteEnabled ? autoDeleteSeedCandidates(built.rows, {
+		const seedRows = this.config.recordManualArchive ? projectObservedArchives(built.rows, new Set(observedArchiveIds(built.rows)), now) : built.rows;
+		const deleteSeeds = this.config.autoDeleteEnabled ? autoDeleteSeedCandidates(seedRows, {
 			retainDays: this.config.autoDeleteDays,
 			now,
 			runStartedAt: now,
@@ -1488,7 +1598,8 @@ var ArchiveService = class {
 				const built = await buildInventory(this.sources(), AbortSignal.timeout(3e4));
 				const protectedMap = this.protectedReason(currentSessionId, built.rows);
 				const protectedSet = new Set(protectedMap.keys());
-				const seeds = autoDeleteSeedCandidates(built.rows, {
+				const observed = await this.recordObservedArchives(built, startedAt);
+				const seeds = autoDeleteSeedCandidates(observed.length === 0 ? built.rows : projectObservedArchives(built.rows, new Set(observed), startedAt), {
 					retainDays: this.config.autoDeleteDays,
 					now: startedAt,
 					runStartedAt: startedAt,
@@ -1516,6 +1627,21 @@ var ArchiveService = class {
 			} finally {
 				this.cycleRunning = false;
 			}
+		});
+	}
+	/**
+	* The backfill-only scheduler step: take the lock, run one inventory pass and
+	* record the observed archives. Used when the backfill is the only automatic
+	* behaviour this deployment enables, so the recorded archive times still reach
+	* the list without an auto-delete cycle. It takes the lock itself and must
+	* therefore never be called from inside a cycle (where the lock is held).
+	* @returns the number of entries written.
+	*/
+	cycleObservedArchives() {
+		return this.withLock(async () => {
+			const now = Date.now();
+			const built = await buildInventory(this.sources(), AbortSignal.timeout(3e4));
+			return (await this.recordObservedArchives(built, now)).length;
 		});
 	}
 	/** Archive without re-acquiring the lock (used inside cycles). */
@@ -1565,7 +1691,7 @@ var ArchiveService = class {
 	}
 	async tick() {
 		if (this.disposed) return;
-		if (this.config.autoArchiveEnabled || this.config.autoDeleteEnabled) {
+		if (this.config.autoArchiveEnabled || this.config.autoDeleteEnabled || this.config.recordManualArchive) {
 			const currentSessionId = void 0;
 			try {
 				if (this.config.autoArchiveEnabled) await this.runAutoCycle("archive", currentSessionId);
@@ -1582,6 +1708,26 @@ var ArchiveService = class {
 							status: "failed",
 							reason: "error",
 							detail: error instanceof Error ? error.message.slice(0, 200) : String(error)
+						}]
+					};
+					await this.flushState();
+				}
+			}
+			if (this.config.recordManualArchive && !this.config.autoDeleteEnabled) try {
+				await this.cycleObservedArchives();
+			} catch (error) {
+				if (!(error instanceof BusyError)) {
+					this.autoState.lastDeleteRun = {
+						at: Date.now(),
+						total: 0,
+						ok: 0,
+						skipped: 0,
+						failed: 1,
+						entries: [{
+							id: "cycle",
+							status: "failed",
+							reason: "error",
+							detail: `observed-archive backfill: ${error instanceof Error ? error.message.slice(0, 200) : String(error)}`
 						}]
 					};
 					await this.flushState();
@@ -1747,12 +1893,26 @@ function isLoopbackHostname(hostname) {
 	return isIPv4Loopback(hostname);
 }
 /**
+* Whether a reverse proxy stood between the client and this host: the request
+* carries CF-Connecting-IP or X-Forwarded-For. Either header is stamped by a
+* hop that forwards traffic, so the request did not originate on this machine.
+* @param request - node HTTP request.
+* @returns true when a forwarding header is present.
+*/
+function isProxiedRequest(request) {
+	return request.headers["cf-connecting-ip"] !== void 0 || request.headers["x-forwarded-for"] !== void 0;
+}
+/**
 * Request-level trust fence: a loopback socket address AND a loopback Host
 * header, plus browser same-origin markers. The socket address is
-* authoritative; X-Forwarded-For is never trusted.
+* authoritative for a direct connection; a request that carries a forwarding
+* header is refused outright, because a proxy in front of the host makes both
+* the socket address and the Host header describe the proxy rather than the
+* client. X-Forwarded-For is therefore never evidence *for* loopback.
 */
 function isLoopbackRequest(request) {
 	if (!isLoopbackAddress(request.socket.remoteAddress)) return false;
+	if (isProxiedRequest(request)) return false;
 	const host = request.headers.host;
 	if (typeof host !== "string") return false;
 	let hostUrl;
@@ -2024,6 +2184,7 @@ const Config = z.object({
 	autoArchiveDays: z.number().min(1).max(3650).default(7).volatile(),
 	autoDeleteEnabled: z.boolean().default(false).volatile(),
 	autoDeleteDays: z.number().min(1).max(3650).default(7).volatile(),
+	recordManualArchive: z.boolean().default(false).volatile(),
 	checkIntervalMin: z.number().min(15).max(1440).default(60).volatile()
 });
 const apply = mountOnce("@fish-under-sea/dsh-session-archive-fish", (ctx, config) => {

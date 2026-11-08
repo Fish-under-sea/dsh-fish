@@ -1,14 +1,15 @@
 /**
- * Staged form model behind the plugin settings card. A card stages what the
- * user types and writes it only when they save — the settings write is a
- * durable, revision-fenced document mutation, so staging keeps what is on
- * screen exactly what a save would store. Family-shared slice inlined into
- * each plugin's client bundle; mirrors the official ui-plugin-config
- * card-store pattern.
+ * Form model behind the plugin settings card. Every control applies itself:
+ * a pick (a segment, a select option, a reset) writes the moment it is made,
+ * and typed text writes once typing pauses or the reader leaves the field.
+ * Between the edit and the write the edit is held here as a draft, so what is
+ * on screen is exactly what the write will store; a write the Host refuses
+ * puts a pick back to the stored value and keeps typed text for correcting.
+ * Family-shared slice inlined into each plugin's client bundle.
  */
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client';
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store';
-/** The write one field's staged text performs when the card is saved. */
+/** The write one field's draft text performs when it is applied. */
 export type FieldWrite = {
     kind: 'set';
     value: unknown;
@@ -19,6 +20,12 @@ export type FieldWrite = {
 export interface FieldSpec {
     /** Field name inside the namespace section. */
     field: string;
+    /**
+     * How the reader enters a value, which decides when it is written: a `pick`
+     * is a whole value at once and applies immediately; `type` is text arriving
+     * a keystroke at a time and applies once typing pauses or the field is left.
+     */
+    entry: 'pick' | 'type';
     /**
      * Whether the Host treats this field as a secret and redacts its value from
      * the read-back (role('secret') in the section schema). Redacted secrets are
@@ -32,8 +39,9 @@ export interface FieldSpec {
     /** Render a stored value as draft text; the empty string when the section carries none. */
     format: (value: unknown) => string;
     /**
-     * The write this draft text stages, or undefined when the text is not a
-     * value this field accepts — which blocks the save rather than discarding it.
+     * The write this draft text performs, or undefined when the text is not a
+     * value this field accepts — which holds the draft unwritten rather than
+     * discarding it.
      */
     parse: (text: string) => FieldWrite | undefined;
 }
@@ -41,9 +49,9 @@ export interface FieldSpec {
 export interface FieldState {
     /** Draft text the control renders. */
     text: string;
-    /** Whether saving would leave a user-layer entry for this field. */
+    /** Whether the field leaves (or will leave) a user-layer entry. */
     overridden: boolean;
-    /** Whether the draft is not a value this field accepts, which blocks saving. */
+    /** Whether the draft is not a value this field accepts, which holds it unwritten. */
     invalid: boolean;
 }
 /** Form state every plugin settings card shares. */
@@ -60,13 +68,13 @@ export interface CardShell {
     exposed: boolean;
     /** Whether the Host document accepts writes. */
     writable: boolean;
-    /** Whether the form holds edits that a save would write. */
+    /** Whether the form holds drafts not yet written (typed text waiting for its pause). */
     dirty: boolean;
-    /** Whether any staged draft is invalid, which blocks the save. */
+    /** Whether any draft is invalid, which holds it unwritten. */
     invalid: boolean;
-    /** Whether a save is crossing the wire. */
+    /** Whether a write is crossing the wire. */
     saving: boolean;
-    /** Whether the last save did not land as staged; cleared by the next edit or save. */
+    /** Whether the last write did not land; cleared by the next edit or write. */
     failed: boolean;
     /**
      * The rejection code/message the Host returned for the last failed save,
@@ -77,15 +85,17 @@ export interface CardShell {
 }
 /** The write actions the card's slot entry injects. */
 export interface CardActions {
-    /** Stage draft text for one field. */
+    /** Take draft text for one field; a pick writes at once, typed text after a pause. */
     edit: (field: string, text: string) => void;
-    /** Stage a clear, so saving lets the field re-inherit the composition layer. */
+    /** Clear one field at once, so it re-inherits the composition layer. */
     resetField: (field: string) => void;
-    /** Write every staged edit, then re-seed from what the Host accepted. */
+    /** Write every pending draft now (a text field's Enter or blur), then re-seed from what the Host accepted. */
     save: () => void;
-    /** Drop every staged edit. */
+    /** Drop every pending draft, putting each control back to the stored value (a text field's Escape). */
     discard: () => void;
 }
+/** How long typed text rests before it is written. */
+export declare const TYPE_PAUSE_MS = 600;
 /** One durable write inside the save's atomic form mutation. */
 export interface BatchedWrite {
     /** Field this entry writes. */
@@ -102,10 +112,13 @@ export interface NumberConstraints {
     /** The accepted value must be at least this. */
     min?: number;
 }
-/** A whole- or decimal-number field. An empty draft clears the field; any other draft that is not a finite number within the constraints blocks the save. */
+/** A whole- or decimal-number field. An empty draft clears the field; any other draft that is not a finite number within the constraints stays unwritten. */
 export declare function numberField(field: string, constraints?: NumberConstraints): FieldSpec;
-/** A free-text field. An empty draft clears the field. */
-export declare function textField(field: string): FieldSpec;
+/**
+ * A free-text field. An empty draft clears the field. `entry` is `pick` when
+ * the text arrives whole from a picker (a preset or a reasoning level).
+ */
+export declare function textField(field: string, entry?: FieldSpec['entry']): FieldSpec;
 /**
  * A free-text field the Host treats as a secret and redacts from the read-back
  * (role('secret') in the section schema). The card still edits it like text,
@@ -118,12 +131,14 @@ export declare function booleanField(field: string): FieldSpec;
 /** An enumerated string field; only the listed choices are accepted. An empty draft clears the field. */
 export declare function choiceField(field: string, choices: readonly string[]): FieldSpec;
 /**
- * Stages one card's edits over one settings namespace and writes them on save.
+ * Applies one card's edits to one settings namespace as the reader makes them.
  *
  * The Host is the only authority on whether a value was accepted — its
  * validators own the constraints no schema can express — so the outcome is
- * read back from the section rather than predicted here. A save that did not
- * land keeps its drafts, so the user can correct them instead of retyping.
+ * read back from the section rather than predicted here. A write that did not
+ * land puts each pick back to the stored value, the way a switch that could not
+ * flip springs back, and keeps typed text so the reader can correct it instead
+ * of retyping.
  */
 export declare class CardForm<T> {
     private readonly scope;
@@ -133,6 +148,8 @@ export declare class CardForm<T> {
     /** The form subscription installed in the constructor; released by dispose(). */
     private readonly disposeForm;
     private disposed;
+    /** The pending write of typed text, waiting for typing to pause. */
+    private typePause;
     private saving;
     /** A save asked for while one was in flight; it runs once the first settles (#1754). */
     private saveQueued;
@@ -147,47 +164,46 @@ export declare class CardForm<T> {
     dispose(): void;
     /** Publish a projection of this form, rebuilt whenever the form or a draft changes. */
     bind<S>(project: () => S): SnapshotStore<S>;
-    /** Read the card-level state: what the Host serves, and what a save would do. */
+    /** Read the card-level state: what the Host serves, and what is still waiting to be written. */
     shell(): CardShell;
     /** Read one field's state from the effective section and its staged draft. */
     field(field: string): FieldState;
     /** The actions the card's slot registration injects. */
     actions(): CardActions;
     /**
-     * Write every staged edit in one atomic form mutation, then re-seed from
-     * what the Host accepted.
-     *
-     * The whole batch rides one mutate, so cross-field validate hooks
-     * (baseURL+model) judge it as a unit: the Host either applies every write
-     * or refuses the batch. The form contract answers a refusal or a skipped
-     * write with `false` (it recovers with a fresh Host view instead of
-     * throwing), so the outcome is judged twice: the answer itself, and then the
-     * settled snapshot read back one planned write at a time. One missed write
-     * fails the whole save. A transport that rejects instead (the dsh-web bridge
-     * controller on a dead connection) reports through the same failure path
-     * with its rejection message. A save that did not land keeps its drafts, so
-     * the user can correct them instead of retyping.
-     * @returns settlement after the mutation and the read-back.
-     */
-    /**
-     * Run one save, and re-run it once if another was asked for while this one
+     * Run one write, and re-run it once if another was asked for while this one
      * was still in flight.
      *
-     * A save is a Host round trip that also drives the profile reconcile, and
-     * the Host runs that write inside one exclusive transaction. Answering a
-     * press that arrives mid-flight by returning immediately dropped the edit
-     * with no explanation, which is the "the save button stops working after a
-     * few rounds" report (#1754). Serializing instead means a save pressed while
-     * another is still settling runs against the settled state - which is what
-     * the operator meant by pressing it again.
+     * A write is a Host round trip that also drives the profile reconcile, and
+     * the Host runs it inside one exclusive transaction. Answering an edit that
+     * arrives mid-flight by returning immediately dropped it with no explanation
+     * (#1754). Serializing instead means an edit made while another write is
+     * still settling is written against the settled state.
      * @returns settlement after the mutation and the read-back.
      */
     requestSave(): Promise<void>;
+    /**
+     * Write every valid draft in one atomic form mutation, then re-seed from
+     * what the Host accepted. A draft the field does not accept stays on screen,
+     * unwritten, without holding the others back.
+     *
+     * The batch rides one mutate, so cross-field validate hooks (baseURL+model)
+     * judge it as a unit: the Host either applies every write or refuses the
+     * batch. The form contract answers a refusal or a skipped write with `false`
+     * (it recovers with a fresh Host view instead of throwing), so the outcome is
+     * judged twice: the answer itself, and then the settled snapshot read back
+     * one planned write at a time. One missed write fails the whole batch. A
+     * transport that rejects instead (the dsh-web bridge controller on a dead
+     * connection) reports through the same failure path with its rejection
+     * message. A batch that did not land puts its picks and clears back to the
+     * stored value and keeps its typed text, so the reader can correct it.
+     * @returns settlement after the mutation and the read-back.
+     */
     save(): Promise<void>;
     /**
-     * Every staged edit a save would write. An entry whose draft is not a value
-     * its field accepts carries no write: the form is still dirty, and the save
-     * refuses rather than dropping the edit. A staged edit that matches the
+     * Every staged edit a write would carry. An entry whose draft is not a value
+     * its field accepts carries no write: the form is still dirty, and the draft
+     * stays on screen rather than being dropped. A staged edit that matches the
      * effective section is not a write at all.
      * @returns the planned writes, in the order the fields were staged.
      */
@@ -202,7 +218,13 @@ export declare class CardForm<T> {
      * user layer once the mutation has settled.
      */
     private landedUnset;
+    /**
+     * Take one edit and schedule its write: a pick or a clear is written now,
+     * typed text once typing has rested for TYPE_PAUSE_MS.
+     */
     private stage;
+    /** Write every pending draft now, taking the place of a waiting pause. */
+    private applyNow;
     private specOf;
     private snapshotOf;
     private sectionValue;

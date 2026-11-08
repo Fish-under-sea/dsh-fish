@@ -2,12 +2,11 @@
  * The SSH operations panel shell: a header with a close control, a five-tab
  * bar, and the active tab's content.
  *
- * The active tab, the pending connect request and the live terminal session id
- * live in the controller, not in component state: the layout mounts this page
- * only while the panel is selected, so local state would reset the tab on
- * every panel switch and lose the id the terminal tab needs to reattach its
- * host-side session. Inactive tabs unmount, so each tab fetches its own data
- * on activation.
+ * The active tab and the terminal tabs live in the controller, not in
+ * component state: the layout mounts this page only while the panel is
+ * selected, so local state would reset the tab on every panel switch and lose
+ * the ids the terminal tab needs to reattach its host-side sessions. Inactive
+ * tabs unmount, so each tab fetches its own data on activation.
  */
 import { useCallback, useSyncExternalStore } from 'react'
 import type { SshApi } from '../api.ts'
@@ -41,7 +40,7 @@ const TABS: ReadonlyArray<{ id: SshTab; label: () => string }> = [
 
 /** The tabbed SSH panel. */
 export function SshPanel({ controller, api, terminalFont }: SshPanelProps) {
-  const { panelOpen, activeTab, connectRequest, terminalSessionId } = useSyncExternalStore(
+  const { panelOpen, activeTab } = useSyncExternalStore(
     useCallback(listener => controller.subscribe(listener), [controller]),
     useCallback(() => controller.getSnapshot(), [controller]),
   )
@@ -72,14 +71,7 @@ export function SshPanel({ controller, api, terminalFont }: SshPanelProps) {
       <div className={css.panelContent}>
         {activeTab === 'hosts' && <HostsTab api={api} onConnect={alias => { controller.requestConnect(alias) }} />}
         {activeTab === 'terminal' && (
-          <TerminalTab
-            api={api}
-            controller={controller}
-            presetAlias={connectRequest?.alias}
-            requestId={connectRequest?.nonce}
-            sessionId={terminalSessionId}
-            terminalFont={terminalFont}
-          />
+          <TerminalTab api={api} controller={controller} terminalFont={terminalFont} />
         )}
         {activeTab === 'transfer' && <TransferTab api={api} />}
         {activeTab === 'tunnels' && <TunnelsTab api={api} active={panelOpen} />}

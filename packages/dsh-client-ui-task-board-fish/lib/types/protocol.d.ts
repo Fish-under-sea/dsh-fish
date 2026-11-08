@@ -3,9 +3,11 @@ import type { SetSchedulePatch } from './core/use-cases/task-schedule.ts';
 import { type NewTaskInput, type TaskPermission, type TaskRecord, type TaskStatus } from './core/tasks.ts';
 import { type TaskBoardExtensionPayload } from './core/extension.ts';
 import { type ModelCatalogView, type VerificationContract, type VerificationSettings } from './core/verification.ts';
-export declare const TASK_BOARD_SCHEMA_VERSION: 6;
-/** Ledger documents written before v6; loaded once and migrated on startup. */
-export declare const TASK_BOARD_LEGACY_SCHEMA_VERSION: 5;
+export declare const TASK_BOARD_SCHEMA_VERSION: 7;
+/** Ledger documents written before v7; loaded once and migrated on startup. */
+export declare const TASK_BOARD_LEGACY_SCHEMA_VERSION: 6;
+/** Ledger documents written before v6 (the scheduling mode and run budget). */
+export declare const TASK_BOARD_PRE_RUN_BUDGET_SCHEMA_VERSION: 5;
 /** Ledger documents written before v5; migrated through the v5 normalization too. */
 export declare const TASK_BOARD_PRE_ACCEPTANCE_SCHEMA_VERSION: 4;
 /** Ledger documents written before v4; migrated through the v4 normalization too. */
@@ -21,9 +23,10 @@ export declare const TASK_BOARD_OLDEST_SCHEMA_VERSION: 2;
 export declare const TASK_BOARD_ZONE_STAMP_SCHEMA_VERSION: 4;
 /**
  * Every older generation the loader migrates in place. v5 only added the
- * per-execution acceptance block and v6 only added the scheduling mode and run
- * budget, so the migration is the normalization pass that re-validates each
- * row; a document from any listed generation upgrades losslessly.
+ * per-execution acceptance block, v6 only added the scheduling mode and run
+ * budget, and v7 only added the card attachment metadata, so the migration is
+ * the normalization pass that re-validates each row; a document from any
+ * listed generation upgrades losslessly.
  */
 export declare const TASK_BOARD_MIGRATABLE_SCHEMA_VERSIONS: readonly number[];
 export declare const TASK_BOARD_API_PREFIX = "/api/task-board";
@@ -62,11 +65,6 @@ export interface TaskBoardSnapshot {
      */
     maxSubtaskDepth?: number;
     /**
-     * Whether this deployment serves the Agent Teams service, so a task may opt
-     * into team execution (Team Lead session plus one teammate per subtask).
-     */
-    teamRunAvailable?: boolean;
-    /**
      * Live GLOBAL native-/goal switch. The browser uses it to disable the
      * task-level option (and explain that the global switch must be turned on
      * first) WITHOUT rewriting anyone's stored per-task preference; the Host
@@ -75,10 +73,43 @@ export interface TaskBoardSnapshot {
      */
     goalRunEnabled?: boolean;
     /**
+     * New-card defaults this deployment configures: what the create dialog opens
+     * with, and what the create path fills an omitted target from when the caller
+     * opts in (`applyCardDefaults`). A target the board configures nothing for is
+     * omitted rather than published blank, so the browser can tell "no default
+     * model" from "a blank one".
+     */
+    cardDefaults?: {
+        mode?: string;
+        permission?: TaskPermission;
+        model?: string;
+        reasoningEffort?: string;
+    };
+    /**
      * Read-only summaries published by running extensions, keyed by extension id.
      * The board forwards them verbatim; it never interprets their shape.
      */
     extensions?: Record<string, unknown>;
+    /**
+     * The attachment limits this deployment enforces, so the browser can refuse
+     * an oversized selection before it uploads anything. The board's own caps
+     * are the ceiling; a deployment whose attachment storage publishes stricter
+     * image limits lowers the bounds it publishes here.
+     */
+    attachmentLimits?: {
+        /** Maximum number of attachments one card may carry. */
+        maxAttachments: number;
+        /** Maximum byte length of one attachment. */
+        maxBytes: number;
+        /** Maximum byte length of all attachments of one card together. */
+        maxTotalBytes: number;
+        /** Maximum number of IMAGES one card may carry (the official per-message budget). */
+        maxImages: number;
+        /** Maximum byte length of one image. */
+        maxImageBytes: number;
+        /** Maximum byte length of all images of one card together (the official per-message budget). */
+        maxMessageImageBytes: number;
+    };
 }
 /**
  * Body of `GET {TASK_BOARD_API_PREFIX}/verification`: the acceptance settings the
@@ -176,6 +207,16 @@ export type TaskBoardAction = {
 } | {
     kind: 'rerun';
     taskId: string;
+}
+/**
+ * Re-run an executed card in its own session, carrying rework instructions as
+ * this run's additional input. Every run gate applies exactly as it does to
+ * `rerun`, and the card's frozen content is never rewritten.
+ */
+ | {
+    kind: 'rework';
+    taskId: string;
+    instructions: string;
 } | {
     kind: 'confirm-permission';
     taskId: string;

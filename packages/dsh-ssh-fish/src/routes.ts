@@ -130,8 +130,11 @@ const maxUploadBytes = deps.maxUploadBytes ?? MAX_UPLOAD_BYTES
             // Connection-relevant changes invalidate the pooled connection:
             // without this the pool would keep running commands on the old
             // host/credentials until the idle sweep (up to 30 min later).
+            // Agent forwarding belongs here too: it is fixed per connection
+            // (ssh2 negotiates it when the channel opens), so toggling it must
+            // reconnect or the new setting silently never takes effect.
             const patch = body as Record<string, unknown>
-            if (['host', 'port', 'user', 'auth', 'proxyJump', 'proxyCommand'].some(key => patch[key] !== undefined)) {
+            if (['host', 'port', 'user', 'auth', 'proxyJump', 'proxyCommand', 'forwardAgent'].some(key => patch[key] !== undefined)) {
               engine.dropAlias(alias)
             }
             writeJson(res, 200, { host: store.summarize(entry) })

@@ -9,13 +9,14 @@
  * stale UI can never persist a value the execution service rejects.
  */
 import { type TaskRecord, type TaskTag } from '../tasks.ts';
+import { type TaskAttachment } from '../attachment.ts';
 import type { FreezeSnapshot } from '../freeze-snapshot.ts';
 import type { TaskHandoverInput } from '../handover.ts';
 /**
  * Editable fields on a task (the update patch surface). `freeze` replaces the
  * continuation-card snapshot (restamping frozenAt); an explicit null clears it.
  */
-export type TaskUpdatePatch = Partial<Pick<TaskRecord, 'title' | 'description' | 'prompt' | 'workspaceId' | 'mode' | 'permission' | 'model' | 'reuseSession' | 'teamRun' | 'goalRun' | 'skipVerification'>> & {
+export type TaskUpdatePatch = Partial<Pick<TaskRecord, 'title' | 'description' | 'prompt' | 'workspaceId' | 'mode' | 'permission' | 'model' | 'reasoningEffort' | 'reuseSession' | 'goalRun' | 'skipVerification'>> & {
     freeze?: FreezeSnapshot & {
         redacted?: boolean;
     } | null;
@@ -28,6 +29,15 @@ export type TaskUpdatePatch = Partial<Pick<TaskRecord, 'title' | 'description' |
      * explicit null (or a list that normalizes to nothing) clears them.
      */
     tags?: TaskTag[] | null;
+    /**
+     * Replaces the card's attachments (issue #1979).
+     *
+     * The attachments freeze WITH the card content: they are part of what the
+     * card hands to its execution, so an executed or archived card keeps the
+     * ones it ran with, exactly as it keeps the prompt it ran with. An explicit
+     * null clears them; a present array replaces the whole set.
+     */
+    attachments?: TaskAttachment[] | null;
 };
 /** The fields that edit the task's content (what the user reads and what the
  * next execution sends). Unlike the execution targets they stay editable only
@@ -35,6 +45,17 @@ export type TaskUpdatePatch = Partial<Pick<TaskRecord, 'title' | 'description' |
  * recorded prompt is the record of what actually ran, so it becomes read-only.
  */
 export declare const TASK_CONTENT_FIELDS: readonly ["title", "description", "prompt"];
+/**
+ * The fields that freeze with the card content: the text the card says AND
+ * the attachments it carries.
+ *
+ * The attachments freeze with the content because they ARE part of what the
+ * card hands to its execution: a card whose first run already consumed an
+ * image keeps that image, and the record of what ran stays what it was. An
+ * executed or archived card therefore refuses an attachment change exactly
+ * as it refuses a prompt change.
+ */
+export declare const TASK_FROZEN_FIELDS: readonly ["title", "description", "prompt", "attachments"];
 /** Whether an update patch touches any task-content field. */
 export declare function hasContentPatch(patch: TaskUpdatePatch): boolean;
 /**

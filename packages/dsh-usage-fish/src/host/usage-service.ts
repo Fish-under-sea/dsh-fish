@@ -22,6 +22,7 @@ import { deepseekModelSpend } from '../core/pricing.ts'
 import { createLedgerDocument, deserializeLedger, foldUsage, ledgerDayKeys, localDateKey, pruneLedger, summarizeDays, totalTokens } from '../core/ledger.ts'
 import type { BalanceView, CredentialKind, ObservedSpendView, PlanView, ProviderSnapshotState, ProviderSnapshotView, UsageDayView, UsageLedgerDocument, UsageOverviewView, UsageTokenTotals } from '../core/types.ts'
 import { addTotals, emptyTotals } from '../core/types.ts'
+import { resolveSpendDisplay, type SpendDisplay } from '../core/spend.ts'
 
 /**
  * Persisted accrual state for the official DeepSeek family's real spend:
@@ -60,6 +61,12 @@ interface ProviderRoute {
 export interface UsageServiceOptions {
   pollIntervalSec: number
   retainDays: number
+  /**
+   * How the browser halves should read the stored CNY costs. Optional so a
+   * caller that predates the display setting keeps the CNY rendering (issue
+   * #1937); the overview stamps the resolved value on every document.
+   */
+  display?: SpendDisplay
 }
 
 /** Probe timeout per HTTP call. */
@@ -336,6 +343,8 @@ export class UsageService {
     const all = summarizeDays(allKeys.map((key) => this.ledger.days[key] ?? {}))
     return {
       updatedAt: Date.now(),
+      // Display only: costs stay stored in CNY (issue #1937).
+      display: resolveSpendDisplay(this.options.display),
       providers,
       current: this.currentView(),
       usage: {
@@ -349,7 +358,6 @@ export class UsageService {
           to: days[days.length - 1] ?? todayKey,
           totals: range.totals,
           providers: range.providers,
-          deepseek: range.deepseek,
         },
         // Every retained day, not just the trend window: the day picker's
         // option list reaches back to the oldest day retention still keeps.
@@ -359,7 +367,6 @@ export class UsageService {
           to: allKeys[allKeys.length - 1] ?? todayKey,
           totals: all.totals,
           providers: all.providers,
-          deepseek: all.deepseek,
         },
         ...(this.spendWatch !== undefined && this.spendWatch.accruedCny > 0
           ? { observedSpend: { cny: this.spendWatch.accruedCny, since: this.spendWatch.since } satisfies ObservedSpendView }
@@ -412,8 +419,8 @@ export class UsageService {
   /** One local day aggregated per provider. */
   private daySummary(dateKey: string): UsageDayView {
     const day = this.ledger.days[dateKey] ?? {}
-    const { totals, providers, deepseek } = summarizeDays([day])
-    return { date: dateKey, totals, providers, deepseek }
+    const { totals, providers } = summarizeDays([day])
+    return { date: dateKey, totals, providers }
   }
 
   /**

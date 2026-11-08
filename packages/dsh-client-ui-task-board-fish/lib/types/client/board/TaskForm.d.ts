@@ -32,6 +32,10 @@ export declare function ModalShell({ ariaLabel, title, error, pending, submitLab
  * region keeps a one-line summary of the values it holds, so nothing is hidden
  * without a trace; a region holding a blocking error is forced open by its
  * owner (forceOpen) rather than reporting the error out of sight.
+ *
+ * The body is the panel fold's body under another name: it enters and leaves on
+ * the same animation pair, and `usePresence` keeps it mounted through the exit
+ * leg so collapsing never snaps.
  */
 export declare function CollapsibleSection({ title, summary, defaultOpen, forceOpen, children, }: {
     title: string;

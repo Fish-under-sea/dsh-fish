@@ -26,18 +26,46 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* One spacing step for this card's own blocks: the topic list and the power
+   facts under it read the same value instead of each hard-coding one. */
+.nestedCards,
+.power {
+  --task-board-settings-gap: 8px;
+}
+
 /* Live power facts plus the battery caveat, below the topic cards: quiet
-   small print that follows the disclosures instead of competing with them.
-   No rule of its own — the last topic card already closes with its border. */
+   small print that follows the disclosures instead of competing with them. */
 .power {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin-top: 14px;
+  gap: var(--task-board-settings-gap);
+  margin-top: calc(var(--task-board-settings-gap) * 2);
 }
 
-/* Both the live power line and the battery caveat: secondary ink at the small
-   size the 12-13px roles use, so neither competes with the topic cards. */
+/* The facts themselves: a two-column label/value grid whose labels form one
+   quiet column, so the four values start on one left edge. */
+.powerFacts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: calc(var(--task-board-settings-gap) * 2);
+  row-gap: 2px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.powerTerm,
+.powerValue {
+  margin: 0;
+}
+
+.powerTerm {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The battery caveat: secondary ink at the small size the 12-13px roles use,
+   so it does not compete with the topic cards above it. */
 .powerLine {
   margin: 0;
   font-size: 12px;
@@ -59,7 +87,7 @@
 .nestedCards {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--task-board-settings-gap);
   list-style: none;
   margin: 0;
   padding: 0;

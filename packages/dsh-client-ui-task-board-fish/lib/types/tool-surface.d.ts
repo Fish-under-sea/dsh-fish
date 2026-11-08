@@ -30,6 +30,7 @@
 export declare const PLUGIN_TOOL_SECTION_ORDERS: {
     readonly ssh: 150;
     readonly 'task-board': 200;
+    readonly agents: 220;
 };
 /** One plugin id keyed by {@link PLUGIN_TOOL_SECTION_ORDERS}. */
 export type PluginToolSectionId = keyof typeof PLUGIN_TOOL_SECTION_ORDERS;

@@ -19,9 +19,11 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { createUsageStore, type UsageStoreInstance } from './usage-store.ts'
 import { UsageSectionCard, type UsageSectionFace, type UsageSettings } from './UsageSectionCard.tsx'
-import { mountUsageFootCard, openUsageSettings } from './foot-card-mount.tsx'
-import { NS, en, zh, t } from './locales.ts'
+import { mountUsageFootCard } from './foot-card-mount.tsx'
+import { NS, en, zh } from './locales.ts'
+import { installUsageSection, openIntegratedUsageSettings } from './section-integration.ts'
 import { createServedEntryForm } from './settings-entry-form.ts'
+import { UsageSettingsCardController } from './usage-settings-card.ts'
 import type { UsageDayResponse, UsageDayView, UsageOverviewView } from '../core/types.ts'
 
 /** The host usage API as the browser sees it (same-origin JSON endpoints). */
@@ -164,7 +166,13 @@ export function apply(ctx: ClientContext): void {
   // small local request the 10 s poll has no reason to repeat.
   const loadDay = (date: string): Promise<UsageDayView> => usageApi.day(date)
 
-  const face = (): UsageSectionFace => ({ store, poll, refresh, loadDay, settings: settingsForm })
+  // The card form lives as long as the plugin, like the store: the page reads
+  // its last state on reopen, and a write in flight settles after the page closes.
+  const settingsCard = new UsageSettingsCardController(settingsForm)
+  ctx.effect(() => () => { settingsCard.dispose() }, 'dsh-usage: settings card')
+  const settingsCardFace = settingsCard.inject()
+
+  const face = (): UsageSectionFace => ({ store, poll, refresh, loadDay, settingsCard: settingsCardFace })
 
   // Sidebar foot card: the compact usage glance seated below the shell's
   // Settings row. It shares the section's store and poll path (the sequence
@@ -174,7 +182,7 @@ export function apply(ctx: ClientContext): void {
     store,
     poll,
     settings: settingsForm,
-    onOpen: () => { openUsageSettings(() => t('usage.title')) },
+    onOpen: () => { openIntegratedUsageSettings(ctx) },
     locale: ctx.locale,
   })
   ctx.effect(() => () => {
@@ -185,21 +193,11 @@ export function apply(ctx: ClientContext): void {
     }
   }, 'dsh-usage: sidebar foot card')
 
-  ctx.slots.inject('settings.section', () => {
-    try {
-      const unregister = ctx.slots.register({
-        name: 'settings.section',
-        id: 'dsh-usage',
-        order: SECTION_ORDER,
-        label: () => ctx.locale.bind(NS)('usage.title'),
-        locale: NS,
-        inject: face,
-      }, UsageSectionCard)
-      return () => {
-        unregister()
-      }
-    } catch {
-      return () => {}
-    }
-  })
+  ctx.effect(() => installUsageSection(ctx, {
+    order: SECTION_ORDER,
+    label: () => ctx.locale.bind(NS)('usage.title'),
+    locale: NS,
+    inject: face,
+    component: UsageSectionCard,
+  }), 'dsh-usage: settings page')
 }

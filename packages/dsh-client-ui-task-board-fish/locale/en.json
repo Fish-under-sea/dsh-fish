@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Task Board",
+    "description": "Drag tasks across columns; cron runs them for real."
+  }
+}

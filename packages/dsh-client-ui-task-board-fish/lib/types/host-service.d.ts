@@ -1,41 +1,15 @@
 import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway';
-import type { PeerScope } from '@deepseek-ai/dsh-client-connection';
 import { HostTaskLedger } from './host-ledger.ts';
-import { HostExecutionRunner, type SessionCommandDispatcher, type TaskBoardWorkspaceRegistry } from './host-runner.ts';
+import { HostExecutionRunner, type GatewayPeer, type SessionCommandDispatcher, type TaskBoardWorkspaceRegistry } from './host-runner.ts';
 import { PowerInhibitor } from './power-inhibitor.ts';
 import { type TaskBoardAction, type TaskBoardEventPayload, type TaskBoardSnapshot } from './protocol.ts';
+import type { CardDefaults } from './core/card-defaults.ts';
 import { TaskBoardExtensionRegistry } from './host/extension-registry.ts';
 import type { TaskBoardExtension } from './core/extension.ts';
-import type { ScheduleMode } from './core/tasks.ts';
+import { type ScheduleMode } from './core/tasks.ts';
 import { type ModelCatalogView, type VerificationContract, type VerificationSettings } from './core/verification.ts';
 import type { TaskPermission } from './core/handover.ts';
-/** One teammate the Host asks the Agent Teams service to spawn for a team run. */
-export interface TeamSpawnInput {
-    /** Session id of the run's Team Lead (the root task's execution session). */
-    leadSessionId: string;
-    /** Immutable lower-kebab-case teammate name, unique inside the Team. */
-    name: string;
-    /** Short description of the delegated responsibility. */
-    description: string;
-    /** The subtask's execution prompt. */
-    prompt: string;
-}
-/** Result of one teammate spawn attempt. */
-export interface TeamSpawnResult {
-    /** The teammate's session id when it reached the active edge. */
-    sessionId?: string;
-    /** Why the spawn failed: a thrown call, or a member that settled as failed. */
-    error?: string;
-}
-/**
- * The Agent Teams capability the Host needs for team-mode runs. The plugin
- * builds it from the optional `agentTeams` service; it is absent when this
- * deployment does not serve that service, in which case a team run is refused
- * instead of silently degrading into a plain cascade.
- */
-export interface TaskBoardTeamDispatcher {
-    spawn(input: TeamSpawnInput): Promise<TeamSpawnResult>;
-}
+import { type ModelInfoResolver, type TaskBoardAttachmentStore } from './host/attachments.ts';
 /**
  * Why an enforced goal execution settled failed while its acceptance DID run:
  * attempts were recorded and none of them passed. The judge answered about the
@@ -61,7 +35,7 @@ export declare const NEVER_INVOKED_VERIFICATION_REASON = "goal \u9A8C\u6536\u672
  */
 export declare const INVALID_ONLY_VERIFICATION_REASON = "goal \u9A8C\u6536\u65E0\u6548\uFF1A\u672C\u6B21\u6267\u884C\u53EA\u8BB0\u5F55\u4E86\u65E0\u6548\u9A8C\u6536\uFF08\u88C1\u5224\u672A\u80FD\u7ED9\u51FA\u4E0E\u4EFB\u52A1\u8981\u6C42\u5BF9\u5E94\u3001\u4E14\u53EF\u5B9A\u4F4D\u5230\u672C\u6B21\u8BC1\u636E\u7684\u5426\u51B3\u4F9D\u636E\uFF09\uFF0C\u770B\u677F\u5DF2\u505C\u6B62\u8C03\u7528\u88C1\u5224\u3002\u8FD9**\u4E0D\u662F**\u6709\u8BC1\u636E\u7684\u8D28\u91CF\u5224\u8D1F\uFF1A\u9A8C\u6536\u672C\u8EAB\u4E0D\u53EF\u7528\uFF0C\u672C\u6B21\u8FD0\u884C\u56E0\u6CA1\u6709\u5339\u914D\u7684\u901A\u8FC7\u8BB0\u5F55\u800C\u7ED3\u675F\u3002\u8BF7\u68C0\u67E5\u9A8C\u6536\u73AF\u5883\u4E0E\u8BC1\u636E\u53EF\u89C1\u6027\uFF0C\u6216\u7528 task_board_manage(action=reset-verification) \u6E05\u9664\u8BB0\u5F55\u7684\u65E0\u6548\u9A8C\u6536\u540E\u91CD\u65B0\u5B8C\u6210\u76EE\u6807\u3002";
 /**
- * Provenance of one cron-triggered cascade: when the rule fired and the zone
+ * Provenance of one cron-triggered run: when the rule fired and the zone
  * its wall clock was read in. Passed into every launched prompt of that run so
  * a scheduled job knows its own clock rather than inferring one.
  */
@@ -88,6 +62,8 @@ export declare class TaskBoardHostService {
     readonly ledger: HostTaskLedger;
     readonly runner: HostExecutionRunner;
     readonly power: PowerInhibitor;
+    /** The official attachment storage, read live so a late mount is honoured. */
+    private readonly attachmentStore;
     private readonly listeners;
     /** The one recurring timer: the session-roster poll. */
     private pollTimer;
@@ -105,6 +81,12 @@ export declare class TaskBoardHostService {
     private pollInFlight;
     private active;
     /**
+     * Admission control for the session-creating half of a run: one board action
+     * opens a whole subtree, and this is what keeps the Host from asking DSH for
+     * every member's session at once (see {@link LaunchAdmissionQueue}).
+     */
+    private readonly launches;
+    /**
      * Consecutive unreadable-history polls per open execution (see
      * {@link noteUnreadableInspection}). Cleared as soon as an inspection
      * resolves, so a transient reader failure never fails a card.
@@ -113,10 +95,24 @@ export declare class TaskBoardHostService {
     private preventIdleSleep;
     private readonly verificationSettings;
     private readonly verificationCatalog;
-    private readonly team;
     private readonly timers;
     /** Live reader of the global native-/goal switch; frozen per execution. */
     private readonly goalRunEnabled;
+    /** Live reader of the deployment's new-card defaults (published and applied per create). */
+    private readonly cardDefaults;
+    /**
+     * Live reader of the run-launch admission width: how many launches may be in
+     * flight at once. Read at every admission, so a settings edit bounds the next
+     * launch without remounting the row. Absent means the default.
+     */
+    private readonly runLaunchWidth;
+    /**
+     * Live reader of the daily token cap; 0 means no gate. Read at each run
+     * action, so closing or raising the cap binds the next action.
+     */
+    private readonly spendBudgetTokens;
+    /** Today's measured spend: absent measurement reads as "cannot see", never as zero. */
+    private readonly spendUsedToday;
     private lastPowerJson;
     private readonly now;
     /** The deployment's workspaces, consulted to resolve a card that pins none. */
@@ -134,12 +130,25 @@ export declare class TaskBoardHostService {
         commandDispatcher?: SessionCommandDispatcher;
         workspaceRegistry?: TaskBoardWorkspaceRegistry;
         /**
+         * The owner peer every gateway request the runner makes speaks for.
+         * Production passes the peer bound to the plugin fiber (see
+         * {@link createOwnerPeer}); absent is fine for tests and bare mounts,
+         * where the runner binds one to a fresh root context.
+         */
+        ownerPeer?: GatewayPeer;
+        /**
          * Permission baseline of the confirmation gate: a fixed value, or a live
          * resolver the board re-reads so a Host Settings change needs no remount.
          */
         sessionDefaultPermission?: TaskPermission | (() => TaskPermission);
         maxSubtaskDepth?: number;
-        team?: TaskBoardTeamDispatcher;
+        /**
+         * Live reader of the deployment's new-card defaults (volatile config reads).
+         * The board publishes them for the create dialog and re-reads them for every
+         * create that opts in, so a settings edit reaches the next created card
+         * without remounting the row. Absent means the deployment configures none.
+         */
+        cardDefaults?: () => CardDefaults;
         timers?: HostTimerFace;
         /**
          * Live GLOBAL native /goal switch (a volatile config read). Read ONCE per
@@ -157,7 +166,45 @@ export declare class TaskBoardHostService {
         verificationSettings?: () => VerificationSettings;
         /** The host model catalog the acceptance contract resolves its route from. */
         verificationCatalog?: () => Promise<ModelCatalogView | undefined>;
-        operatorPeer?: () => PeerScope | undefined;
+        /**
+         * Live admission width for run launches: the number of launches (one
+         * session creation and its prompt each) that may be in flight at once. Read
+         * per admission, so editing the setting bounds the next launch of a run that
+         * is still queueing. Absent means the default width.
+         */
+        runLaunchWidth?: () => number;
+        /**
+         * Live daily token cap (a volatile config read). 0 — the default, and what
+         * every deployment that never configured one keeps — ends the gate before
+         * anything is measured. A positive cap refuses a run whose day already spent
+         * it, on both the action path and the cron path.
+         */
+        spendBudgetTokens?: () => number;
+        /**
+         * Today's measured spend in tokens, or undefined when this deployment keeps
+         * no readable usage ledger. Defaults to the family usage ledger reader.
+         */
+        spendUsedToday?: (now: number) => number | undefined;
+        /**
+         * The official attachment storage, read at request time. Absent means the
+         * deployment stores no attachments: every attachment action is then
+         * refused and the board publishes no attachment limits.
+         */
+        attachments?: () => TaskBoardAttachmentStore | undefined;
+        /**
+         * The model-info reader the image preflight uses. Absent means the
+         * deployment serves no model information, and a route whose modalities are
+         * unknown is allowed.
+         */
+        modelInfo?: () => ModelInfoResolver | undefined;
+        /**
+         * Whether this deployment runs the legacy Agent Teams runtime. Read at
+         * launch, only for a run the board is about to force under the dispatcher
+         * preset: such a deployment cannot orchestrate, so the run fails closed on
+         * the card instead of deadlocking in a session nobody answers (issue #2031).
+         * Absent means "not proven legacy", which keeps the force exactly as it is.
+         */
+        legacyAgentTeams?: () => boolean;
     });
     start(): void;
     /**
@@ -170,6 +217,15 @@ export declare class TaskBoardHostService {
      * @param sessionPollSeconds - roster-poll cadence in seconds (clamped).
      */
     setConfiguration(active: boolean, preventIdleSleep: boolean, sessionPollSeconds?: number): void;
+    /**
+     * The board's published snapshot.
+     *
+     * Every read path serializes this object — the HTTP `state` answer, the
+     * `action` answer through {@link apply}, and the remote bridge's
+     * `board.snapshot` — so a provider's integration credentials are stripped
+     * once, here, instead of at each exit. The ledger keeps them verbatim for the
+     * provider's own in-process read.
+     */
     snapshot(): TaskBoardSnapshot;
     /**
      * Admit one external provider. Idempotent by extension id; the returned
@@ -211,6 +267,25 @@ export declare class TaskBoardHostService {
      * @returns the action, with an inherited workspace on a root creation.
      */
     private withInheritedWorkspace;
+    /**
+     * Apply an action whose attachments the Host proved against the official
+     * storage first.
+     *
+     * This is the board's trust boundary for attachment metadata: the browser
+     * asserts the size, the type and the digest of every object it uploaded, and
+     * the Host reads the stored objects back (an image is compared, a file is
+     * streamed and its digest recomputed) before the ledger commits the claim.
+     * An attachment the storage cannot prove is refused, so a spoofed client
+     * claim never becomes a stored fact.
+     */
+    applyVerified(requestId: string, action: TaskBoardAction, initiator?: string): Promise<TaskBoardSnapshot>;
+    /**
+     * Prove every attachment of an action against the official storage.
+     *
+     * An action without attachments is untouched: the board keeps working in a
+     * deployment that serves no attachment storage at all.
+     */
+    private verifyActionAttachments;
     apply(requestId: string, action: Extract<TaskBoardAction, {
         kind: 'extension-action';
     }>, initiator?: string): Promise<TaskBoardSnapshot>;
@@ -224,6 +299,18 @@ export declare class TaskBoardHostService {
      * never disagree about a card.
      */
     private applyBoardAction;
+    /**
+     * Refuse a run whose day already spent the cap.
+     *
+     * A cap of 0 — the shipped default — answers before the measurement is read:
+     * no ledger file is opened and nothing is summed, which is what keeps a board
+     * that never configured a cap identical to the one before it existed.
+     *
+     * The refusal is a thrown message rather than a code: the wire hands its text
+     * to the caller as board-refused, exactly like every other refusal this board
+     * makes.
+     */
+    private assertSpendCap;
     /** Route one provider action and answer the resulting board snapshot. */
     private handleExtensionAction;
     /** Current task id -> status map, for change detection around a mutation. */
@@ -232,15 +319,26 @@ export declare class TaskBoardHostService {
     private emitStatusChanges;
     dispose(): void;
     private launch;
-    private scheduleTeammate;
     /**
-     * Spawn one teammate inside the Lead session and attach the teammate's
-     * session to the subtask execution, so the existing session monitor settles
-     * it from the teammate's own turn like any other execution. A spawn that
-     * fails settles the subtask as failed immediately, which then folds into the
-     * Lead's cascade verdict.
+     * Read the acceptance contract one run group freezes, in the order the board
+     * has always read it: the acceptance settings, then the global native-/goal
+     * switch, then the model catalog that both resolves the contract's route and
+     * decides the reasoning effort the session may be given.
      */
-    private spawnTeammate;
+    private freezeRunContract;
+    /**
+     * A {@link RunContractFreezer} that reads once and hands the SAME value to
+     * every later caller of one run group. A read that fails is not cached: the
+     * next member reads again, exactly as a per-execution read would have.
+     */
+    private contractFreezerForRunGroup;
+    /**
+     * Give back the occurrence a launch consumed, for a launch that never reached
+     * a session: a failed launch, or one the Host abandoned while it was still
+     * waiting for an admission slot. A manual run, and a launch that DID reach a
+     * session, are never refunded.
+     */
+    private refundUnstartedSchedule;
     /**
      * One roster pass, and whether it could read the session tree.
      *
@@ -264,9 +362,25 @@ export declare class TaskBoardHostService {
      * reads no roster at all, and a read that fails mints a fresh conversation
      * exactly as an unknown roster always did.
      * @param task - the task about to run.
+     * @param force - continue the settled session regardless of the card's own
+     *   opt-in (a rework), which the reuse rule accepts without waiving any of its
+     *   evidence conditions.
      * @returns the session id to continue in, or undefined for a fresh session.
      */
     private reuseSessionFor;
+    /**
+     * The session a rework continues, or the refusal that says why it cannot.
+     *
+     * A rework exists for one conversation — the one the reviewer read before
+     * sending the work back — so the evidence that this Host still reaches it is
+     * required, exactly as it is for a card that opted into reuse. What a rework
+     * does NOT get is the fresh-conversation fallback: launching there would hand
+     * the reviewer's instructions to an agent that never saw the work, so the run
+     * fails with a readable reason instead.
+     * @param task - the card being reworked.
+     * @returns the session id this rework continues in.
+     */
+    private reworkSessionFor;
     /** Reuse the session list this poll already fetched: one list RPC per tick, not 1 + E. */
     private reconcileExecutions;
     /**
@@ -332,11 +446,13 @@ export declare class TaskBoardHostService {
     private onScheduleFire;
     private armedSchedules;
     /**
-     * Launch one run set. The root goes first and receives the run shape in its
-     * prompt (which members this run opens, and how they run); every plain-cascade
-     * member then launches on its own so one refused participant cannot hold the
-     * others back. A team run's members are spawned inside the root's Lead
-     * session instead, once that session exists.
+     * Launch the one run a run request opened. A run request names one card and
+     * opens one execution for it; the card's own session dispatches its subtasks
+     * as subagents, so nothing else is enqueued here.
+     *
+     * The launch still goes through the admission queue, which admits at most
+     * `runLaunchWidth` launches at a time — that bound now applies across
+     * concurrent runs rather than across the members of one run.
      */
     private dispatchRuns;
     /**
@@ -345,6 +461,26 @@ export declare class TaskBoardHostService {
      */
     private setApplicability;
     private scheduleLaunch;
+    /**
+     * Hand one launch to the admission queue, or abandon it on the spot when the
+     * Host is already stopping: a queue entry created after {@link dispose} would
+     * otherwise never be drained, and its card would sit in the running column
+     * until the next Host start recovered it.
+     */
+    private enqueueLaunch;
+    /** Whether one opened execution is still open in the ledger. */
+    private isExecutionOpen;
+    /**
+     * Take one launch that never started out of the running column.
+     *
+     * Settled as CANCELLED, not failed: nothing about the run's work went wrong —
+     * the Host stopped before the launch got a slot, which is exactly what the
+     * next start's interrupted-start recovery records for an execution that never
+     * reached a session. A scheduled occurrence that never reached a session is
+     * refunded on the same terms as any other pre-session failure, so a run the
+     * Host never started cannot silently spend the user's run budget.
+     */
+    private abandonQueuedRun;
     private schedulePoll;
     /**
      * Count one failed pass and arm the retry that follows it.

@@ -1,62 +1,44 @@
 import z from "@deepseek-ai/schemastery";
-import { spawn, spawnSync } from "node:child_process";
-import { createHash, timingSafeEqual } from "node:crypto";
-import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { accessSync, chmodSync, closeSync, constants, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, win32 } from "node:path";
 import { homedir } from "node:os";
 import { isAbsolute as isAbsolute$1, join as join$1 } from "node:path/posix";
+import { spawn, spawnSync } from "node:child_process";
+import { createHash, timingSafeEqual } from "node:crypto";
+import { Context } from "@deepseek-ai/cordis";
 import { ReasoningEffortId, createUserMessage } from "@deepseek-ai/dsh-llm";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 /**
-* Clamp a configured cadence into the supported range. A value the schema
-* would refuse (non-finite, below the floor, above the ceiling) still leaves
-* the board polling: an out-of-range setting never disables the timer.
-* @param seconds - configured cadence in seconds, or undefined for the default.
-* @returns the effective cadence in seconds.
+* Clamp a configured width into the supported range. A value the schema would
+* refuse (non-finite, below the floor, above the ceiling) still leaves the
+* board launching: an out-of-range setting never stalls a run.
+* @param width - configured width, or undefined for the default.
+* @returns the effective width.
 */
-function normalizeSessionPollSeconds(seconds) {
-	if (seconds === void 0 || !Number.isFinite(seconds)) return 5;
-	return Math.min(Math.max(Math.trunc(seconds), 1), 300);
-}
-/**
-* The cadence in the milliseconds the Host timer face takes.
-* @param seconds - configured cadence in seconds, or undefined for the default.
-* @returns the effective cadence in milliseconds.
-*/
-function sessionPollMs(seconds) {
-	return normalizeSessionPollSeconds(seconds) * 1e3;
+function normalizeRunLaunchWidth(width) {
+	if (width === void 0 || !Number.isFinite(width)) return 3;
+	return Math.min(Math.max(Math.trunc(width), 1), 16);
 }
 //#endregion
-//#region src/core/session-reuse.ts
+//#region src/core/spend-budget.ts
 /**
-* Pick the session a new execution of this task may continue in, or undefined
-* to mint a fresh conversation. Reuse requires ALL of:
-* - the task opted in (`reuseSession === true`);
-* - the task's newest SETTLED execution carries a session id (issue #1587: the
-*   launch path calls this after `startExecution` appended this run's own open
-*   record, so reading the array tail always found an unsettled row and reuse
-*   never happened);
-* - the roster is known and that session is present and idle.
-*
-* An unknown roster (session/list unavailable) never reuses: minting a fresh
-* conversation is always safe, prompting into a session we cannot see is not.
-* @param task - the task about to run.
-* @param idleSessionIds - ids the last roster saw as present and not running;
-*   undefined when that roster is unknown.
-* @returns the session id to continue in, or undefined for a fresh session.
+* Whether a day's measured spend already reached the cap.
+* @param usedTokens - tokens the day's spend measurement reported.
+* @param cap - the configured cap, 0 for "no gate".
+* @returns true when a run must be refused.
 */
-function reusableSessionId(task, idleSessionIds) {
-	if (task.reuseSession !== true || idleSessionIds === void 0) return void 0;
-	let last;
-	for (let index = task.executions.length - 1; index >= 0; index -= 1) {
-		const candidate = task.executions[index];
-		if (candidate.sessionId !== void 0 && candidate.endedAt !== void 0) {
-			last = candidate;
-			break;
-		}
-	}
-	if (last === void 0 || last.sessionId === void 0) return void 0;
-	return idleSessionIds.has(last.sessionId) ? last.sessionId : void 0;
+function spendCapReached(usedTokens, cap) {
+	return cap > 0 && usedTokens >= cap;
+}
+/**
+* The refusal text both gates report: the thrown message a client sees as
+* board-refused, and the scheduler error a due occurrence records.
+* @param usedTokens - tokens the day's spend measurement reported.
+* @param cap - the configured cap.
+* @returns the refusal message.
+*/
+function spendCapMessage(usedTokens, cap) {
+	return `spend cap reached: ${usedTokens} tokens of ${cap} today; raise the cap in the task board settings`;
 }
 //#endregion
 //#region src/dsh-home.ts
@@ -93,6 +75,250 @@ function resolveDshHome(env = process.env, home = homedir()) {
 function dshHome() {
 	return resolveDshHome();
 }
+//#endregion
+//#region src/host-spend.ts
+/**
+* Today's measured spend, read from the usage ledger this deployment keeps at
+* `$DSH_HOME/dsh-usage/usage-ledger.json`.
+*
+* The measure is the family usage ledger rather than a counter this plugin
+* accumulates from `session/event`, for two reasons. The ledger is durable, so
+* a cap cannot be reset by restarting the Host (the Loader remounts a row on
+* any config change, and a spend counter that lived only in memory would forget
+* the day). And a second fold of the same events inside the board would have to
+* persist its own totals to be worth anything, which means a second writer of
+* spend state in one process.
+*
+* What that costs: the file belongs to the dsh-usage plugin, so a deployment
+* that does not mount it keeps no ledger and the cap cannot measure anything.
+* That case is reported once per process and the gate then refuses nothing —
+* wedging the board because a sibling plugin is absent would be worse than a
+* cap that says it cannot see. The 3 s flush debounce of that plugin is the
+* other cost: the reading trails the busiest moments by at most one debounce.
+* @module @fish-under-sea/dsh-client-ui-task-board-fish/host-spend
+*/
+/**
+* The token fields one ledger bucket totals. Billed input is uncached input
+* plus both cache buckets; output already includes reasoning, so reasoning is
+* deliberately not added again — the sum is the one the usage panel shows.
+*/
+const TOKEN_FIELDS = [
+	"inputTokens",
+	"outputTokens",
+	"cacheReadTokens",
+	"cacheWriteTokens"
+];
+/** Reported at most once per process: an unmeasurable cap is a startup fact, not a per-run one. */
+let reportedUnmeasurable = false;
+/**
+* Local-date key (`YYYY-MM-DD`) of an instant, the bucketing the usage ledger
+* itself uses: the cap and the usage panel therefore roll over at the same
+* local midnight.
+* @param ms - clock instant (ms epoch).
+* @returns the day key.
+*/
+function spendDateKey(ms) {
+	const date = new Date(ms);
+	const month = String(date.getMonth() + 1).padStart(2, "0");
+	const day = String(date.getDate()).padStart(2, "0");
+	return `${date.getFullYear()}-${month}-${day}`;
+}
+/**
+* Total tokens one ledger day recorded, across every provider and model of that
+* day. Anything that is not a finite token count contributes 0, so a ledger
+* written by another version degrades to a smaller reading instead of NaN.
+* @param day - one day bucket as the ledger stores it, when it is one.
+* @returns the day's token total.
+*/
+function ledgerDayTokens(day) {
+	if (typeof day !== "object" || day === null) return 0;
+	let total = 0;
+	for (const models of Object.values(day)) {
+		if (typeof models !== "object" || models === null) continue;
+		for (const bucket of Object.values(models)) {
+			if (typeof bucket !== "object" || bucket === null) continue;
+			for (const field of TOKEN_FIELDS) {
+				const value = bucket[field];
+				if (typeof value === "number" && Number.isFinite(value) && value > 0) total += value;
+			}
+		}
+	}
+	return total;
+}
+/**
+* Path of the usage ledger for this DSH home.
+* @returns the absolute ledger path.
+*/
+function spendLedgerPath() {
+	return join(dshHome(), "dsh-usage", "usage-ledger.json");
+}
+/**
+* Tokens already spent today, or undefined when no measurement is available.
+*
+* Undefined is "cannot see", not "spent nothing": the caller fails open and
+* reports it, because a spend cap that cannot read its own source must never
+* decide that no work may run.
+* @param now - clock instant (ms epoch).
+* @param path - ledger path (test seam).
+* @returns today's token total, or undefined when the ledger is unreadable.
+*/
+function usedTokensToday(now = Date.now(), path = spendLedgerPath()) {
+	try {
+		const parsed = JSON.parse(readFileSync(path, "utf8"));
+		const days = typeof parsed === "object" && parsed !== null ? parsed.days : void 0;
+		if (typeof days !== "object" || days === null) return void 0;
+		return ledgerDayTokens(days[spendDateKey(now)]);
+	} catch (error) {
+		if (!reportedUnmeasurable) {
+			reportedUnmeasurable = true;
+			const detail = error instanceof Error ? error.message : String(error);
+			console.warn(`[dsh-task-board] spend cap cannot be measured from ${path}: ${detail}; runs are not gated until that ledger is readable`);
+		}
+		return;
+	}
+}
+/**
+* Clamp a configured cadence into the supported range. A value the schema
+* would refuse (non-finite, below the floor, above the ceiling) still leaves
+* the board polling: an out-of-range setting never disables the timer.
+* @param seconds - configured cadence in seconds, or undefined for the default.
+* @returns the effective cadence in seconds.
+*/
+function normalizeSessionPollSeconds(seconds) {
+	if (seconds === void 0 || !Number.isFinite(seconds)) return 5;
+	return Math.min(Math.max(Math.trunc(seconds), 1), 300);
+}
+/**
+* The cadence in the milliseconds the Host timer face takes.
+* @param seconds - configured cadence in seconds, or undefined for the default.
+* @returns the effective cadence in milliseconds.
+*/
+function sessionPollMs(seconds) {
+	return normalizeSessionPollSeconds(seconds) * 1e3;
+}
+//#endregion
+//#region src/core/session-reuse.ts
+/**
+* Pick the session a new execution of this task may continue in, or undefined
+* to mint a fresh conversation. Reuse requires ALL of:
+* - the task opted in (`reuseSession === true`);
+* - the task's newest SETTLED execution carries a session id (issue #1587: the
+*   launch path calls this after `startExecution` appended this run's own open
+*   record, so reading the array tail always found an unsettled row and reuse
+*   never happened);
+* - the roster is known and that session is present and idle.
+*
+* An unknown roster (session/list unavailable) never reuses: minting a fresh
+* conversation is always safe, prompting into a session we cannot see is not.
+* @param task - the task about to run.
+* @param idleSessionIds - ids the last roster saw as present and not running;
+*   undefined when that roster is unknown.
+* @param options.force - continue the settled session regardless of the card's
+*   own `reuseSession` opt-in. A rework is exactly that case: the reviewer read
+*   the previous run's session and sent it back. Every condition above still
+*   applies — the force waives the opt-in, never the evidence.
+* @returns the session id to continue in, or undefined for a fresh session.
+*/
+function reusableSessionId(task, idleSessionIds, options = {}) {
+	if (options.force !== true && task.reuseSession !== true) return void 0;
+	if (idleSessionIds === void 0) return void 0;
+	let last;
+	for (let index = task.executions.length - 1; index >= 0; index -= 1) {
+		const candidate = task.executions[index];
+		if (candidate.sessionId !== void 0 && candidate.endedAt !== void 0) {
+			last = candidate;
+			break;
+		}
+	}
+	if (last === void 0 || last.sessionId === void 0) return void 0;
+	return idleSessionIds.has(last.sessionId) ? last.sessionId : void 0;
+}
+//#endregion
+//#region src/host/launch-admission.ts
+var LaunchAdmissionQueue = class {
+	width;
+	/** Waiting launches per run group, in arrival order. */
+	waiting = /* @__PURE__ */ new Map();
+	/** Run groups in round-robin order. */
+	rotation = [];
+	/** Slot holders of the launches in flight, one per admitted launch. */
+	inFlight = /* @__PURE__ */ new Set();
+	/** Highest number of launches in flight at once; observability and tests. */
+	peakInFlight = 0;
+	/**
+	* @param width - live admission width (already normalized by the caller).
+	*/
+	constructor(width) {
+		this.width = width;
+	}
+	/** Launches the queue has not admitted yet. */
+	get pendingCount() {
+		let total = 0;
+		for (const queue of this.waiting.values()) total += queue.length;
+		return total;
+	}
+	/** Launches currently holding a slot. */
+	get inFlightCount() {
+		return this.inFlight.size;
+	}
+	/** Admit one launch, immediately if a slot is free. */
+	enqueue(launch) {
+		const queue = this.waiting.get(launch.groupId);
+		if (queue === void 0) {
+			this.waiting.set(launch.groupId, [launch]);
+			this.rotation.push(launch.groupId);
+		} else queue.push(launch);
+		this.pump();
+	}
+	/**
+	* Abandon every waiting launch: the queue is being torn down, so an entry
+	* that never started can never start. Launches already in flight are left
+	* alone — their session may already exist, and the callers that own them
+	* settle them through the normal path.
+	* @returns the abandoned launches, in abandonment order.
+	*/
+	drain() {
+		const abandoned = [];
+		for (const groupId of this.rotation) for (const launch of this.waiting.get(groupId) ?? []) abandoned.push(launch);
+		this.rotation = [];
+		this.waiting.clear();
+		for (const launch of abandoned) launch.abandon();
+		return abandoned;
+	}
+	pump() {
+		while (this.inFlight.size < this.width()) {
+			const launch = this.takeNext();
+			if (launch === void 0) return;
+			this.admit(launch);
+		}
+	}
+	/** The next launch by round-robin across groups and FIFO inside one. */
+	takeNext() {
+		while (this.rotation.length > 0) {
+			const groupId = this.rotation.shift();
+			if (groupId === void 0) return void 0;
+			const queue = this.waiting.get(groupId);
+			if (queue === void 0 || queue.length === 0) {
+				this.waiting.delete(groupId);
+				continue;
+			}
+			const launch = queue.shift();
+			if (launch === void 0) continue;
+			if (queue.length === 0) this.waiting.delete(groupId);
+			else this.rotation.push(groupId);
+			return launch;
+		}
+	}
+	admit(launch) {
+		const release = () => {
+			this.inFlight.delete(release);
+			this.pump();
+		};
+		this.inFlight.add(release);
+		if (this.inFlight.size > this.peakInFlight) this.peakInFlight = this.inFlight.size;
+		Promise.resolve().then(() => launch.start()).catch(() => {}).then(release);
+	}
+};
 //#endregion
 //#region src/core/schedule.ts
 /** Inclusive ranges per field, in cron order. */
@@ -380,6 +606,13 @@ const TASK_BOARD_SERVICE_NAME = "taskBoard";
 * channel.
 */
 const TASK_BOARD_PAYLOAD_LIMIT_BYTES = 64 * 1024;
+/**
+* Largest accepted free text a provider pushes into an execution, in
+* characters: one follow-up message, or one set of rework instructions. Both
+* reach a model as user input, so the bound keeps a single provider call from
+* becoming an unbounded context injection.
+*/
+const TASK_BOARD_MESSAGE_MAX_LENGTH = 4e3;
 /** Depth beyond which a payload is refused instead of walked. */
 const PAYLOAD_DEPTH_LIMIT = 64;
 /** Whether a value is a plain JSON value (no undefined, function, symbol, bigint or cycle). */
@@ -443,6 +676,215 @@ function normalizeTaskIntegrations(value) {
 		result[key] = entry;
 	}
 	return Object.keys(result).length === 0 ? void 0 : result;
+}
+/** Maximum byte length of one attachment (10 MiB). */
+const TASK_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
+/** Maximum byte length of all attachments of one card together (32 MiB). */
+const TASK_ATTACHMENT_TOTAL_MAX_BYTES = 32 * 1024 * 1024;
+/** Raster media types the official image path accepts. */
+const TASK_ATTACHMENT_IMAGE_MEDIA_TYPES = [
+	"image/png",
+	"image/jpeg",
+	"image/webp",
+	"image/gif"
+];
+/** Longest accepted display name of an attachment. */
+const ATTACHMENT_NAME_MAX_LENGTH = 255;
+/** Longest accepted media type of an attachment. */
+const ATTACHMENT_MEDIA_TYPE_MAX_LENGTH = 255;
+/** Longest accepted storage identifier of an attachment. */
+const ATTACHMENT_ID_MAX_LENGTH = 512;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+const MEDIA_TYPE_PATTERN = /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/;
+/** Every key one attachment may carry. */
+const ATTACHMENT_KEYS = [
+	"kind",
+	"attachmentId",
+	"name",
+	"bytes",
+	"mediaType",
+	"sha256",
+	"width",
+	"height"
+];
+function isPlainObject(value) {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+/** Whether a value is a well-formed positive pixel count. */
+function isPixelCount(value) {
+	return typeof value === "number" && Number.isInteger(value) && value > 0;
+}
+/**
+* The canonical display name of an attachment.
+*
+* A name reaches the ledger from two directions: the browser picks it, and an
+* execution prompt reads it. Both make one form mandatory — the name must be
+* a single line without any path part, so it can neither break out of the
+* prompt line nor point at a directory.
+*
+* The canonical form is therefore: the LEAF of whatever path-like text was
+* offered, every control character (a newline included) turned into a space,
+* whitespace runs collapsed into one space, the result trimmed and bounded.
+* An empty result becomes a fixed placeholder.
+*
+* The Host upload path canonicalizes the name BEFORE publishing it, and the
+* wire gate accepts only a name that already IS canonical — so the name the
+* ledger holds and the name the storage holds are the same string.
+* @param value - the offered name.
+* @returns the canonical name.
+*/
+function canonicalAttachmentName(value) {
+	const cleaned = ((typeof value === "string" ? value : "").split(/[\\/]/).pop() ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+	if (cleaned === "") return "attachment";
+	return cleaned.slice(0, ATTACHMENT_NAME_MAX_LENGTH);
+}
+/**
+* Whether an unknown value is a well-formed attachment (the STRICT gate: the
+* wire path uses it, so a hand-written payload cannot smuggle an extra field
+* onto the ledger, a path-like name, or an image without its pixel size).
+* @param value - the candidate attachment.
+* @returns whether the value is a usable attachment.
+*/
+function isTaskAttachment(value) {
+	if (!isPlainObject(value)) return false;
+	if (Object.keys(value).some((key) => !ATTACHMENT_KEYS.includes(key))) return false;
+	if (value.kind !== "image" && value.kind !== "file") return false;
+	if (typeof value.attachmentId !== "string") return false;
+	const id = value.attachmentId;
+	if (id === "" || id.length > ATTACHMENT_ID_MAX_LENGTH) return false;
+	if (id.includes("/") || id.includes("\\") || id.includes("..")) return false;
+	if (typeof value.name !== "string") return false;
+	if (value.name !== canonicalAttachmentName(value.name)) return false;
+	if (typeof value.bytes !== "number" || !Number.isInteger(value.bytes) || value.bytes < 0) return false;
+	if (typeof value.mediaType !== "string" || value.mediaType.length > ATTACHMENT_MEDIA_TYPE_MAX_LENGTH) return false;
+	if (!MEDIA_TYPE_PATTERN.test(value.mediaType)) return false;
+	if (value.mediaType !== value.mediaType.toLowerCase()) return false;
+	if (typeof value.sha256 !== "string" || !SHA256_PATTERN.test(value.sha256)) return false;
+	if (value.kind === "image") {
+		if (!TASK_ATTACHMENT_IMAGE_MEDIA_TYPES.includes(value.mediaType.toLowerCase())) return false;
+		if (!isPixelCount(value.width) || !isPixelCount(value.height)) return false;
+	} else if (value.width !== void 0 || value.height !== void 0) return false;
+	return true;
+}
+/**
+* Repair one persisted attachment entry: canonicalize its name and keep the
+* fields that are usable. An entry that cannot be repaired — an unknown kind,
+* a malformed identifier, an image without its pixel size — is dropped.
+* @param value - the persisted entry.
+* @returns the repaired attachment, or undefined when it cannot be repaired.
+*/
+function repairAttachment(value) {
+	if (!isPlainObject(value)) return void 0;
+	if (value.kind !== "image" && value.kind !== "file") return void 0;
+	if (typeof value.attachmentId !== "string") return void 0;
+	const id = value.attachmentId;
+	if (id === "" || id.length > ATTACHMENT_ID_MAX_LENGTH) return void 0;
+	if (id.includes("/") || id.includes("\\") || id.includes("..")) return void 0;
+	if (typeof value.bytes !== "number" || !Number.isInteger(value.bytes) || value.bytes < 0) return void 0;
+	if (typeof value.mediaType !== "string" || !MEDIA_TYPE_PATTERN.test(value.mediaType)) return void 0;
+	if (typeof value.sha256 !== "string" || !SHA256_PATTERN.test(value.sha256)) return void 0;
+	const name = canonicalAttachmentName(value.name);
+	if (value.kind === "image") {
+		if (!TASK_ATTACHMENT_IMAGE_MEDIA_TYPES.includes(value.mediaType.toLowerCase())) return void 0;
+		if (!isPixelCount(value.width) || !isPixelCount(value.height)) return void 0;
+		return {
+			kind: "image",
+			attachmentId: id,
+			name,
+			bytes: value.bytes,
+			mediaType: value.mediaType.toLowerCase(),
+			sha256: value.sha256,
+			width: value.width,
+			height: value.height
+		};
+	}
+	if (value.width !== void 0 || value.height !== void 0) return void 0;
+	return {
+		kind: "file",
+		attachmentId: id,
+		name,
+		bytes: value.bytes,
+		mediaType: value.mediaType.toLowerCase(),
+		sha256: value.sha256
+	};
+}
+/**
+* Whether a list satisfies the card-wide attachment limits: the count, the
+* per-item byte cap, and the total byte cap.
+* @param attachments - the candidate list.
+* @returns whether the list fits every limit.
+*/
+function attachmentsWithinLimits(attachments) {
+	if (attachments.length > 8) return false;
+	let total = 0;
+	for (const attachment of attachments) {
+		if (attachment.bytes > 10485760) return false;
+		total += attachment.bytes;
+	}
+	return total <= TASK_ATTACHMENT_TOTAL_MAX_BYTES;
+}
+/**
+* Whether an unknown value is a well-formed attachment LIST (the strict wire
+* gate). The list must be non-empty: clearing attachments is expressed by
+* omitting the field (create) or by an explicit null (update), never by an
+* empty array. A list that repeats one storage identifier is refused: one
+* object cannot be claimed twice.
+* @param value - the candidate list.
+* @returns whether the list may reach the ledger.
+*/
+function isTaskAttachmentList(value) {
+	if (!Array.isArray(value)) return false;
+	if (value.length === 0 || value.length > 8) return false;
+	if (!value.every(isTaskAttachment)) return false;
+	const list = value;
+	if (new Set(list.map((attachment) => attachment.attachmentId)).size !== list.length) return false;
+	return attachmentsWithinLimits(list);
+}
+/**
+* Repair a persisted attachment list: canonicalize the names, drop the
+* entries that cannot be repaired, deduplicate the storage identifiers, and
+* cap the count and the byte totals. Returns undefined when nothing usable
+* remains, so the caller clears the field instead of storing an empty list —
+* the same policy the tag and schedule repairs follow.
+* @param value - the persisted value.
+* @returns the repaired list, or undefined when nothing survives.
+*/
+function normalizeAttachments(value) {
+	if (!Array.isArray(value)) return void 0;
+	const repaired = [];
+	const seen = /* @__PURE__ */ new Set();
+	let total = 0;
+	for (const entry of value) {
+		const attachment = repairAttachment(entry);
+		if (attachment === void 0) continue;
+		if (attachment.bytes > 10485760) continue;
+		if (total + attachment.bytes > 33554432) continue;
+		if (seen.has(attachment.attachmentId)) continue;
+		seen.add(attachment.attachmentId);
+		total += attachment.bytes;
+		repaired.push(attachment);
+		if (repaired.length >= 8) break;
+	}
+	return repaired.length === 0 ? void 0 : repaired;
+}
+//#endregion
+//#region src/core/tasks.ts
+/**
+* Upper bound of one recorded summary, in characters. The ledger stores a
+* conclusion, not a transcript: a reader that needs the whole message follows
+* {@link ExecutionSummary.seq} into the session history.
+*/
+const EXECUTION_SUMMARY_LIMIT = 4e3;
+/**
+* Repair a persisted rework block: only a non-blank instruction string
+* survives, so a hand-edited ledger loses the block instead of the execution.
+*/
+function normalizeExecutionRework(value) {
+	if (typeof value !== "object" || value === null) return void 0;
+	const instructions = value.instructions;
+	if (typeof instructions !== "string") return void 0;
+	const trimmed = instructions.trim();
+	return trimmed === "" ? void 0 : { instructions: trimmed };
 }
 /**
 * Trim an execution list to at most {@link EXECUTION_HISTORY_LIMIT} records,
@@ -645,6 +1087,7 @@ function freezeOf(input, now) {
 function createTask(input, now, id) {
 	const tags = normalizeTags(input.tags);
 	const integrations = normalizeTaskIntegrations(input.integrations);
+	const attachments = normalizeAttachments(input.attachments);
 	return {
 		id,
 		title: input.title.trim(),
@@ -659,8 +1102,8 @@ function createTask(input, now, id) {
 		mode: normalizeTargetId(input.mode),
 		permission: isTaskPermission(input.permission) ? input.permission : void 0,
 		model: normalizeTargetId(input.model),
+		reasoningEffort: normalizeTargetId(input.reasoningEffort),
 		reuseSession: input.reuseSession === true ? true : void 0,
-		teamRun: input.teamRun === true ? true : void 0,
 		goalRun: input.goalRun === true ? true : void 0,
 		skipVerification: input.skipVerification === true ? true : void 0,
 		...input.freeze === void 0 ? {} : { freeze: freezeOf(input.freeze, now) },
@@ -670,6 +1113,7 @@ function createTask(input, now, id) {
 		} },
 		...tags === void 0 ? {} : { tags },
 		...integrations === void 0 ? {} : { integrations },
+		...attachments === void 0 ? {} : { attachments },
 		...input.hidden === true ? { hidden: true } : {}
 	};
 }
@@ -733,8 +1177,10 @@ function withSchedule(task, patch, now) {
 * running execution record. Returns the new task and the new execution.
 * @param runGroupId - cascade run group, when this run also opened executions
 *   for the task's subtasks (see `core/subtask.ts`).
+* @param rework - the reviewer's instructions, when this run is a rework of the
+*   card's previous work; recorded on the execution it opens.
 */
-function startExecution(task, now, executionId, initiatedBy, runGroupId) {
+function startExecution(task, now, executionId, initiatedBy, runGroupId, rework) {
 	const execution = {
 		id: executionId,
 		sessionId: void 0,
@@ -742,6 +1188,7 @@ function startExecution(task, now, executionId, initiatedBy, runGroupId) {
 		endedAt: void 0,
 		result: void 0,
 		error: void 0,
+		...rework === void 0 ? {} : { rework },
 		...runGroupId === void 0 || runGroupId === "" ? {} : { runGroupId },
 		...initiatedBy === void 0 || initiatedBy === "" ? {} : { initiatedBy },
 		...task.freeze === void 0 ? {} : {
@@ -778,7 +1225,7 @@ function settledStatus(task, outcome) {
 * matching column. No-op (returns the input task) when the execution is not
 * the task's latest or is already settled.
 */
-function settleExecution(task, executionId, outcome, now, error) {
+function settleExecution(task, executionId, outcome, now, error, summary) {
 	const index = task.executions.findIndex((execution) => execution.id === executionId);
 	if (index === -1) return task;
 	const execution = task.executions[index];
@@ -787,7 +1234,8 @@ function settleExecution(task, executionId, outcome, now, error) {
 		...execution,
 		endedAt: now,
 		result: outcome,
-		error
+		error,
+		...summary === void 0 ? {} : { summary }
 	};
 	const executions = [...task.executions];
 	executions[index] = settled;
@@ -920,24 +1368,95 @@ function checkParentLink(tasks, childId, parentId, maxSubtaskDepth, lineage) {
 	return { ok: true };
 }
 /**
-* The tasks one run request opens executions for: the requested task first,
-* then its on-board descendants within the configured depth. Archived tasks
-* never run; a participant that already has an open execution is skipped by
-* the caller, which cannot start it twice.
+* The tasks one run request opens executions for: the requested card ALONE.
+*
+* Running a card never expands into its subtask tree. The card's own session
+* reads its subtasks through the board tools and dispatches subagents itself,
+* so a parent run opens exactly one session. Clicking a subtask runs that
+* subtask as its own root, again without expanding its own descendants. The
+* lineage queries around this one answer questions about the tree the card's
+* agent works with (who is still outstanding, what a historical run group
+* still holds open) — never who gets a session from the Host.
+* @param tasks - the ledger.
+* @param rootId - the task the run request named.
+* @returns the one card this run opens an execution for, or [] when unknown.
 */
-function cascadeTargets(tasks, rootId, maxSubtaskDepth) {
+function cascadeTargets(tasks, rootId) {
 	const root = tasks.find((task) => task.id === rootId);
-	if (root === void 0) return [];
-	return [root, ...descendantTasks(tasks, rootId, maxSubtaskDepth)];
+	return root === void 0 ? [] : [root];
 }
+/**
+* A task together with every descendant within the configured depth: the
+* subtree a lineage gate (archive, restore, force-close) has to walk.
+*/
+function subtreeTasks(tasks, id, maxSubtaskDepth) {
+	const root = tasks.find((task) => task.id === id);
+	return root === void 0 ? [] : [root, ...descendantTasks(tasks, id, maxSubtaskDepth)];
+}
+/**
+* Whether a card still has work outstanding: anything outside the `done`
+* column. It keys on the column alone, so it covers both a subtask that ran
+* and one an operator moved to done by hand.
+*/
+function isOutstanding(task) {
+	return task.status !== "done";
+}
+/**
+* The descendants of a card that still have work outstanding, in breadth-first
+* order: the cards its own session is expected to dispatch. An archived
+* descendant is off the board and cannot be dispatched, so it is not listed.
+*/
+function outstandingDescendants(tasks, rootId, maxSubtaskDepth) {
+	return descendantTasks(tasks, rootId, maxSubtaskDepth).filter((task) => task.archivedAt === void 0 && isOutstanding(task));
+}
+/**
+* Whether any descendant of this card still sits outside the `done` column.
+* This is the ONE decision behind both the forced agent preset and the dispatch
+* section of the execution prompt: a card whose tree still holds work runs as
+* the autonomous dispatcher.
+*/
+function hasOutstandingDescendants(tasks, rootId, maxSubtaskDepth) {
+	return outstandingDescendants(tasks, rootId, maxSubtaskDepth).length > 0;
+}
+/**
+* Agent preset a run with unfinished subtasks is forced under. The id comes
+* from packages/dsh-liangshen (its own `LIANGSHEN_PRESET_ID`); the force is
+* applied at launch and never written into a card's `mode` field.
+*/
+const LIANGSHEN_PRESET_ID = "liangshen";
+/**
+* The tool a legacy Agent Teams runtime registers, and the one fingerprint
+* this board reads off a deployment: the pre-#7519 generation registers
+* `spawn_teammate` and replaces `send_message` / `list_agents` /
+* `interrupt_agent` with team-scoped variants, so children exist but are
+* unreachable. The current runtime adds a shared task board instead and reuses
+* the coordination tools, so those three names prove nothing and are never
+* gated on (the criterion is the same one
+* `packages/dsh-liangshen/presets/liangshen/dispatcher-rules.mjs` states).
+*/
+const LEGACY_AGENT_TEAMS_TOOL = "spawn_teammate";
+/**
+* The failure text the Host records when a run would have been forced under
+* the dispatcher preset on a deployment that cannot orchestrate.
+*
+* A finished sentence rather than a code (the shape `core/workspace-target.ts`
+* gives its missing-workspace refusal): the ledger stores it as the
+* execution's failure text, the agent tools serve it to a model, and any
+* client prints it verbatim. It names the fix, not the mechanism. The launch
+* is refused before any session exists, because the dispatcher preset would
+* otherwise stop and wait for a human reply that an unattended run never
+* brings.
+*/
+const LEGACY_AGENT_TEAMS_REASON = "this deployment runs the legacy Agent Teams runtime, which cannot dispatch a card that has unfinished subtasks under the liangshen preset; disable that runtime and restart the Host, or finish the subtasks before running";
 /** The open execution of a task inside a run group, if it still exists. */
 function openGroupExecution(task, runGroupId) {
 	return task.executions.find((execution) => execution.runGroupId === runGroupId && execution.endedAt === void 0);
 }
 /**
 * The direct subtasks of parentTaskId whose execution in this run group is
-* still open: the parent remaining waiters. The parent may settle once this
-* list is empty and its own outcome is known.
+* still open: the parent's remaining waiters. A stored multi-member group (a
+* run the Host opened before it stopped spreading one run across a subtree)
+* folds once this list is empty and the parent's own outcome is known.
 */
 function pendingCascadeChildren(tasks, parentTaskId, runGroupId) {
 	const pending = [];
@@ -952,9 +1471,9 @@ function pendingCascadeChildren(tasks, parentTaskId, runGroupId) {
 	return pending;
 }
 /**
-* Fold a cascade parent own outcome and its children outcomes into one
-* verdict: failure dominates, then cancellation, then success. The error text
-* is the first failure, falling back to the first cancellation.
+* Fold a stored run-group parent's own outcome and its children's outcomes into
+* one verdict: failure dominates, then cancellation, then success. The error
+* text is the first failure, falling back to the first cancellation.
 */
 function combineCascadeOutcome(entries) {
 	let result = "succeeded";
@@ -989,71 +1508,117 @@ function effectiveTaskPermission(task) {
 /**
 * Resolve the execution targets a (sub)task actually runs with: its own value
 * wins, and an unset target inherits the nearest ancestor up to the root.
-* Workspace, agent preset and model inherit the ancestor's PIN only — a
-* handover bundle is a per-card continuation artefact and is never inherited.
-* The permission inherits the ancestor's EFFECTIVE binding, and its human
-* confirmation travels with it, so a subtask of an already-confirmed elevated
-* card is runnable while a subtask's own unconfirmed binding stays gated.
+* Workspace, agent preset, model and reasoning effort inherit the ancestor's
+* PIN only — a handover bundle is a per-card continuation artefact and is never
+* inherited. The permission inherits the ancestor's EFFECTIVE binding, and its
+* human confirmation travels with it, so a subtask of an already-confirmed
+* elevated card is runnable while a subtask's own unconfirmed binding stays
+* gated.
 */
-/**
-* The immutable teammate name for one team-mode member. Teammate names are
-* lower-kebab-case and must stay unique for the lifetime of the Team: the
-* run-group token separates two runs of the same tree, and the member
-* discriminator separates two members of one run that reduce to the same slug.
-*
-* The discriminator is not cosmetic. A title with no ASCII word characters (a
-* CJK title, for example) carries no slug at all, so every such title of one
-* run group collides on the generic prefix; Agent Teams answers every member
-* after the first with `teammate name "..." was already used in this Team`,
-* and those subtasks never start. Two ASCII titles that share a slug
-* (`AI 强度预测` next to `AI 配比优化`) collide the same way.
-* @param title - the member task's title.
-* @param token - the run group id (the task id when no group is recorded).
-* @param memberId - the member task's id, which makes the name unique in the run.
-* @returns the teammate name handed to the Agent Teams service.
-*/
-function teammateName(title, token, memberId) {
-	const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32).replace(/-+$/g, "");
-	const suffix = token.replace(/[^a-z0-9]/gi, "").slice(0, 8).toLowerCase();
-	const member = memberId === void 0 || memberId === "" ? void 0 : stableTag(memberId);
-	return [
-		slug === "" ? "subtask" : slug,
-		member,
-		suffix === "" ? "run" : suffix
-	].filter((part) => part !== void 0).join("-");
-}
-/**
-* A stable 4-hex tag for one member id. The name is derived twice for the same
-* member — once for the Lead's prompt and once for the spawn request — so the
-* tag must be a pure function of the id, never of a clock or a counter. FNV-1a
-* keeps it dependency-free in `core/`, which both halves compile.
-*/
-function stableTag(value) {
-	let hash = 2166136261;
-	for (let index = 0; index < value.length; index += 1) {
-		hash ^= value.charCodeAt(index);
-		hash = Math.imul(hash, 16777619) >>> 0;
-	}
-	return hash.toString(16).padStart(8, "0").slice(0, 4);
-}
 function resolveExecutionTargets(task, tasks, maxSubtaskDepth = 3) {
 	if (task.parentId === void 0) return task;
 	const chain = [task, ...ancestorChain(tasks, task).slice(0, maxSubtaskDepth)];
-	const first = (key) => {
-		for (const candidate of chain) {
+	const first = (key, candidates) => {
+		for (const candidate of candidates) {
 			const value = candidate[key];
 			if (value !== void 0) return value;
 		}
 	};
+	const boundary = chain.findIndex((candidate) => candidate.model !== void 0);
+	const effortChain = boundary === -1 ? chain : chain.slice(0, boundary + 1);
 	const own = effectiveTaskPermission(task);
 	const owner = own === void 0 ? chain.slice(1).find((candidate) => effectiveTaskPermission(candidate) !== void 0) : void 0;
 	return {
 		...task,
-		workspaceId: first("workspaceId"),
-		mode: first("mode"),
-		model: first("model"),
+		workspaceId: first("workspaceId", chain),
+		mode: first("mode", chain),
+		model: first("model", chain),
+		reasoningEffort: first("reasoningEffort", effortChain),
 		permission: own ?? (owner === void 0 ? void 0 : effectiveTaskPermission(owner)),
 		permissionConfirmedAt: own === void 0 ? owner?.permissionConfirmedAt : task.permissionConfirmedAt
+	};
+}
+//#endregion
+//#region src/core/execution-summary.ts
+/**
+* What one execution left behind: the text of its last assistant message,
+* recorded on the execution record next to the verdict it belongs to.
+*
+* A settled execution used to carry only a verdict, so a parent card could see
+* that a subtask succeeded without ever seeing what it produced, and had to
+* guess or redo the work. The card's own content cannot answer that: card
+* content is the plan and freezes at the first execution
+* (`canEditTaskContent`), so the closing words of a run are recorded on the
+* execution record instead.
+*
+* Pure (no cordis, no runtime imports) so the settlement path is unit-testable
+* without a session, and so a text-less run degrades to "no field" rather than
+* to an empty string.
+*/
+/** One rendered content block of an assistant message, or '' when it has no prose. */
+function blockProse(block) {
+	if (typeof block !== "object" || block === null) return "";
+	const row = block;
+	return row.type === "text" && typeof row.text === "string" ? row.text : "";
+}
+/** The assistant's own prose of one message: its text blocks joined and trimmed. */
+function messageProse(content) {
+	if (!Array.isArray(content)) return "";
+	return content.map(blockProse).filter((part) => part !== "").join("\n").trim();
+}
+/**
+* Bound one summary, keeping its tail: the closing paragraphs carry the
+* conclusion a reader is after, and the omitted opening is announced instead of
+* silently dropped. Mirrors the evidence reader's tail bound.
+*/
+function truncateExecutionSummary(text, limit = EXECUTION_SUMMARY_LIMIT) {
+	if (text.length <= limit) return text;
+	const notice = "[truncated " + String(text.length - limit) + " chars] ";
+	return notice.length >= limit ? text.slice(-limit) : notice + text.slice(-(limit - notice.length));
+}
+/**
+* The summary one execution's own events support.
+*
+* Only events at or after `startedAt` belong to this run: a reused session
+* carries the history of earlier executions, which must not be reported as this
+* one's output. The last assistant message WITH prose wins — a trailing
+* tool-call or reasoning-only message has nothing to leave behind, so the reader
+* walks back to the last one that speaks.
+* @param events - the session events the inspection already read.
+* @param startedAt - the execution's start instant (ms epoch); 0 means "all".
+* @returns the bounded summary with the seq it came from, or undefined when the
+* run left no usable text.
+*/
+function executionSummaryOf(events, startedAt) {
+	const own = events.filter((event) => typeof event.time !== "number" || startedAt <= 0 || event.time >= startedAt).filter((event) => event.type === "assistant/message" && typeof event.seq === "number").sort((a, b) => a.seq - b.seq);
+	for (let index = own.length - 1; index >= 0; index -= 1) {
+		const event = own[index];
+		const data = typeof event.data === "object" && event.data !== null ? event.data : {};
+		const text = messageProse((typeof data.message === "object" && data.message !== null ? data.message : {}).content);
+		if (text === "") continue;
+		return {
+			text: truncateExecutionSummary(text),
+			seq: event.seq
+		};
+	}
+}
+/**
+* Repair one persisted or reported summary.
+*
+* A summary is informational, so an unreadable one is dropped on its own rather
+* than costing the execution (or the task row) it hangs on. A hand-edited
+* overlong text is bounded on the way in, so no reader ever holds more than the
+* limit.
+*/
+function normalizeExecutionSummary(value) {
+	if (typeof value !== "object" || value === null) return void 0;
+	const row = value;
+	if (typeof row.text !== "string" || typeof row.seq !== "number" || !Number.isFinite(row.seq)) return void 0;
+	const text = row.text.trim();
+	if (text === "") return void 0;
+	return {
+		text: truncateExecutionSummary(text),
+		seq: row.seq
 	};
 }
 /** Marker replacing every sensitive match. */
@@ -1225,16 +1790,6 @@ function effectivePermission(task) {
 function exceedsSessionDefault(permission, sessionDefault) {
 	if (permission === void 0) return false;
 	return (PERMISSION_RANK.get(permission) ?? -1) > (PERMISSION_RANK.get(sessionDefault) ?? -1);
-}
-/**
-* Whether a session running at `holder` already carries `permission`: the
-* permission is absent, or its rank does not exceed the holder's. A teammate
-* inherits the Lead session's permission and cannot be narrowed below it, so a
-* subtask's own pin is carried by a team run exactly when this holds, and a pin
-* it does not carry would be silently dropped instead.
-*/
-function permissionCarriedBy(holder, permission) {
-	return !exceedsSessionDefault(permission, holder);
 }
 /**
 * The confirmation-gate predicate: an elevated permission without a human
@@ -2277,9 +2832,11 @@ function isTaskRecordShape(value) {
 	if (record.parentId !== void 0 && typeof record.parentId !== "string") return false;
 	if (record.workspaceId !== void 0 && typeof record.workspaceId !== "string") return false;
 	if (record.mode !== void 0 && typeof record.mode !== "string") return false;
+	if (record.reasoningEffort !== void 0 && typeof record.reasoningEffort !== "string") return false;
 	if (record.permission !== void 0 && typeof record.permission !== "string") return false;
 	if (record.integrations !== void 0 && (typeof record.integrations !== "object" || record.integrations === null || Array.isArray(record.integrations))) return false;
 	if (record.hidden !== void 0 && typeof record.hidden !== "boolean") return false;
+	if (record.attachments !== void 0 && !Array.isArray(record.attachments)) return false;
 	if (record.reuseSession !== void 0 && typeof record.reuseSession !== "boolean") return false;
 	if (record.goalRun !== void 0 && typeof record.goalRun !== "boolean") return false;
 	if (record.skipVerification !== void 0 && typeof record.skipVerification !== "boolean") return false;
@@ -2441,11 +2998,14 @@ function parseLedger(raw) {
 			runGroupId: normalizeTargetId(execution.runGroupId),
 			ownResult: isExecutionOutcome(execution.ownResult) ? execution.ownResult : void 0,
 			ownError: typeof execution.ownError === "string" ? execution.ownError : void 0,
+			summary: normalizeExecutionSummary(execution.summary),
 			verification: normalizeVerification(execution.verification),
+			rework: normalizeExecutionRework(execution.rework),
 			external: execution.external === true ? true : void 0
 		}));
 		task.workspaceId = normalizeTargetId(row.workspaceId);
 		task.mode = normalizeTargetId(row.mode);
+		task.reasoningEffort = normalizeTargetId(row.reasoningEffort);
 		task.archivedAt = typeof row.archivedAt === "number" && Number.isFinite(row.archivedAt) ? row.archivedAt : void 0;
 		task.permission = isTaskPermission(row.permission) ? row.permission : void 0;
 		task.reuseSession = row.reuseSession === true ? true : void 0;
@@ -2456,6 +3016,7 @@ function parseLedger(raw) {
 		task.tags = normalizeTags(row.tags);
 		task.permissionConfirmedAt = typeof row.permissionConfirmedAt === "number" && Number.isFinite(row.permissionConfirmedAt) ? row.permissionConfirmedAt : void 0;
 		task.integrations = normalizeTaskIntegrations(row.integrations);
+		task.attachments = normalizeAttachments(row.attachments);
 		task.hidden = row.hidden === true ? true : void 0;
 		tasks.push(task);
 	}
@@ -2546,6 +3107,57 @@ function applyRestoreTask(tasks, id, now, maxSubtaskDepth = 1) {
 	};
 }
 //#endregion
+//#region src/core/card-defaults.ts
+/** Trim one optional target: blank text means "not set", like every stored pin. */
+function textOf(value) {
+	return value?.trim() ?? "";
+}
+/**
+* Resolve the execution targets a new card starts from.
+* @param defaults - the board's configured new-card defaults, if any.
+* @param source - the card this one is created from (a duplicate or a parent), if any.
+* @param picked - what the caller chose explicitly; a non-blank value wins.
+* @returns the four targets, blank where nothing supplies a value.
+*/
+function resolveCardTargets(defaults, source, picked) {
+	const defaultMode = textOf(defaults?.mode);
+	const defaultPermission = textOf(defaults?.permission);
+	const defaultModel = textOf(defaults?.model);
+	const defaultEffort = defaultModel === "" ? "" : textOf(defaults?.reasoningEffort);
+	const chosen = {
+		mode: textOf(picked?.mode),
+		permission: textOf(picked?.permission),
+		model: textOf(picked?.model),
+		reasoningEffort: textOf(picked?.reasoningEffort)
+	};
+	const copied = source === void 0 ? void 0 : {
+		mode: textOf(source.task.mode),
+		permission: textOf(source.task.permission),
+		model: textOf(source.task.model),
+		reasoningEffort: textOf(source.task.reasoningEffort)
+	};
+	/** The value carried over from the source card, or the board default. */
+	const inherited = (key) => {
+		const fallback = key === "mode" ? defaultMode : key === "model" ? defaultModel : defaultPermission;
+		if (copied === void 0 || key === "permission" && source?.kind === "parent") return fallback;
+		return copied[key] === "" ? fallback : copied[key];
+	};
+	const mode = chosen.mode === "" ? inherited("mode") : chosen.mode;
+	const permission = chosen.permission === "" ? inherited("permission") : chosen.permission;
+	const model = chosen.model === "" ? inherited("model") : chosen.model;
+	let reasoningEffort = chosen.reasoningEffort;
+	if (reasoningEffort === "" && chosen.model === "") {
+		const sourced = copied === void 0 ? "" : copied.reasoningEffort;
+		reasoningEffort = sourced !== "" ? sourced : model !== "" && model === defaultModel ? defaultEffort : "";
+	}
+	return {
+		mode,
+		permission,
+		model,
+		reasoningEffort
+	};
+}
+//#endregion
 //#region src/core/use-cases/task-create.ts
 /**
 * Create-task use case: mint a new task from user input, rejecting a blank
@@ -2558,18 +3170,22 @@ function applyRestoreTask(tasks, id, now, maxSubtaskDepth = 1) {
 * appended ledger, or the unchanged ledger when the title is blank or the
 * requested parent link is refused.
 *
-* A subtask inherits the execution targets its parent already pins (workspace,
-* agent preset, permission, model) unless the form supplied its own; the
-* parent human permission confirmation travels with an inherited permission,
-* so a subtask of an already-confirmed elevated card is runnable at once.
+* The execution targets resolve through {@link resolveCardTargets}: what the
+* caller sent wins, then the parent's own pins, then - only when the caller
+* opted in with `applyCardDefaults` - the deployment's configured new-card
+* defaults. Without the flag the resolution sees no defaults at all, which is
+* exactly the inline parent inheritance this path has always applied. The
+* workspace is not part of that resolution: a subtask still takes the parent's
+* workspace, and the defaults never name one.
 * @param tasks - current ledger.
 * @param input - raw user input (title/description/prompt + optional schedule/parent).
 * @param now - clock instant (ms epoch).
 * @param id - minted task id.
 * @param maxSubtaskDepth - deployment subtask depth limit.
 * @param hostTimeZone - zone a rule that stores no zone of its own follows.
+* @param cardDefaults - the deployment's new-card defaults, read live at creation.
 */
-function applyCreateTask(tasks, input, now, id, maxSubtaskDepth = 1, hostTimeZone = resolveHostTimeZone()) {
+function applyCreateTask(tasks, input, now, id, maxSubtaskDepth = 1, hostTimeZone = resolveHostTimeZone(), cardDefaults) {
 	if (input.title.trim() === "") return {
 		task: void 0,
 		tasks,
@@ -2595,11 +3211,22 @@ function applyCreateTask(tasks, input, now, id, maxSubtaskDepth = 1, hostTimeZon
 			error: `subtask depth limit (${limit}) exceeded`
 		};
 	}
-	let task = createTask(parent === void 0 ? input : {
+	const seed = resolveCardTargets(input.applyCardDefaults === true ? cardDefaults : void 0, parent === void 0 ? void 0 : {
+		kind: "parent",
+		task: parent
+	}, {
+		mode: input.mode,
+		permission: input.permission,
+		model: input.model,
+		reasoningEffort: input.reasoningEffort
+	});
+	let task = createTask({
 		...input,
-		workspaceId: input.workspaceId ?? parent.workspaceId,
-		mode: input.mode ?? parent.mode,
-		model: input.model ?? parent.model
+		workspaceId: input.workspaceId ?? parent?.workspaceId,
+		mode: seed.mode,
+		permission: isTaskPermission(seed.permission) ? seed.permission : void 0,
+		model: seed.model,
+		reasoningEffort: seed.reasoningEffort
 	}, now, id);
 	const requested = input.schedule;
 	if (requested?.enabled === true) {
@@ -2958,6 +3585,13 @@ function applySetParent(tasks, id, parentId, now, maxSubtaskDepth = 1) {
 * Renaming onto a name that is already in use MERGES the two: a task carrying
 * both keeps the row it already had (with its execution hint) and loses the
 * duplicate, which is the only reading that cannot lose a hint the user typed.
+*
+* Clearing up is the third ledger-wide transition, and it is a SELECTION rather
+* than a fourth rewrite: {@link cleanupCandidates} names the labels that are
+* both rarely used and attached only to finished tasks, and each of them then
+* leaves through {@link applyDeleteTag} like any other delete. One delete path,
+* one meaning — a label never disappears by a second rule written beside the
+* first.
 */
 /** Trim a label name the way creation does. */
 function normalizeName(value) {
@@ -3084,9 +3718,20 @@ const TASK_CONTENT_FIELDS = [
 	"description",
 	"prompt"
 ];
+/**
+* The fields that freeze with the card content: the text the card says AND
+* the attachments it carries.
+*
+* The attachments freeze with the content because they ARE part of what the
+* card hands to its execution: a card whose first run already consumed an
+* image keeps that image, and the record of what ran stays what it was. An
+* executed or archived card therefore refuses an attachment change exactly
+* as it refuses a prompt change.
+*/
+const TASK_FROZEN_FIELDS = [...TASK_CONTENT_FIELDS, "attachments"];
 /** Whether an update patch touches any task-content field. */
 function hasContentPatch(patch) {
-	return TASK_CONTENT_FIELDS.some((field) => field in patch);
+	return TASK_FROZEN_FIELDS.some((field) => field in patch);
 }
 /**
 * Whether a task's content may still be edited: the task must be on-board
@@ -3114,11 +3759,12 @@ function normalizePermission(current, value) {
 function applyUpdateTask(tasks, id, patch, now) {
 	return tasks.map((task) => {
 		if (task.id !== id) return task;
-		const { freeze: freezePatch, handover: handoverPatch, tags: tagsPatch, ...rest } = patch;
+		const { freeze: freezePatch, handover: handoverPatch, tags: tagsPatch, attachments: attachmentsPatch, ...rest } = patch;
 		const workspaceId = "workspaceId" in patch ? normalizeTargetId(patch.workspaceId) : void 0;
 		const mode = "mode" in patch ? normalizeTargetId(patch.mode) : void 0;
 		const permission = "permission" in patch ? normalizePermission(task.permission, patch.permission) : void 0;
 		const model = "model" in patch ? normalizeTargetId(patch.model) : void 0;
+		const reasoningEffort = "reasoningEffort" in patch ? normalizeTargetId(patch.reasoningEffort) : void 0;
 		const next = {
 			...task,
 			...rest,
@@ -3135,25 +3781,28 @@ function applyUpdateTask(tasks, id, patch, now) {
 			bundledAt: now
 		};
 		if ("tags" in patch) next.tags = tagsPatch == null ? void 0 : normalizeTags(tagsPatch);
+		if ("attachments" in patch) next.attachments = attachmentsPatch == null ? void 0 : normalizeAttachments(attachmentsPatch);
 		if ("permission" in patch && patch.permission !== void 0 && patch.permission !== task.permission || "handover" in patch) next.permissionConfirmedAt = void 0;
 		if ("reuseSession" in patch) next.reuseSession = patch.reuseSession === true ? true : void 0;
-		if ("teamRun" in patch) next.teamRun = patch.teamRun === true ? true : void 0;
 		if ("goalRun" in patch) next.goalRun = patch.goalRun === true ? true : void 0;
 		if ("skipVerification" in patch) next.skipVerification = patch.skipVerification === true ? true : void 0;
 		if (workspaceId !== void 0 || "workspaceId" in patch) next.workspaceId = workspaceId;
 		if (mode !== void 0 || "mode" in patch) next.mode = mode;
 		if (permission !== void 0 || "permission" in patch) next.permission = permission;
 		if (model !== void 0 || "model" in patch) next.model = model;
+		if (reasoningEffort !== void 0 || "reasoningEffort" in patch) next.reasoningEffort = reasoningEffort;
 		return next;
 	});
 }
 /**
 * Every older generation the loader migrates in place. v5 only added the
-* per-execution acceptance block and v6 only added the scheduling mode and run
-* budget, so the migration is the normalization pass that re-validates each
-* row; a document from any listed generation upgrades losslessly.
+* per-execution acceptance block, v6 only added the scheduling mode and run
+* budget, and v7 only added the card attachment metadata, so the migration is
+* the normalization pass that re-validates each row; a document from any
+* listed generation upgrades losslessly.
 */
 const TASK_BOARD_MIGRATABLE_SCHEMA_VERSIONS = [
+	6,
 	5,
 	4,
 	3,
@@ -3229,7 +3878,9 @@ function validImportedSchedule(value) {
 }
 function validImportedKnownFields(value) {
 	if (value.tags !== void 0 && !isTaskTagList(value.tags)) return false;
+	if (value.model !== void 0 && typeof value.model !== "string") return false;
 	if (value.integrations !== void 0 && normalizeTaskIntegrations(value.integrations) === void 0) return false;
+	if (value.attachments !== void 0) return false;
 	if (value.schedule !== void 0 && !validImportedSchedule(value.schedule)) return false;
 	if (value.executions !== void 0) {
 		if (!Array.isArray(value.executions)) return false;
@@ -3281,7 +3932,9 @@ function importedTask(value) {
 		...task.parentId === void 0 ? {} : { parentId: task.parentId },
 		...task.workspaceId === void 0 ? {} : { workspaceId: task.workspaceId },
 		...task.mode === void 0 ? {} : { mode: task.mode },
+		...typeof task.model !== "string" || task.model.trim() === "" ? {} : { model: task.model },
 		...task.permission === void 0 ? {} : { permission: task.permission },
+		...task.reasoningEffort === void 0 ? {} : { reasoningEffort: task.reasoningEffort },
 		...task.reuseSession === void 0 ? {} : { reuseSession: task.reuseSession },
 		...task.goalRun === void 0 ? {} : { goalRun: task.goalRun },
 		...task.skipVerification === void 0 ? {} : { skipVerification: task.skipVerification },
@@ -3330,23 +3983,26 @@ function createInput(value) {
 		"freeze",
 		"handover",
 		"model",
+		"reasoningEffort",
+		"applyCardDefaults",
 		"reuseSession",
-		"teamRun",
 		"goalRun",
 		"skipVerification",
 		"tags",
-		"integrations"
+		"integrations",
+		"attachments"
 	])) return false;
 	if (input.parentId !== void 0 && (typeof input.parentId !== "string" || input.parentId.trim() === "")) return false;
 	if (typeof input.title !== "string" || typeof input.description !== "string" || typeof input.prompt !== "string") return false;
-	if (!optionalString(input.workspaceId) || !optionalString(input.mode) || !optionalString(input.model)) return false;
+	if (!optionalString(input.workspaceId) || !optionalString(input.mode) || !optionalString(input.model) || !optionalString(input.reasoningEffort)) return false;
+	if (input.applyCardDefaults !== void 0 && typeof input.applyCardDefaults !== "boolean") return false;
 	if (input.reuseSession !== void 0 && typeof input.reuseSession !== "boolean") return false;
-	if (input.teamRun !== void 0 && typeof input.teamRun !== "boolean") return false;
 	if (input.goalRun !== void 0 && typeof input.goalRun !== "boolean") return false;
 	if (input.skipVerification !== void 0 && typeof input.skipVerification !== "boolean") return false;
 	if (input.permission !== void 0 && !isTaskPermission(input.permission)) return false;
 	if (input.tags !== void 0 && !isTaskTagList(input.tags)) return false;
 	if (input.integrations !== void 0 && normalizeTaskIntegrations(input.integrations) === void 0) return false;
+	if (input.attachments !== void 0 && !isTaskAttachmentList(input.attachments)) return false;
 	if (input.freeze !== void 0 && freezePayload(input.freeze) === void 0) return false;
 	if (input.handover !== void 0 && handoverPayload(input.handover) === void 0) return false;
 	if (input.schedule !== void 0) {
@@ -3380,14 +4036,14 @@ function updatePatch(value) {
 		"freeze",
 		"handover",
 		"model",
+		"reasoningEffort",
 		"reuseSession",
-		"teamRun",
 		"goalRun",
 		"skipVerification",
-		"tags"
+		"tags",
+		"attachments"
 	])) return false;
 	if (patch.reuseSession !== void 0 && patch.reuseSession !== null && typeof patch.reuseSession !== "boolean") return false;
-	if (patch.teamRun !== void 0 && patch.teamRun !== null && typeof patch.teamRun !== "boolean") return false;
 	if (patch.goalRun !== void 0 && patch.goalRun !== null && typeof patch.goalRun !== "boolean") return false;
 	if (patch.skipVerification !== void 0 && patch.skipVerification !== null && typeof patch.skipVerification !== "boolean") return false;
 	for (const key of [
@@ -3396,10 +4052,12 @@ function updatePatch(value) {
 		"prompt",
 		"workspaceId",
 		"mode",
-		"model"
+		"model",
+		"reasoningEffort"
 	]) if (!optionalString(patch[key])) return false;
 	if (patch.permission !== void 0 && !isTaskPermission(patch.permission)) return false;
 	if (patch.tags !== void 0 && patch.tags !== null && !isTaskTagList(patch.tags)) return false;
+	if (patch.attachments !== void 0 && patch.attachments !== null && !isTaskAttachmentList(patch.attachments)) return false;
 	if (patch.freeze !== void 0 && patch.freeze !== null && freezePayload(patch.freeze) === void 0) return false;
 	return patch.handover === void 0 || patch.handover === null || handoverPayload(patch.handover) !== void 0;
 }
@@ -3625,6 +4283,24 @@ function parseEnvelopeAction(value) {
 				}
 			};
 		}
+		case "rework": {
+			if (!exactKeys(action, [
+				"kind",
+				"taskId",
+				"instructions"
+			])) return void 0;
+			if (taskId === void 0 || typeof action.instructions !== "string") return void 0;
+			const instructions = action.instructions.trim();
+			if (instructions === "" || instructions.length > 4e3) return void 0;
+			return {
+				requestId: envelope.requestId,
+				action: {
+					kind: "rework",
+					taskId,
+					instructions
+				}
+			};
+		}
 		case "confirm-permission":
 		case "delete":
 		case "archive":
@@ -3645,11 +4321,16 @@ function parseEnvelopeAction(value) {
 //#region src/host-ledger.ts
 /** Human-facing text for a refused binding, per surface. */
 function bindingRefusalMessage(refusal, sessionDefault, surface) {
-	if (refusal.kind === "subtask-pin") return `team run cannot honor the permission binding of subtask "${refusal.title}": a teammate runs inside the Lead session and inherits its permission, which that pin exceeds; clear the card's permission or run the tree without Agent Team`;
 	if (surface === "schedule") return `task "${refusal.title}" has an unconfirmed above-default permission`;
 	if (refusal.kind === "root") return `confirmation-required: the effective permission is above the session default (${sessionDefault}); confirm the card's permission binding first`;
 	return `confirmation-required: subtask "${refusal.title}" inherits an above-default permission; confirm that card's permission binding first`;
 }
+/**
+* Prefix of the `initiatedBy` an inherited descendant verdict carries. The Host
+* recorded it on the run card's behalf (see `inheritVerdictForDescendants`), not
+* an outside agent that reported its own work.
+*/
+const PARENT_RUN_INITIATOR_PREFIX = "parent-run:";
 const MAX_REQUEST_CACHE = 256;
 function timeZone() {
 	return resolveHostTimeZone();
@@ -3905,7 +4586,7 @@ function mergeTask(a, b) {
 * missing, cyclic, or names an archived parent while the child is on board is
 * dropped (the task becomes a root) instead of dropping the task. A chain
 * deeper than the current `maxSubtaskDepth` is deliberately KEPT: the limit
-* gates new links, it never deletes a stored one, and every cascade walk is
+* gates new links, it never deletes a stored one, and every lineage walk is
 * bounded by the limit anyway. The Host is the only writer of these links, so
 * this is a last-resort guard against a hand-edited or imported document.
 */
@@ -3985,11 +4666,24 @@ var HostTaskLedger = class {
 	* instead of remounting the row.
 	*/
 	depthLimit;
+	/** Live reader of the deployment's new-card defaults (a volatile config read). */
+	cardDefaults;
+	/**
+	* Live reader of the daily token cap (0 = no gate). The scheduled path asks it
+	* per due occurrence, so a cap raised after a skipped occurrence admits the
+	* next one without a restart.
+	*/
+	spendBudget;
+	/** Today's measured spend in tokens, or undefined when nothing can be measured. */
+	spendUsed;
 	constructor(dir = join(dshHome(), "task-board"), now = Date.now, options = {}) {
 		this.now = now;
 		const baseline = options.sessionDefaultPermission;
 		this.sessionDefault = typeof baseline === "function" ? baseline : () => baseline ?? "read-only";
 		this.depthLimit = normalizeSubtaskDepth(options.maxSubtaskDepth ?? 1);
+		this.cardDefaults = options.cardDefaults ?? (() => ({}));
+		this.spendBudget = options.spendBudgetTokens ?? (() => 0);
+		this.spendUsed = options.spendUsedToday ?? ((now) => usedTokensToday(now));
 		mkdirSync(dir, { recursive: true });
 		this.file = join(dir, "ledger-v2.json");
 		this.lockFile = join(dir, "ledger-v2.lock");
@@ -4162,10 +4856,10 @@ var HostTaskLedger = class {
 		}
 	}
 	/**
-	* Open the cascade one due schedule triggers: an empty array means nothing
-	* ran (already running, or a participant whose elevated permission is still
-	* unconfirmed, a one-shot whose instant was missed, or an exhausted budget),
-	* and the rule's own state says which.
+	* Open the one run a due schedule triggers: an empty array means nothing ran
+	* (already running, a card whose elevated permission is still unconfirmed, a
+	* one-shot whose instant was missed, or an exhausted budget), and the rule's
+	* own state says which.
 	*
 	* The run budget is enforced HERE, inside the single ledger writer: a rule
 	* whose counter already reached its cap is stopped instead of opened, so no
@@ -4196,7 +4890,13 @@ var HostTaskLedger = class {
 			this.skipOccurrence(taskId, "busy", triggeredAt);
 			return [];
 		}
-		if (schedule.mode === "once") return this.startCascade(task, triggeredAt, void 0, false, {
+		const spendRefusal = this.spendRefusal(triggeredAt);
+		if (spendRefusal !== void 0) {
+			this.document.scheduler.error = `scheduled run refused for task ${taskId}: ${spendRefusal}`;
+			this.skipOccurrence(taskId, "limit", triggeredAt);
+			return [];
+		}
+		if (schedule.mode === "once") return this.startRun(task, triggeredAt, void 0, false, {
 			consumed: 1,
 			lastTriggeredAt: triggeredAt,
 			endedReason: "fired"
@@ -4212,12 +4912,26 @@ var HostTaskLedger = class {
 		const consumed = schedule.runCount + 1;
 		const budget = scheduleRunBudget(schedule);
 		const spent = budget !== void 0 && consumed >= budget;
-		return this.startCascade(task, triggeredAt, void 0, false, {
+		return this.startRun(task, triggeredAt, void 0, false, {
 			consumed: 1,
 			nextRunAt: spent ? void 0 : next,
 			lastTriggeredAt: triggeredAt,
 			...spent ? { endedReason: "limit" } : {}
 		});
+	}
+	/**
+	* Why a due occurrence may not open a run because the day already spent the
+	* cap, or undefined when it may. A cap of 0 — the default — answers before the
+	* measurement is read, so a board with no gate reads no ledger file.
+	* @param now - clock instant (ms epoch).
+	* @returns the refusal message, when the cap is reached.
+	*/
+	spendRefusal(now) {
+		const cap = this.spendBudget();
+		if (!(cap > 0)) return void 0;
+		const used = this.spendUsed(now);
+		if (used === void 0 || !spendCapReached(used, cap)) return void 0;
+		return spendCapMessage(used, cap);
 	}
 	/**
 	* Record a due occurrence that opened no execution: roll a recurring rule to
@@ -4255,8 +4969,8 @@ var HostTaskLedger = class {
 	* failed without creating a session (see
 	* {@link applyScheduleRefund}). Called by the service on the failed-launch
 	* path only; a manual run and a launch that did reach a session are never
-	* refunded. A no-op for a task with no rule, so a failed cascade member does
-	* not touch anything.
+	* refunded. A no-op for a task with no rule, so a failed run does not touch
+	* anything.
 	* @param taskId - the task whose occurrence is being refunded.
 	* @param now - clock instant (ms epoch).
 	*/
@@ -4322,19 +5036,25 @@ var HostTaskLedger = class {
 		this.commit(false);
 	}
 	/**
-	* Settle one execution. A cascade participant first records its OWN outcome
-	* and only finalizes once every child execution in its run group has
-	* settled, so a parent card leaves 'running' with the whole tree's verdict
-	* rather than its own turn alone.
+	* Settle one execution. A NEW run is a single-member group, so it settles on
+	* its own turn. A run group the Host opened before it stopped spreading one
+	* run across a subtree is folded here instead: a stored participant records
+	* its OWN outcome and only finalizes once every child execution in its group
+	* has settled, so a parent card leaves 'running' with the whole group's
+	* verdict rather than its own turn alone.
+	*
+	* `summary` is what the run left behind (see `ExecutionSummary`), passed in
+	* by whichever reader observed the session. It is informational: a caller
+	* without one settles exactly as before, and a settlement never waits on it.
 	*/
-	settle(taskId, executionId, outcome, error) {
+	settle(taskId, executionId, outcome, error, summary) {
 		const now = this.now();
 		const task = this.document.tasks.find((item) => item.id === taskId);
 		const execution = task?.executions.find((entry) => entry.id === executionId);
 		if (task === void 0 || execution === void 0 || execution.endedAt !== void 0) return;
 		const groupId = execution.runGroupId;
 		if (groupId === void 0) {
-			this.document.tasks = this.document.tasks.map((item) => item.id === taskId ? settleExecution(item, executionId, outcome, now, error) : item);
+			this.document.tasks = this.document.tasks.map((item) => item.id === taskId ? settleExecution(item, executionId, outcome, now, error, summary) : item);
 			this.commit();
 			return;
 		}
@@ -4346,14 +5066,81 @@ var HostTaskLedger = class {
 				executions: item.executions.map((entry) => entry.id === executionId ? {
 					...entry,
 					ownResult: outcome,
-					ownError: error
+					ownError: error,
+					...summary === void 0 ? {} : { summary }
 				} : entry)
 			});
 			changed = true;
 		}
 		if (task.teamRun === true && this.closeTeamMembers(taskId, groupId, execution.ownResult ?? outcome, execution.ownError ?? error, now)) changed = true;
 		if (this.settleCascade(taskId, groupId, now)) changed = true;
+		if (this.inheritVerdictForDescendants(taskId, executionId, groupId, now)) changed = true;
 		if (changed) this.commit();
+	}
+	/**
+	* Record the run's verdict on the outstanding descendants its root was asked
+	* to dispatch.
+	*
+	* A card with unfinished subtasks runs as an autonomous dispatcher: its
+	* session reads the subtasks, dispatches them with subagents, and is asked to
+	* write their conclusions back with
+	* `task_board_manage({action:'record-external-outcome'})` before it finishes.
+	* A run that never wrote one back would leave those cards parked with no
+	* record of what the parent decided about them, so once the RUN CARD's
+	* execution reached a decisive terminal record, every outstanding descendant
+	* this run opened no execution for inherits that verdict as an external
+	* record.
+	*
+	* Idempotent by construction: a card that already carries an execution in
+	* this run group (the fold owns it), an open execution (it is running on its
+	* own), or a terminal record stamped after this run started (the dispatching
+	* agent's own backfill, or an earlier pass of this one) is left alone. Only a
+	* decisive verdict is inherited: a cancelled run judged nothing about the
+	* subtasks, and a subtask already in the done column has nothing left to
+	* inherit.
+	* @param taskId - the card whose execution just settled.
+	* @param executionId - that execution.
+	* @param groupId - its run group.
+	* @param now - clock instant (ms epoch).
+	* @returns whether the document changed.
+	*/
+	inheritVerdictForDescendants(taskId, executionId, groupId, now) {
+		const root = this.document.tasks.find((item) => item.id === taskId);
+		if (root === void 0) return false;
+		const execution = root.executions.find((entry) => entry.id === executionId);
+		if (execution?.endedAt === void 0 || execution.result === void 0) return false;
+		if (execution.result !== "succeeded" && execution.result !== "failed") return false;
+		const verdict = execution.result;
+		if (ancestorChain(this.document.tasks, root).some((ancestor) => ancestor.executions.some((entry) => entry.runGroupId === groupId))) return false;
+		const descendants = new Set(outstandingDescendants(this.document.tasks, root.id, this.maxSubtaskDepth).map((task) => task.id));
+		if (descendants.size === 0) return false;
+		const note = `本次执行由父卡「${root.title}」统一判定，本卡未单独开会话执行；结论继承自父卡运行`;
+		let changed = false;
+		this.document.tasks = this.document.tasks.map((task) => {
+			if (!descendants.has(task.id)) return task;
+			if (task.executions.some((entry) => entry.runGroupId === groupId)) return task;
+			if (task.executions.some((entry) => entry.endedAt === void 0)) return task;
+			if (task.executions.some((entry) => entry.endedAt !== void 0 && entry.startedAt >= execution.startedAt)) return task;
+			changed = true;
+			const inherited = {
+				id: crypto.randomUUID(),
+				sessionId: void 0,
+				startedAt: now,
+				endedAt: now,
+				result: verdict,
+				error: note,
+				initiatedBy: PARENT_RUN_INITIATOR_PREFIX + root.id,
+				external: true,
+				runGroupId: groupId
+			};
+			return {
+				...task,
+				status: settledStatus(task, verdict),
+				updatedAt: now,
+				executions: retainRecentExecutions([...task.executions, inherited])
+			};
+		});
+		return changed;
 	}
 	attachSession(taskId, executionId, sessionId) {
 		const now = this.now();
@@ -4409,7 +5196,7 @@ var HostTaskLedger = class {
 						frozenBy: initiator
 					}
 				};
-				const result = applyCreateTask(this.document.tasks, input, now, action.id, this.maxSubtaskDepth, timeZone());
+				const result = applyCreateTask(this.document.tasks, input, now, action.id, this.maxSubtaskDepth, timeZone(), this.cardDefaults());
 				if (result.task === void 0) throw new Error(result.error ?? "invalid task");
 				this.document.tasks = [...result.tasks];
 				break;
@@ -4489,7 +5276,7 @@ var HostTaskLedger = class {
 				if (task.archivedAt !== void 0) throw new Error("archived task is read-only");
 				if (!task.executions.some((entry) => entry.endedAt === void 0)) throw new Error("task has no open execution");
 				const reason = "execution closed manually by " + (initiator === void 0 || initiator === "" ? "the operator" : initiator) + ": no verdict was recorded";
-				for (const member of cascadeTargets(this.document.tasks, action.taskId, this.maxSubtaskDepth)) for (const execution of member.executions) {
+				for (const member of subtreeTasks(this.document.tasks, action.taskId, this.maxSubtaskDepth)) for (const execution of member.executions) {
 					if (execution.endedAt !== void 0) continue;
 					this.document.tasks = this.document.tasks.map((item) => item.id !== member.id ? item : settleExecution(item, execution.id, "cancelled", now, reason));
 				}
@@ -4553,16 +5340,19 @@ var HostTaskLedger = class {
 				this.document.tasks = [...result.tasks];
 				break;
 			}
+			case "rework":
 			case "rerun":
 			case "run": {
 				const task = this.document.tasks.find((item) => item.id === action.taskId);
 				if (task?.archivedAt !== void 0) throw new Error("archived task is read-only");
 				if (task === void 0 || hasOpenExecution(task)) throw new Error("task is already running or missing");
+				const rework = action.kind === "rework" ? this.reworkInput(task, action.instructions) : void 0;
 				const refusal = this.bindingRefusal(task);
 				if (refusal !== void 0) throw new Error(bindingRefusalMessage(refusal, this.sessionDefaultPermission, "run"));
-				runs = this.startCascade(task, now, initiator, action.kind === "rerun");
+				runs = this.startRun(task, now, initiator, action.kind !== "run", void 0, rework);
 				break;
 			}
+			default: throw new Error(`unknown task board action kind: ${String(action.kind)}`);
 		}
 		if (runs === void 0 || runs.length === 0) this.commit();
 		return {
@@ -4588,98 +5378,88 @@ var HostTaskLedger = class {
 	/**
 	* The binding that makes a run illegal, if any.
 	*
-	* A plain cascade launches one session per participant, so every participant
-	* carries its own resolved binding and each one gates the run. A team run
-	* launches only the Lead session: the Lead's binding gates it, and a
-	* teammate inherits that session's permission, so a subtask's OWN pin is
-	* refused exactly when the Lead session does not already carry it — the
-	* teammate could never be given that authority, and dropping the pin
-	* silently would misreport the work (an inherited binding is the Lead's own
-	* and stays allowed once the Lead is confirmed).
+	* Only the card being run gets a session, so only ITS resolved binding gates
+	* the run: a subtask's own elevated permission is that subtask's gate when the
+	* subtask is run, and no longer blocks its parent from running.
 	* @param root - the task being run.
 	* @returns the first refusal, or undefined when the run may start.
 	*/
 	bindingRefusal(root) {
-		const participants = this.cascadeParticipants(root.id);
-		if (root.teamRun === true) {
-			const lead = participants.find((participant) => participant.id === root.id);
-			if (lead !== void 0 && requiresPermissionConfirmation(lead, this.sessionDefaultPermission)) return {
-				kind: "root",
-				title: lead.title
-			};
-			const leadPermission = effectivePermission(lead ?? root) ?? this.sessionDefaultPermission;
-			const pinned = participants.find((participant) => {
-				if (participant.id === root.id) return false;
-				const raw = this.document.tasks.find((task) => task.id === participant.id);
-				return raw !== void 0 && !permissionCarriedBy(leadPermission, effectivePermission(raw));
-			});
-			return pinned === void 0 ? void 0 : {
-				kind: "subtask-pin",
-				title: pinned.title
-			};
-		}
-		const unconfirmed = participants.find((participant) => requiresPermissionConfirmation(participant, this.sessionDefaultPermission));
-		if (unconfirmed === void 0) return void 0;
+		if (!requiresPermissionConfirmation(resolveExecutionTargets(root, this.document.tasks, this.maxSubtaskDepth), this.sessionDefaultPermission)) return void 0;
 		return {
-			kind: unconfirmed.id === root.id ? "root" : "inherited",
-			title: unconfirmed.title
+			kind: root.parentId === void 0 ? "root" : "inherited",
+			title: root.title
 		};
 	}
 	/**
-	* The tasks a cascade from `rootId` would actually open executions for, with
-	* their effective execution targets resolved. Archived members never run, and
-	* a member that already has an open execution is skipped (a task cannot run
-	* twice), so the result is the participant set the launch will use.
+	* The rework block a rework request opens its execution with, or the refusal
+	* that names why there is nothing to rework.
+	*
+	* Read from the ledger alone: a card that never ran, and a card whose runs
+	* recorded no session, have no conversation to send the reviewer's
+	* instructions into. Minting one would hand those instructions to an agent
+	* that never saw the work being sent back, which is the opposite of what a
+	* rework asks for.
+	* @param task - the card being reworked.
+	* @param instructions - the reviewer's instructions, already validated.
+	* @returns the block recorded on the opened execution.
 	*/
-	cascadeParticipants(rootId) {
-		return cascadeTargets(this.document.tasks, rootId, this.maxSubtaskDepth).map((participant) => resolveExecutionTargets(participant, this.document.tasks, this.maxSubtaskDepth)).filter((participant) => participant.archivedAt === void 0 && !hasOpenExecution(participant));
+	reworkInput(task, instructions) {
+		if (task.executions.length === 0) throw new Error("task " + task.id + " has never executed; there is no run to rework");
+		if ([...task.executions].reverse().find((entry) => entry.endedAt !== void 0 && entry.sessionId !== void 0)?.sessionId === void 0) throw new Error("task " + task.id + " records no execution session to continue");
+		return { instructions };
 	}
 	/** Whether a task or any of its subtasks still has an open execution. */
 	subtreeHasOpenExecution(id) {
-		return cascadeTargets(this.document.tasks, id, this.maxSubtaskDepth).some((task) => hasOpenExecution(task));
+		return subtreeTasks(this.document.tasks, id, this.maxSubtaskDepth).some((task) => hasOpenExecution(task));
+	}
+	/** The descendants of a card that still hold work, as the launch prompt names them. */
+	outstandingDescendants(taskId) {
+		return outstandingDescendants(this.document.tasks, taskId, this.maxSubtaskDepth);
+	}
+	/** Whether a card still has a subtask outside the done column. */
+	hasOutstandingDescendants(taskId) {
+		return hasOutstandingDescendants(this.document.tasks, taskId, this.maxSubtaskDepth);
 	}
 	/**
-	* Open one execution per cascade participant (the requested task and its
-	* on-board descendants, within the depth limit) under a single run group, and
-	* commit the ledger once. The returned runs are ordered root-first, so the
-	* Host launches the parent before its subtasks.
+	* Open ONE execution for the requested card, under a fresh run group, and
+	* commit the ledger once. The group stays single-member on purpose: a run
+	* never opens a session for a subtask (that card's own agent dispatches
+	* subagents inside this session), and the group id is what later lets the
+	* settlement fold a HISTORICAL multi-member group it opened before this
+	* behavior changed.
 	* @param root - the task the user ran.
 	* @param now - clock instant (ms epoch).
 	* @param initiator - the DSH session that asked for the run (audit only).
 	* @param rerun - true to reset the root to 'todo' before starting it.
 	* @param progress - when set, this run was a due occurrence and the root's
 	*   rule is advanced (counter, next target, stop/skip record) in the same
-	*   atomic commit that opened the executions.
+	*   atomic commit that opened the execution.
+	* @param rework - the reviewer's instructions, when this run redoes previous
+	*   work; recorded on the execution it opens.
 	*/
-	startCascade(root, now, initiator, rerun = false, progress) {
+	startRun(root, now, initiator, rerun = false, progress, rework) {
 		const before = this.document.tasks;
+		const [participant] = cascadeTargets(before, root.id);
+		if (participant === void 0 || participant.archivedAt !== void 0) return [];
+		if (hasOpenExecution(participant)) return [];
 		const groupId = crypto.randomUUID();
-		const team = root.teamRun === true;
-		const started = /* @__PURE__ */ new Map();
-		const runs = [];
-		for (const task of cascadeTargets(before, root.id, this.maxSubtaskDepth)) {
-			if (task.archivedAt !== void 0) continue;
-			if (hasOpenExecution(task)) continue;
-			const opened = startExecution(rerun && task.id === root.id ? withStatus(task, "todo", now) : task, now, crypto.randomUUID(), initiator, groupId);
-			started.set(task.id, opened.task);
-			runs.push({
-				task: resolveExecutionTargets(opened.task, before, this.maxSubtaskDepth),
-				execution: opened.execution,
-				...team && task.id !== root.id ? { dispatch: "teammate" } : {}
-			});
-		}
-		if (runs.length === 0) return [];
-		let tasks = before.map((task) => started.get(task.id) ?? task);
+		const opened = startExecution(rerun ? withStatus(participant, "todo", now) : participant, now, crypto.randomUUID(), initiator, groupId, rework);
+		let tasks = before.map((task) => task.id === participant.id ? opened.task : task);
 		if (progress !== void 0) tasks = applyScheduleProgress(tasks, root.id, progress, now);
 		this.document.tasks = [...tasks];
 		this.commit();
-		return runs;
+		return [{
+			task: resolveExecutionTargets(opened.task, before, this.maxSubtaskDepth),
+			execution: opened.execution
+		}];
 	}
 	/**
-	* Finalize every cascade parent that is ready, walking from `taskId` up the
-	* lineage: a member settles once its own outcome is recorded and none of its
-	* group children is still open, and its verdict folds those children in
-	* (failure dominates, then cancellation).
+	* Finalize every stored run-group parent that is ready, walking from `taskId`
+	* up the lineage: a member settles once its own outcome is recorded and none
+	* of its group children is still open, and its verdict folds those children in
+	* (failure dominates, then cancellation). A single-member group — every run
+	* this Host opens now — settles on its own turn exactly as any plain run does.
 	*/
 	settleCascade(taskId, groupId, now) {
 		let changed = false;
@@ -4717,11 +5497,12 @@ var HostTaskLedger = class {
 	* members are all settled. The Host poll calls this on every tick, so a run
 	* can no longer be left in the running column by a settle nobody observed:
 	*
-	* - A team run is governed by its Lead. Once the Lead's own outcome is
+	* - A stored team run is governed by its Lead. Once the Lead's own outcome is
 	*   recorded, its still-open members are settled with that verdict. A
 	*   teammate is a durable member of the Team and may never report a turn of
-	*   its own, and without this the whole lineage waits on it forever.
-	* - A cascade parent whose members are all settled is finalized here even
+	*   its own, and without this the whole lineage waits on it forever. New runs
+	*   never start a team, so this only closes a group the ledger already holds.
+	* - A stored group parent whose members are all settled is finalized here even
 	*   when the settle that completed the tree happened in another process, or
 	*   was interrupted between its child write and its parent write.
 	*
@@ -4971,10 +5752,10 @@ var HostTaskLedger = class {
 		if (typeof parsed.schemaVersion === "number" && TASK_BOARD_MIGRATABLE_SCHEMA_VERSIONS.includes(parsed.schemaVersion)) try {
 			return this.migrateLegacyDocument(parsed);
 		} catch (error) {
-			throw new Error(`ledger v${String(parsed.schemaVersion)} to v6 migration failed; original file kept at ${this.file}: ${error instanceof Error ? error.message : String(error)}`);
+			throw new Error(`ledger v${String(parsed.schemaVersion)} to v7 migration failed; original file kept at ${this.file}: ${error instanceof Error ? error.message : String(error)}`);
 		}
 		try {
-			if (parsed.schemaVersion !== 6 || !Array.isArray(parsed.tasks)) throw new Error("unsupported ledger schema");
+			if (parsed.schemaVersion !== 7 || !Array.isArray(parsed.tasks)) throw new Error("unsupported ledger schema");
 			return this.normalizeDocument(parsed);
 		} catch (error) {
 			return this.recoverCorrupt(dir, existed, error);
@@ -4997,7 +5778,7 @@ var HostTaskLedger = class {
 		const sidecarLastTickAt = this.readSchedulerSidecar();
 		const lastTickAt = sidecarLastTickAt === void 0 || documentLastTickAt !== void 0 && documentLastTickAt >= sidecarLastTickAt ? documentLastTickAt : sidecarLastTickAt;
 		return {
-			schemaVersion: 6,
+			schemaVersion: 7,
 			revision: Number.isSafeInteger(parsed.revision) && parsed.revision >= 0 ? parsed.revision : 0,
 			tasks,
 			scheduler: {
@@ -5023,7 +5804,7 @@ var HostTaskLedger = class {
 		if (existed) renameSync(this.file, `${this.file}.corrupt-${this.now()}-${process.pid}-${crypto.randomUUID()}`);
 		mkdirSync(dir, { recursive: true });
 		return {
-			schemaVersion: 6,
+			schemaVersion: 7,
 			revision: 0,
 			tasks: [],
 			scheduler: {
@@ -5211,8 +5992,532 @@ function mostRecentWorkspaceId(items) {
 	}
 	return best?.id ?? items[0]?.id;
 }
+/**
+* The failure text the Host records when a card names no workspace and the
+* deployment has none to resolve it to: the run is refused before any session
+* exists instead of letting `session.create` fall back to the Host process
+* working directory (the desktop app's profile directory), which is never the
+* project the user meant.
+*
+* A finished sentence rather than a code: the ledger stores it as the
+* execution's failure text, which the agent tools serve to a model and which
+* any client prints verbatim. It names the fix, not the mechanism.
+*/
+const MISSING_WORKSPACE_REASON = "this card pins no workspace; choose a workspace on the card before running";
+//#endregion
+//#region src/core/reasoning-effort.ts
+/** Trim one optional effort: blank text means "not set", like every other pinned target. */
+function normalizeReasoningEffort(value) {
+	const trimmed = value?.trim();
+	return trimmed === void 0 || trimmed === "" ? void 0 : trimmed;
+}
+/**
+* Complete one route through the host catalog: a qualified route must match its
+* provider group, and a bare model id matches the first group carrying it —
+* which is the provider the request then names.
+* @param catalog - the host model catalog, when this deployment serves one.
+* @param route - the route as the card pins it.
+* @returns the completed route with its reasoning metadata, or undefined when
+*   the catalog declares no such model.
+*/
+function declaredRoute(catalog, route) {
+	const groups = catalog?.groups ?? [];
+	const matched = route.provider === void 0 || route.provider === "" ? groups.find((group) => group.models.some((model) => model.id === route.model)) : groups.find((group) => group.id === route.provider);
+	const model = matched?.models.find((candidate) => candidate.id === route.model);
+	if (matched === void 0 || model === void 0) return void 0;
+	return {
+		provider: matched.id,
+		model: model.id,
+		...model.reasoning === void 0 ? {} : { reasoning: model.reasoning }
+	};
+}
+/**
+* Resolve the effort one execution sends.
+* @param requested - the card's stored effort (absent or blank = inherit).
+* @param catalog - the host model catalog, when this deployment serves one.
+* @param route - the route the execution will actually run at.
+* @returns the effort to send, or the dropped value that will not be sent.
+*/
+function resolveReasoningEffort(requested, catalog, route) {
+	const effort = normalizeReasoningEffort(requested);
+	if (effort === void 0) return {};
+	if (route === void 0) return { dropped: effort };
+	return declaredRoute(catalog, route)?.reasoning?.efforts.some((option) => option.id === effort) === true ? { effort } : { dropped: effort };
+}
+//#endregion
+//#region src/host/attachments.ts
+/**
+* Host-side attachment plumbing: the trusted upload path, the verification
+* against the official attachment storage, and the execution-time resolution
+* of a card's attachments into prompt parts.
+*
+* The board keeps METADATA in the ledger; the bytes live in the official
+* storage (`ctx.attachments`). This module is the only place that touches
+* both: it publishes bytes into the storage, proves a recorded claim against
+* it, and reads the objects back for an execution.
+*
+* The official storage has NO deletion API. Removing an attachment or deleting
+* a card therefore removes METADATA only: the stored object stays where it is.
+*/
+/**
+* One attachment failure, carrying the class the route maps to a status and a
+* message that never contains raw bytes or a host path.
+*/
+var TaskBoardAttachmentError = class extends Error {
+	code;
+	constructor(code, message, options) {
+		super(message, options);
+		this.code = code;
+		this.name = "TaskBoardAttachmentError";
+	}
+};
+/** The HTTP status one attachment failure class answers with. */
+function attachmentErrorStatus(code) {
+	if (code === "invalid-request" || code === "invalid-image" || code === "unreadable") return 400;
+	if (code === "unsupported-type") return 415;
+	if (code === "too-large") return 413;
+	if (code === "not-found") return 404;
+	return 503;
+}
+/** Lowercase hex sha256 digest of the exact bytes. */
+function sha256Hex(bytes) {
+	return createHash("sha256").update(bytes).digest("hex");
+}
+/** Whether a value names one of the raster media types the image path accepts. */
+function isImageMediaType(value) {
+	return typeof value === "string" && TASK_ATTACHMENT_IMAGE_MEDIA_TYPES.includes(value.toLowerCase());
+}
+/**
+* Normalize a client-declared file media type: a well-formed type is kept
+* (lowercased), anything else falls back to the opaque binary type. The type
+* of a verbatim file is a declaration, not something the storage can prove.
+*/
+function normalizeFileMediaType(value) {
+	if (typeof value !== "string") return "application/octet-stream";
+	const trimmed = value.trim().toLowerCase();
+	if (trimmed === "" || trimmed.length > 255) return "application/octet-stream";
+	return /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/.test(trimmed) ? trimmed : "application/octet-stream";
+}
+/**
+* The canonical display name of an upload.
+*
+* The Host publishes the canonical name, and the ledger stores the same
+* string: the wire gate accepts only a name that already IS canonical, so a
+* client cannot rename an object into something the storage never saw. The
+* canonical form is single-line and free of any path part, which is what
+* makes it safe to place in an execution prompt.
+*/
+function sanitizeAttachmentName(value) {
+	return canonicalAttachmentName(value);
+}
+/**
+* The per-image byte cap this deployment enforces: the board's own ceiling
+* lowered by the storage's own policy when that policy is stricter.
+*/
+function effectiveImageByteLimit(store) {
+	const deployment = store?.imageLimits?.maxImageBytes;
+	if (typeof deployment !== "number" || !Number.isFinite(deployment) || deployment <= 0) return TASK_ATTACHMENT_MAX_BYTES;
+	return Math.min(TASK_ATTACHMENT_MAX_BYTES, deployment);
+}
+/**
+* Read a whole request body, refusing it the moment it grows past the cap.
+* The count is the ACTUAL byte length of the stream, not a declared length.
+*/
+async function readRequestBytes(req, limit) {
+	const chunks = [];
+	let size = 0;
+	let overflow = false;
+	for await (const chunk of req) {
+		const buffer = chunk;
+		size += buffer.length;
+		if (size > limit) {
+			overflow = true;
+			chunks.length = 0;
+			continue;
+		}
+		chunks.push(buffer);
+	}
+	if (overflow) throw new TaskBoardAttachmentError("too-large", `attachment exceeds the ${limit} byte limit`);
+	return new Uint8Array(Buffer.concat(chunks));
+}
+/**
+* A byte stream that measures and digests what it yields.
+*
+* The file path streams the request straight into the official storage: the
+* bytes are never collected in memory, and the count and digest the board
+* records are the ones computed from the bytes that actually went in.
+*/
+var MeasuredStream = class {
+	limit;
+	hash = createHash("sha256");
+	size = 0;
+	finished = false;
+	constructor(limit) {
+		this.limit = limit;
+	}
+	/** The byte length seen so far. */
+	get bytes() {
+		return this.size;
+	}
+	/** The digest of the bytes seen so far; final once the stream ended. */
+	digest() {
+		return this.hash.digest("hex");
+	}
+	/** Whether the whole stream was consumed. */
+	get complete() {
+		return this.finished;
+	}
+	/** The chunks, refusing the stream the moment it grows past the cap. */
+	async *chunks(source) {
+		for await (const chunk of source) {
+			this.size += chunk.byteLength;
+			if (this.size > this.limit) throw new TaskBoardAttachmentError("too-large", `attachment exceeds the ${this.limit} byte limit`);
+			this.hash.update(chunk);
+			yield chunk;
+		}
+		this.finished = true;
+	}
+};
+/**
+* The request body as a byte stream: the file path hands it straight to the
+* official storage, so the bytes are never collected in memory.
+*/
+function requestChunks(req) {
+	return req;
+}
+/**
+* The image reference a recorded attachment stands for. The stored object is
+* addressed by its opaque identifier; the rest of the fields are the board's
+* own record of what the storage holds.
+*/
+function imageRefOf(attachment) {
+	if (attachment.width === void 0 || attachment.height === void 0) throw new TaskBoardAttachmentError("unreadable", `attachment ${attachment.attachmentId} carries no image dimensions`);
+	return {
+		attachmentId: attachment.attachmentId,
+		mediaType: attachment.mediaType,
+		bytes: attachment.bytes,
+		width: attachment.width,
+		height: attachment.height,
+		...attachment.name === "" ? {} : { name: attachment.name }
+	};
+}
+/** The file reference a recorded attachment stands for. */
+function fileRefOf(attachment) {
+	return {
+		attachmentId: attachment.attachmentId,
+		name: attachment.name,
+		bytes: attachment.bytes
+	};
+}
+/**
+* Publish one image into the official storage and describe it with
+* host-computed metadata.
+*
+* The image is validated before it is stored (the storage checks the decoded
+* bytes against the declared type), and the recorded digest is computed over
+* the NORMALIZED bytes the storage actually kept — not over what the client
+* sent — so the metadata and the object can never disagree.
+*/
+async function storeImage(store, data, name, mediaType) {
+	if (!isImageMediaType(mediaType)) throw new TaskBoardAttachmentError("unsupported-type", `${mediaType} is not an accepted image type`);
+	const limit = effectiveImageByteLimit(store);
+	if (data.byteLength > limit) throw new TaskBoardAttachmentError("too-large", `image exceeds the ${limit} byte limit`);
+	const type = mediaType.toLowerCase();
+	try {
+		await store.validateImage({
+			data,
+			mediaType: type,
+			name
+		});
+		const ref = await store.saveImage({
+			data,
+			mediaType: type,
+			name
+		});
+		const stored = await store.readImage(ref);
+		return {
+			kind: "image",
+			attachmentId: String(ref.attachmentId),
+			name: canonicalAttachmentName(stored.ref.name ?? name),
+			bytes: stored.ref.bytes,
+			mediaType: stored.ref.mediaType,
+			sha256: sha256Hex(stored.data),
+			width: stored.ref.width,
+			height: stored.ref.height
+		};
+	} catch (error) {
+		throw asAttachmentError(error);
+	}
+}
+/**
+* Publish one file into the official storage and describe it with
+* host-computed metadata. The digest is computed from the streamed bytes, so
+* the record and the stored object agree by construction.
+*/
+async function storeFile(store, chunks, name, mediaType, signal) {
+	const measured = new MeasuredStream(TASK_ATTACHMENT_MAX_BYTES);
+	try {
+		const ref = await store.saveFileStream({
+			data: measured.chunks(chunks),
+			...signal === void 0 ? {} : { signal },
+			name
+		});
+		const sha256 = measured.digest();
+		return {
+			attachment: {
+				kind: "file",
+				attachmentId: String(ref.attachmentId),
+				name: canonicalAttachmentName(ref.name || name),
+				bytes: ref.bytes,
+				mediaType: normalizeFileMediaType(mediaType),
+				sha256
+			},
+			bytes: measured.bytes,
+			sha256
+		};
+	} catch (error) {
+		throw asAttachmentError(error);
+	}
+}
+/**
+* Map an official attachment failure onto the board's own classes, so a
+* storage fault reads as "the storage is unavailable" and a rejected image
+* reads as "the image is not acceptable" — never as an internal error.
+*/
+function asAttachmentError(error) {
+	if (error instanceof TaskBoardAttachmentError) return error;
+	const code = error?.code;
+	if (typeof code === "string") {
+		if (code === "IMAGE_TOO_LARGE" || code === "IMAGES_TOO_LARGE") return new TaskBoardAttachmentError("too-large", "the attachment exceeds the deployment size limit", { cause: error });
+		if (code === "TOO_MANY_IMAGES") return new TaskBoardAttachmentError("too-large", "the attachment exceeds the deployment image count limit", { cause: error });
+		if (code === "UNSUPPORTED_IMAGE_TYPE" || code === "IMAGE_TYPE_MISMATCH") return new TaskBoardAttachmentError("unsupported-type", "the attachment is not an accepted image type", { cause: error });
+		if (code === "INVALID_IMAGE" || code === "INVALID_IMAGE_BASE64" || code === "IMAGE_TOO_MANY_PIXELS" || code === "IMAGE_DIMENSION_TOO_LARGE") return new TaskBoardAttachmentError("invalid-image", "the attachment is not a readable image", { cause: error });
+		if (code === "ATTACHMENT_NOT_FOUND") return new TaskBoardAttachmentError("not-found", "the attachment is not in the storage", { cause: error });
+		if (code === "ATTACHMENT_READ_FAILED" || code === "ATTACHMENT_CORRUPT") return new TaskBoardAttachmentError("unreadable", "the stored attachment could not be read back", { cause: error });
+		if (code === "ATTACHMENT_WRITE_FAILED" || code === "ATTACHMENT_FILES_UNSUPPORTED" || code === "ATTACHMENT_PROJECTION_UNSUPPORTED") return new TaskBoardAttachmentError("storage-unavailable", "the attachment storage refused the write", { cause: error });
+	}
+	return new TaskBoardAttachmentError("storage-unavailable", "the attachment storage is unavailable", { cause: error });
+}
+/**
+* Prove every recorded attachment against the official storage: an image is
+* read back and compared, a file is streamed and its digest recomputed.
+*
+* A reference the storage does not know, and a record whose metadata does not
+* match the stored bytes, are both a refusal: the action never reaches the
+* ledger, so a spoofed client claim can never become a stored fact.
+*/
+async function verifyAttachments(store, attachments) {
+	assertImageBatchWithinLimits(store, attachments);
+	for (const attachment of attachments) if (attachment.kind === "image") await verifyImage(store, attachment);
+	else await verifyFile(store, attachment);
+}
+/**
+* The official image batch limits of a deployment: how many images one
+* message may carry and how many bytes they may add up to.
+*
+* The board's own caps (eight attachments, 10 MiB each, 32 MiB per card) stay
+* in force; the deployment's policy can only lower them, and it governs the
+* IMAGES of one card because that is what one prompt carries.
+*/
+function officialImageBatchLimits(store) {
+	const limits = store?.imageLimits;
+	const maxImages = typeof limits?.maxImagesPerMessage === "number" && limits.maxImagesPerMessage > 0 ? Math.min(8, limits.maxImagesPerMessage) : 8;
+	const maxMessageImageBytes = typeof limits?.maxMessageImageBytes === "number" && limits.maxMessageImageBytes > 0 ? Math.min(TASK_ATTACHMENT_TOTAL_MAX_BYTES, limits.maxMessageImageBytes) : TASK_ATTACHMENT_TOTAL_MAX_BYTES;
+	return {
+		maxImages,
+		maxImageBytes: effectiveImageByteLimit(store),
+		maxMessageImageBytes
+	};
+}
+/**
+* Refuse a card whose images exceed the deployment's per-message budget.
+*
+* The check counts only the images: plain files travel as paths and never
+* enter the prompt admission, so they are not part of that budget.
+* @param store - the official attachment storage.
+* @param attachments - the card's attachments.
+*/
+function assertImageBatchWithinLimits(store, attachments) {
+	if (store === void 0) return;
+	const limits = officialImageBatchLimits(store);
+	const images = attachments.filter((attachment) => attachment.kind === "image");
+	if (images.length > limits.maxImages) throw new TaskBoardAttachmentError("too-large", `the card carries ${images.length} images, the deployment admits ${limits.maxImages} per message`);
+	const bytes = images.reduce((sum, attachment) => sum + attachment.bytes, 0);
+	if (bytes > limits.maxMessageImageBytes) throw new TaskBoardAttachmentError("too-large", `the card's images total ${bytes} bytes, the deployment admits ${limits.maxMessageImageBytes} per message`);
+	for (const image of images) if (image.bytes > limits.maxImageBytes) throw new TaskBoardAttachmentError("too-large", `an image exceeds the deployment limit of ${limits.maxImageBytes} bytes`);
+}
+/** Read one image back and compare it with the recorded metadata. */
+async function verifyImage(store, attachment) {
+	let stored;
+	try {
+		stored = await store.readImage(imageRefOf(attachment));
+	} catch (error) {
+		throw asAttachmentError(error);
+	}
+	const digest = sha256Hex(stored.data);
+	const storedName = stored.ref.name;
+	if (stored.ref.bytes !== attachment.bytes || stored.ref.mediaType !== attachment.mediaType || digest !== attachment.sha256 || stored.ref.width !== attachment.width || stored.ref.height !== attachment.height || storedName !== void 0 && canonicalAttachmentName(storedName) !== attachment.name) throw new TaskBoardAttachmentError("unreadable", `attachment ${attachment.attachmentId} does not match the stored object`);
+}
+/** Stream one file back and recompute its digest. */
+async function verifyFile(store, attachment) {
+	const hash = createHash("sha256");
+	let bytes = 0;
+	try {
+		for await (const chunk of store.readFileStream(fileRefOf(attachment))) {
+			bytes += chunk.byteLength;
+			hash.update(chunk);
+		}
+	} catch (error) {
+		throw asAttachmentError(error);
+	}
+	if (bytes !== attachment.bytes || hash.digest("hex") !== attachment.sha256) throw new TaskBoardAttachmentError("unreadable", `attachment ${attachment.attachmentId} does not match the stored object`);
+}
+/**
+* The limits the board publishes for its attachments: the board's own caps,
+* lowered by the deployment's image policy where that policy is stricter.
+*/
+function publishedAttachmentLimits(store) {
+	const batch = officialImageBatchLimits(store);
+	return {
+		maxAttachments: 8,
+		maxBytes: TASK_ATTACHMENT_MAX_BYTES,
+		maxTotalBytes: TASK_ATTACHMENT_TOTAL_MAX_BYTES,
+		maxImages: batch.maxImages,
+		maxImageBytes: batch.maxImageBytes,
+		maxMessageImageBytes: batch.maxMessageImageBytes
+	};
+}
+/**
+* Resolve a card's attachments for one execution: images become prompt image
+* parts, files become readable host paths.
+*
+* Every execution resolves the attachments afresh — the recorded metadata is
+* never trusted on its own, and a file whose host path is missing or
+* unreadable fails the run instead of being silently dropped.
+*/
+async function resolveExecutionAttachments(store, attachments) {
+	assertImageBatchWithinLimits(store, attachments);
+	const images = [];
+	const files = [];
+	for (const attachment of attachments) {
+		if (attachment.kind === "image") {
+			let stored;
+			try {
+				stored = await store.readImage(imageRefOf(attachment));
+			} catch (error) {
+				throw asAttachmentError(error);
+			}
+			images.push({
+				type: "image",
+				mediaType: stored.ref.mediaType,
+				data: Buffer.from(stored.data).toString("base64"),
+				name: attachment.name
+			});
+			continue;
+		}
+		const ref = fileRefOf(attachment);
+		let path;
+		try {
+			path = store.fileHostPath(ref);
+		} catch (error) {
+			throw asAttachmentError(error);
+		}
+		if (path === void 0 || path === "") throw new TaskBoardAttachmentError("unreadable", `attachment ${attachment.attachmentId} has no readable path in this deployment`);
+		try {
+			accessSync(path, constants.R_OK);
+		} catch (error) {
+			throw new TaskBoardAttachmentError("unreadable", `attachment ${attachment.name} is not readable in this deployment`, { cause: error });
+		}
+		files.push({
+			name: attachment.name,
+			path,
+			bytes: attachment.bytes,
+			mediaType: attachment.mediaType
+		});
+	}
+	return {
+		images,
+		files
+	};
+}
+/**
+* The attachment section of an execution prompt: the readable paths of the
+* card's files, marked read-only.
+*
+* It is a section of its own — never folded into the handover preamble — so
+* the two kinds of reference stay distinguishable to the reading agent.
+*/
+function attachmentPromptPreamble(files) {
+	if (files.length === 0) return void 0;
+	return `附件文件（任务看板附件，只读路径；请直接读取这些文件，不要修改或移动它们）：
+${files.map((file) => `- ${file.name}（${file.path}，${file.bytes} 字节，${file.mediaType}）`).join("\n")}`;
+}
+/**
+* Refuse an execution whose route cannot read images.
+*
+* The check uses the ACTUAL route of the session the run is about to use and
+* the model's own declared input modalities. A route that declares no
+* modalities is UNKNOWN, and an unknown route is allowed: the official model
+* catalog publishes no modality information, so it cannot answer this
+* question, and refusing on its silence would block every image run.
+*/
+async function assertRouteAcceptsImages(resolveModelInfo, provider, model) {
+	if (resolveModelInfo === void 0) return;
+	const modalities = (await resolveModelInfo(provider, model))?.inputModalities;
+	if (!Array.isArray(modalities)) return;
+	if (!modalities.includes("image")) throw new Error(`the model route ${provider}/${model} does not accept image input`);
+}
 //#endregion
 //#region src/host-runner.ts
+/**
+* Mint the in-process owner peer this plugin's Host calls speak for.
+*
+* The 0.2.1 gateway made `peer` mandatory on every request, and the
+* authorization layer reads only `peer.principal`: a principal of
+* `{ kind: 'owner' }` is how host-local code states that the call IS the local
+* user driving their own Host, so the gateway answers it directly instead of
+* running a remote-access decision (only non-owner principals are judged).
+* That is exactly the task board's position — it creates, renames, prompts,
+* and reads sessions as the Host itself, which before 0.2.1 was the implicit
+* privilege of every in-process caller. The board claims owner explicitly, and
+* only ever inside its own Host process: no wire field can set a principal,
+* and this plugin never forwards a browser-supplied one.
+*
+* `interactions` stays `'none'`: the board only invokes methods and opens the
+* short `session/follow` stream. The gateway's interactions check gates
+* exactly the forwarded-event endpoints (opening an event stream, answering a
+* waterfall), which this caller never touches; an `'answer'` peer would
+* additionally receive forwarded Host events, a capability the board neither
+* needs nor wants.
+*
+* The peer's signal aborts once `ctx` disposes, so streams opened for it end
+* with the plugin fiber, and `dispose()` is idempotent with racing calls
+* sharing one completion. The id carries no credential — the protocol fixes
+* `principal` as the only identity persisted in a session log — so a fresh
+* unique id per mount is sufficient.
+*/
+function createOwnerPeer(ctx) {
+	const controller = new AbortController();
+	let completion;
+	const peer = {
+		id: `task-board-owner:${crypto.randomUUID()}`,
+		ctx,
+		principal: { kind: "owner" },
+		signal: controller.signal,
+		interactions: "none",
+		dispose() {
+			if (completion === void 0) {
+				controller.abort();
+				completion = Promise.resolve();
+			}
+			return completion;
+		}
+	};
+	ctx.effect(() => () => {
+		peer.dispose();
+	}, "task-board owner peer");
+	return peer;
+}
 function sessionAddress(sessionId) {
 	return {
 		kind: "session",
@@ -5254,7 +6559,7 @@ const SERVICE_UNAVAILABLE_BACKOFF_MS = 2e3;
 */
 const HISTORY_PAGE_LIMIT = 100;
 /** One-line text of a gateway or stream failure, for a decideable reason. */
-function failureText(error) {
+function failureText$1(error) {
 	return error instanceof Error ? error.message : String(error);
 }
 function delay(ms) {
@@ -5287,19 +6592,17 @@ function escapeProvenanceDelimiter(value) {
 	return value.replaceAll("来源声明 开始", "来源声明·开始").replaceAll("来源声明 结束", "来源声明·结束");
 }
 /**
-* The execution-shape section: what else this run opens. A plain cascade opens
-* one independent session per member; a team run starts every other member as a
-* teammate inside THIS session, so the prompt names the Team tools instead.
+* The dispatch section: this run is the card's own session, and the card still
+* has unfinished subtasks. The Host opens no session for them, so the prompt
+* states what the session must do itself — read each card, dispatch subagents
+* in dependency order, and write the conclusions back before finishing. A card
+* with no outstanding descendant gets no section at all.
 */
-function peerPromptPreamble(context) {
-	const peers = context.peers ?? [];
-	if (peers.length === 0) return void 0;
-	if (context.team === true) {
-		const lines = peers.map((peer) => `- ${escapeProvenanceDelimiter(peer.title)}（teammate: ${peer.name ?? teammateName(peer.title, peer.id, peer.id)}）`);
-		return `本任务是 Agent Team 的 Lead：本次运行不额外开启独立会话，以下 ${peers.length} 个子任务成员已在本会话中作为 teammate 启动。用 list_agents / send_message / wait_agent 协调它们，用任务看板工具读写它们在看板上的卡片：\n${lines.join("\n")}`;
-	}
-	const lines = peers.map((peer) => `- ${escapeProvenanceDelimiter(peer.title)}（任务 ${peer.id}）`);
-	return `本次运行同时并发开启 ${peers.length} 个独立 DSH 会话执行下列子任务成员（可用 task_board_* 工具查看它们的进度）：\n${lines.join("\n")}`;
+function dispatchPromptPreamble(context) {
+	const descendants = context.descendants ?? [];
+	if (descendants.length === 0) return void 0;
+	const lines = descendants.map((descendant) => `- ${escapeProvenanceDelimiter(descendant.title)}（任务 ${descendant.id}，状态 ${descendant.status}）`);
+	return `本卡还有 ${descendants.length} 个未完成的子任务，本次执行不会为它们额外开启会话，由你在本会话内自行派发：\n${lines.join("\n")}\n先用 task_board_get 读取每张子卡的内容与执行目标，再用 subagent 按依赖顺序派发（互不依赖的可以并发），完工前用 task_board_manage({action:'record-external-outcome', result, initiatedBy, summary}) 一次性回填各子卡的结论。`;
 }
 /**
 * The scheduled-run section: this execution was triggered by the card's
@@ -5317,6 +6620,18 @@ function schedulePromptPreamble(context) {
 	return `本次执行由任务看板的定时规则自动触发：触发时间 ${stamp}（UTC），规则时区 ${schedule.timeZone}，cron 表达式 ${schedule.cron}。需要判断「今天」「现在」或计算时间窗口时，以该时区的触发时间为准。`;
 }
 /**
+* The rework section: this execution continues the card's own conversation
+* because a reviewer sent the previous attempt back. It states both halves the
+* agent must not guess — that the earlier work is the starting point, and what
+* the reviewer actually wants changed — and marks the instruction block with a
+* delimiter pair, so reviewer text cannot pass for board text.
+*/
+function reworkPromptPreamble(context) {
+	const rework = context.rework;
+	if (rework === void 0) return void 0;
+	return `本次执行是同一会话上的返工：上一轮的结果被人工审阅打回，请在已完成的工作上继续修改，不要从头重做。返工意见 开始\n${escapeProvenanceDelimiter(rework.instructions)}\n返工意见 结束`;
+}
+/**
 * Build the execution prompt for one task.
 * @param task - the task being launched.
 * @param context - the run's other members, for the execution-shape section.
@@ -5328,9 +6643,11 @@ function promptText(task, context = {}) {
 	const handoverPreamble = handover === void 0 || handover.references.length === 0 ? void 0 : `交接包引用（来自任务看板续接卡片，冻结于 ${new Date(handover.bundledAt).toISOString()}）：\n${handover.references.map((reference) => `- ${reference}`).join("\n")}`;
 	const preambles = [
 		tagPromptPreamble(task),
+		context.files === void 0 ? void 0 : attachmentPromptPreamble(context.files),
 		handoverPreamble,
 		schedulePromptPreamble(context),
-		peerPromptPreamble(context)
+		dispatchPromptPreamble(context),
+		reworkPromptPreamble(context)
 	].filter((part) => part !== void 0);
 	const preamble = preambles.length === 0 ? void 0 : preambles.join("\n\n");
 	const freeze = task.freeze;
@@ -5413,42 +6730,51 @@ function invokeWireArgs(namespace, method, request) {
 	if (namespace === "session" && method === "list") return { _request: request };
 	return { request };
 }
-var HostExecutionRunner = class {
+var HostExecutionRunner = class HostExecutionRunner {
 	gateway;
 	commands;
 	workspaceRegistry;
-	operatorPeer;
-	/** Newest scanned event sequence per session with no matching execution end. */
+	faces;
+	/**
+	* Newest event sequence per session whose COMPLETE history walk (reaching
+	* the execution boundary) found no matching execution end. A later walk may
+	* trust everything at or below it and examine only newer records.
+	*/
 	scanMemos = /* @__PURE__ */ new Map();
 	unavailableAttempts;
 	unavailableBackoffMs;
+	/**
+	* The peer every request speaks for. Production passes the peer bound to the
+	* plugin fiber; a bare runner (unit tests around fake gateways) gets one
+	* bound to a fresh root context instead.
+	*/
+	ownerPeer;
 	unsupportedSessionListWarned = false;
-	constructor(gateway, commands, workspaceRegistry, unavailableRetry, operatorPeer) {
+	constructor(gateway, commands, workspaceRegistry, unavailableRetry, ownerPeer, faces = {}) {
 		this.gateway = gateway;
 		this.commands = commands;
 		this.workspaceRegistry = workspaceRegistry;
-		this.operatorPeer = operatorPeer;
+		this.faces = faces;
 		this.unavailableAttempts = unavailableRetry?.attempts ?? SERVICE_UNAVAILABLE_ATTEMPTS;
 		this.unavailableBackoffMs = unavailableRetry?.backoffMs ?? SERVICE_UNAVAILABLE_BACKOFF_MS;
+		this.ownerPeer = ownerPeer ?? createOwnerPeer(new Context());
 	}
 	invoke(namespace, method, request, signal) {
-		const peer = this.operatorPeer?.();
 		return this.gateway.invoke({
 			namespace,
 			method,
 			args: invokeWireArgs(namespace, method, request),
-			...peer === void 0 ? {} : { peer },
+			peer: this.ownerPeer,
 			...signal === void 0 ? {} : { signal }
 		});
 	}
 	stream(namespace, method, request, signal) {
 		if (!("stream" in this.gateway) || this.gateway.stream === void 0) throw new Error("gateway stream is unavailable");
-		const peer = this.operatorPeer?.();
 		return this.gateway.stream({
 			namespace,
 			method,
 			args: { request },
-			...peer === void 0 ? {} : { peer },
+			peer: this.ownerPeer,
 			...signal === void 0 ? {} : { signal }
 		});
 	}
@@ -5475,29 +6801,32 @@ var HostExecutionRunner = class {
 	*/
 	async launch(task, options = {}) {
 		const workspaceId = task.handover?.workspaceId ?? task.workspaceId ?? this.recentWorkspaceId();
-		const mode = task.handover?.mode ?? task.mode;
+		const mode = options.agentPreset ?? task.handover?.mode ?? task.mode;
 		const permission = task.handover?.permission ?? task.permission;
 		if (workspaceId !== void 0 && this.workspaceRegistry !== void 0) {
 			if (!this.workspaceRegistry.list().some((item) => item.id === workspaceId)) throw new Error("workspace not found: " + workspaceId);
 		}
 		if (mode !== void 0) {
 			const preset = (await this.invoke("agentPresets", "list", {})).presets?.find((item) => item.id === mode);
+			if (preset === void 0 && options.agentPreset !== void 0) throw new Error("agent preset not found: " + mode + " (a card with unfinished subtasks runs under the liangshen preset, which this deployment does not serve)");
 			if (preset === void 0) throw new Error("agent preset not found: " + mode);
 			if (preset.broken !== void 0) throw new Error("agent preset is unavailable: " + preset.broken);
+			if (options.agentPreset !== void 0 && this.faces.legacyAgentTeams?.() === true) throw new Error(LEGACY_AGENT_TEAMS_REASON);
 		}
 		const reused = options.reuseSessionId;
 		if (reused !== void 0) {
 			try {
 				options.onSession?.(reused);
 				await this.assertReusedPreset(reused, mode);
-				await this.pinAndPrompt(reused, task, permission, options.promptContext, options.onGoalArmed, options.goalEnabled === true);
+				await this.pinAndPrompt(reused, task, permission, options.promptContext, options.onGoalArmed, options.goalEnabled === true, options.catalog);
 			} catch (error) {
 				throw new SessionLaunchError(reused, error);
 			}
 			return reused;
 		}
+		if (workspaceId === void 0) throw new Error(MISSING_WORKSPACE_REASON);
 		const sessionId = (await this.invoke("session", "create", {
-			...workspaceId === void 0 ? {} : { workspaceId },
+			workspaceId,
 			...mode === void 0 ? {} : { agentPreset: mode }
 		})).sessionId;
 		options.onSession?.(sessionId);
@@ -5506,11 +6835,33 @@ var HostExecutionRunner = class {
 				sessionId,
 				title: task.title
 			});
-			await this.pinAndPrompt(sessionId, task, permission, options.promptContext, options.onGoalArmed, options.goalEnabled === true);
+			await this.pinAndPrompt(sessionId, task, permission, options.promptContext, options.onGoalArmed, options.goalEnabled === true, options.catalog);
 		} catch (error) {
 			throw new SessionLaunchError(sessionId, error);
 		}
 		return sessionId;
+	}
+	/**
+	* Queue one follow-up user message into an existing execution session.
+	*
+	* This is the same `session/prompt` call a launch makes, with none of the
+	* launch pins: a follow-up continues a conversation the board already
+	* composed, so it must not re-assert the permission, rename the session, or
+	* switch the model. The message is queued behind whatever that session is
+	* doing, which is what lets a caller reach a run that is still working.
+	* @param sessionId - the session the card's execution recorded.
+	* @param text - the message to deliver, already validated by the caller.
+	*/
+	async followUp(sessionId, text) {
+		await this.invoke("session", "prompt", {
+			sessionId,
+			requestId: "task-board-follow-up-" + crypto.randomUUID(),
+			mode: "queue",
+			content: [{
+				type: "text",
+				text
+			}]
+		});
 	}
 	/**
 	* Fail closed when a reused session records a different Agent preset than
@@ -5533,43 +6884,125 @@ var HostExecutionRunner = class {
 		throw new Error("reused session " + sessionId + " was composed from agent preset " + (typeof recorded === "string" ? "\"" + recorded + "\"" : "an unreadable value") + ", but the task pins \"" + pinned + "\"");
 	}
 	/**
+	* Split a `provider/model` pin. A pin without a provider keeps only the model
+	* id: the provider is the one the host catalog declares for it, resolved at
+	* launch because the session wire contract requires a provider.
+	*/
+	static pinnedRoute(model) {
+		const raw = model?.trim();
+		if (raw === void 0 || raw === "") return void 0;
+		const slash = raw.indexOf("/");
+		if (slash < 0) return { model: raw };
+		const provider = raw.slice(0, slash).trim();
+		const modelId = raw.slice(slash + 1).trim();
+		if (provider === "" || modelId === "") return void 0;
+		return {
+			provider,
+			model: modelId
+		};
+	}
+	/**
+	* The route a card that pins no model actually runs at: the session's own
+	* recorded selection (the durable fold the GUI reads; `next` is the pending
+	* user choice, `lastUsed` what the last request consumed), or — for a session
+	* that has selected none yet, which is exactly a session that would start at
+	* the deployment default — the host default from the catalog.
+	*
+	* A route that cannot be READ is undefined and the effort is not sent:
+	* falling back to the host default there would silently switch the model of a
+	* session this run only meant to continue.
+	*/
+	async sessionRoute(sessionId, catalog) {
+		let selection;
+		try {
+			const projections = await this.invoke("session", "projections", { sessionId });
+			selection = projections?.values?.modelSelection?.next ?? projections?.values?.modelSelection?.lastUsed;
+		} catch (error) {
+			console.warn("[dsh-task-board] session/projections failed while resolving the execution model route", error);
+			return;
+		}
+		if (typeof selection?.provider === "string" && selection.provider !== "" && typeof selection.model === "string" && selection.model !== "") return {
+			provider: selection.provider,
+			model: selection.model
+		};
+		return catalog?.default === void 0 ? void 0 : {
+			provider: catalog.default.provider,
+			model: catalog.default.model
+		};
+	}
+	/**
 	* Re-assert the pinned execution contract on a session and queue the task
 	* prompt. Shared by the fresh-session and reuse paths so both apply exactly
-	* the same permission/model pins before the prompt.
+	* the same permission/model/effort pins before the prompt. A session that
+	* refuses a selection carrying a catalog-confirmed effort throws here, so the
+	* prompt is never queued behind a run at the wrong level.
 	*/
-	async pinAndPrompt(sessionId, task, permission, context = {}, onGoalArmed, goalEnabled = false) {
+	async pinAndPrompt(sessionId, task, permission, context = {}, onGoalArmed, goalEnabled = false, catalog) {
 		if (permission !== void 0) {
 			if (this.commands === void 0) throw new Error("permission command dispatcher is unavailable");
 			const command = await this.commands.execute(sessionId, "/permission " + permission, AbortSignal.timeout(3e4));
 			if (command === void 0) throw new Error("permission command was not acknowledged");
 			if (command.kind !== "success") throw new Error(command.text ?? "permission command failed");
 		}
-		if (task.model !== void 0 && task.model.trim() !== "") {
-			const rawModel = task.model.trim();
-			const slashIdx = rawModel.indexOf("/");
-			const provider = slashIdx >= 0 ? rawModel.slice(0, slashIdx).trim() : void 0;
-			const modelId = slashIdx >= 0 ? rawModel.slice(slashIdx + 1).trim() : rawModel;
+		const requestedEffort = normalizeReasoningEffort(task.reasoningEffort);
+		const pinned = HostExecutionRunner.pinnedRoute(task.model);
+		const attachments = task.attachments ?? [];
+		const carriesImages = attachments.some((attachment) => attachment.kind === "image");
+		const route = pinned ?? (requestedEffort === void 0 && !carriesImages ? void 0 : await this.sessionRoute(sessionId, catalog));
+		if (route !== void 0) {
+			const routeLabel = `${route.provider === void 0 ? "" : route.provider + "/"}${route.model}`;
+			const decision = resolveReasoningEffort(requestedEffort, catalog, route);
+			if (decision.dropped !== void 0) console.warn(`[dsh-task-board] model route ${routeLabel} does not declare reasoning effort "${decision.dropped}"; session ${sessionId} runs at the model default`);
+			const declared = declaredRoute(catalog, route);
+			const provider = declared?.provider ?? route.provider;
+			const modelId = declared?.model ?? route.model;
+			if (carriesImages && provider !== void 0 && modelId !== void 0) await assertRouteAcceptsImages(this.faces.llm?.(), provider, modelId);
 			try {
 				await this.invoke("session", "selectModel", {
 					sessionId,
-					...provider ? { provider } : {},
-					model: modelId
+					...provider === void 0 ? {} : { provider },
+					model: modelId,
+					...decision.effort === void 0 ? {} : { reasoningEffort: decision.effort }
 				});
 			} catch (modelError) {
-				console.warn(`[dsh-task-board] failed to select model "${task.model}" for session ${sessionId}, falling back to default:`, modelError);
+				if (decision.effort !== void 0) throw new Error(`session ${sessionId} refused the model selection "${provider === void 0 ? modelId : provider + "/" + modelId}" with reasoning effort "${decision.effort}": ` + (modelError instanceof Error ? modelError.message : String(modelError)));
+				console.warn(`[dsh-task-board] failed to select model "${provider === void 0 ? modelId : provider + "/" + modelId}" for session ${sessionId}, falling back to default:`, modelError);
 			}
 		}
+		const resolved = await this.resolveAttachments(attachments);
+		const promptContext = resolved.files.length === 0 ? context : {
+			...context,
+			files: resolved.files
+		};
 		await this.invoke("session", "prompt", {
 			sessionId,
 			requestId: "task-board-" + crypto.randomUUID(),
 			mode: "queue",
 			content: [{
 				type: "text",
-				text: promptText(task, context)
-			}]
+				text: promptText(task, promptContext)
+			}, ...resolved.images]
 		});
-		const armed = await this.armGoal(sessionId, task, context, goalEnabled);
+		const armed = await this.armGoal(sessionId, task, promptContext, goalEnabled);
 		onGoalArmed?.(armed);
+	}
+	/**
+	* Resolve a card's attachments for one execution.
+	*
+	* A card without attachments resolves to nothing, even in a deployment that
+	* serves no attachment storage at all. A card WITH attachments cannot run
+	* without the storage: the run fails with a readable reason instead of
+	* silently dropping the attachment and running the card as if it carried
+	* none.
+	*/
+	async resolveAttachments(attachments) {
+		if (attachments.length === 0) return {
+			images: [],
+			files: []
+		};
+		const store = this.faces.attachments?.();
+		if (store === void 0) throw new Error("this deployment serves no attachment storage");
+		return await resolveExecutionAttachments(store, attachments);
 	}
 	/**
 	* Read the host's model catalog: the default route an unconfigured session
@@ -5766,15 +7199,18 @@ var HostExecutionRunner = class {
 			return {
 				outcome: "pending",
 				unreadable: true,
-				reason: "session/follow failed: " + failureText(error)
+				reason: "session/follow failed: " + failureText$1(error)
 			};
 		}
 		const openingEvents = opening.records.map((record) => ({ event: recordEvent(record) }));
 		const newestSeq = openingEvents.reduce((newest, entry) => newest === void 0 ? entry.event.seq : Math.max(newest, entry.event.seq), void 0);
-		if (newestSeq !== void 0 && this.scanMemos.get(sessionId) === newestSeq) return { outcome: "pending" };
+		const scannedThrough = this.scanMemos.get(sessionId);
+		if (newestSeq !== void 0 && scannedThrough === newestSeq) return { outcome: "pending" };
+		const oldestOpeningSeq = openingEvents.reduce((oldest, entry) => oldest === void 0 ? entry.event.seq : Math.min(oldest, entry.event.seq), void 0);
+		const coveredThrough = scannedThrough !== void 0 && oldestOpeningSeq !== void 0 && oldestOpeningSeq <= scannedThrough;
 		const events = [...openingEvents];
 		let beforeSeq;
-		let reachedExecutionBoundary = !opening.hasMore;
+		let reachedExecutionBoundary = !opening.hasMore || coveredThrough;
 		for (let page = 0; page < HISTORY_PAGE_LIMIT && !reachedExecutionBoundary; page += 1) {
 			let history;
 			try {
@@ -5789,17 +7225,17 @@ var HostExecutionRunner = class {
 				return {
 					outcome: "pending",
 					unreadable: true,
-					reason: "session/page failed: " + failureText(error)
+					reason: "session/page failed: " + failureText$1(error)
 				};
 			}
 			const pageEntries = pageEvents(history);
 			events.push(...pageEntries);
 			const oldestTime = pageEntries.reduce((oldest, entry) => oldest === void 0 ? entry.event.time : Math.min(oldest, entry.event.time), void 0);
-			if (!history.hasMore || oldestTime !== void 0 && oldestTime <= startedAt) {
+			const oldestSeq = pageEntries.reduce((oldest, entry) => oldest === void 0 ? entry.event.seq : Math.min(oldest, entry.event.seq), void 0);
+			if (!history.hasMore || oldestTime !== void 0 && oldestTime <= startedAt || scannedThrough !== void 0 && oldestSeq !== void 0 && oldestSeq <= scannedThrough) {
 				reachedExecutionBoundary = true;
 				break;
 			}
-			const oldestSeq = pageEntries.reduce((oldest, entry) => oldest === void 0 ? entry.event.seq : Math.min(oldest, entry.event.seq), void 0);
 			if (oldestSeq === void 0 || oldestSeq === beforeSeq) return { outcome: "pending" };
 			beforeSeq = oldestSeq;
 		}
@@ -5814,14 +7250,21 @@ var HostExecutionRunner = class {
 			return { outcome: "pending" };
 		}
 		this.scanMemos.delete(sessionId);
+		const closing = executionSummaryOf(events.map((entry) => entry.event), startedAt);
+		const carried = closing === void 0 ? {} : { summary: closing };
 		const reason = nonCompletedTurnEnd(turnEnd.event.data);
-		if (reason === void 0) return await this.goalVerdict(sessionId) ?? { outcome: "succeeded" };
+		if (reason === void 0) return {
+			...await this.goalVerdict(sessionId) ?? { outcome: "succeeded" },
+			...carried
+		};
 		return reason === "error" ? {
 			outcome: "failed",
-			error: "agent turn ended with an error"
+			error: "agent turn ended with an error",
+			...carried
 		} : {
 			outcome: "failed",
-			error: "agent turn ended without completing: " + reason
+			error: "agent turn ended without completing: " + reason,
+			...carried
 		};
 	}
 };
@@ -6128,6 +7571,71 @@ var PowerInhibitor = class {
 	}
 };
 //#endregion
+//#region src/core/wire-projection.ts
+/**
+* Keys stripped from an integration payload at every depth, as whole keys and
+* compared case-insensitively.
+*
+* `leaseToken` is the name `dsh-task-board-team` writes for its mirror-card
+* lease and `lease_token` the snake spelling, while the rest are the generic
+* names a bearer credential hides under. The match is the whole key rather than
+* a substring: a payload field that merely mentions one of these words while
+* holding something the provider's own UI renders is not a credential and must
+* keep travelling.
+*/
+const CREDENTIAL_KEYS = /* @__PURE__ */ new Set([
+	"leasetoken",
+	"lease_token",
+	"token",
+	"secret",
+	"password",
+	"apikey",
+	"credential"
+]);
+/** Copy one JSON value with every credential-keyed entry removed, at any depth. */
+function withoutCredentials(value) {
+	if (Array.isArray(value)) return value.map(withoutCredentials);
+	if (value === null || typeof value !== "object") return value;
+	const copy = {};
+	for (const [key, entry] of Object.entries(value)) {
+		if (CREDENTIAL_KEYS.has(key.toLowerCase())) continue;
+		copy[key] = withoutCredentials(entry);
+	}
+	return copy;
+}
+/**
+* The card as the wire may show it: the ledger record with its integration
+* entries copied and stripped.
+*
+* A card that carries no integrations is returned untouched, so a provider that
+* stores nothing sees exactly the record the board has always published.
+* @param task - the ledger record about to be serialized.
+* @returns the projected record; the ledger object is never mutated.
+*/
+function projectTaskForWire(task) {
+	const stored = task.integrations;
+	if (stored === void 0) return task;
+	const integrations = {};
+	for (const [id, payload] of Object.entries(stored)) integrations[id] = withoutCredentials(payload);
+	return {
+		...task,
+		integrations
+	};
+}
+/**
+* The snapshot as every read path serializes it: the HTTP `state` answer, the
+* HTTP `action` answer, and the remote bridge's `board.snapshot` all start from
+* the object this returns.
+* @param snapshot - the snapshot the Host service built from its live state.
+* @returns the same snapshot with each card projected through {@link projectTaskForWire}.
+*/
+function projectSnapshotForWire(snapshot) {
+	return {
+		...snapshot,
+		tasks: snapshot.tasks.map(projectTaskForWire)
+	};
+}
+//#endregion
 //#region src/host/extension-registry.ts
 /** Diagnosable refusal raised by the registry and the capability face. */
 var TaskBoardExtensionError = class extends Error {
@@ -6186,10 +7694,50 @@ function mergePayload(current, patch) {
 function readPayload(value) {
 	return isTaskBoardExtensionPayload(value) ? value : void 0;
 }
+/** One-line text of a delivery failure, for a diagnosable refusal. */
+function failureText(error) {
+	return error instanceof Error ? error.message : String(error);
+}
+/**
+* Validate one free text a provider pushes into an execution. Blank text would
+* queue an empty turn, and an unbounded one would let a single provider call
+* inject an arbitrarily large instruction, so both are refused here rather
+* than at the gateway.
+*/
+function extensionText(value, what) {
+	const text = typeof value === "string" ? value.trim() : "";
+	if (text === "") throw new TaskBoardExtensionError("invalid-text", `a ${what} must be a non-blank string`);
+	if (text.length > 4e3) throw new TaskBoardExtensionError("invalid-text", `a ${what} is limited to ${TASK_BOARD_MESSAGE_MAX_LENGTH} characters`);
+	return text;
+}
+/**
+* The session a follow-up message goes to, or the refusal that says why there
+* is none. The open execution owns the answer while one is running: delivering
+* into the previous conversation instead would answer a question the current
+* run never asked.
+*/
+function followUpTarget(task) {
+	if (task.executions.length === 0) return {
+		refusal: "not-executed",
+		message: `task ${task.id} has never executed, so it has no session to deliver to`
+	};
+	const open = [...task.executions].reverse().find((record) => record.endedAt === void 0);
+	if (open !== void 0) return open.sessionId === void 0 ? {
+		refusal: "session-unreachable",
+		message: `the current execution of task ${task.id} has not attached a session yet`
+	} : { sessionId: open.sessionId };
+	const settled = [...task.executions].reverse().find((record) => record.sessionId !== void 0);
+	return settled?.sessionId === void 0 ? {
+		refusal: "session-unreachable",
+		message: `task ${task.id} records no execution session to deliver to`
+	} : { sessionId: settled.sessionId };
+}
 var TaskBoardExtensionRegistry = class {
 	entries = /* @__PURE__ */ new Map();
 	ledger;
 	applyAction;
+	followUpDelivery;
+	reworkApply;
 	now;
 	uuid;
 	logger;
@@ -6200,6 +7748,8 @@ var TaskBoardExtensionRegistry = class {
 	constructor(options) {
 		this.ledger = options.ledger;
 		this.applyAction = options.apply;
+		this.followUpDelivery = options.followUp;
+		this.reworkApply = options.rework;
 		this.now = options.now ?? Date.now;
 		this.uuid = options.uuid ?? (() => crypto.randomUUID());
 		this.logger = options.logger ?? DEFAULT_LOGGER;
@@ -6403,8 +7953,14 @@ var TaskBoardExtensionRegistry = class {
 				create: (draft, options) => this.createTask(entry, draft, options),
 				patchContent: (taskId, patch) => this.patchContent(entry, taskId, patch),
 				setStatus: (taskId, status, initiator) => this.setStatus(entry, taskId, status, initiator),
-				linked: () => this.linkedTasks(entry)
+				linked: () => this.linkedTasks(entry),
+				rework: (taskId, instructions, initiator) => {
+					this.rework(entry, taskId, instructions, initiator);
+				}
 			},
+			sessions: { followUp: async (taskId, text) => {
+				await this.followUp(entry, taskId, text);
+			} },
 			integration: {
 				read: (taskId) => {
 					assertActive("read");
@@ -6445,6 +8001,9 @@ var TaskBoardExtensionRegistry = class {
 				...draft.status === void 0 ? {} : { status: draft.status },
 				...draft.parentId === void 0 ? {} : { parentId: draft.parentId },
 				...draft.workspaceId === void 0 ? {} : { workspaceId: draft.workspaceId },
+				...draft.mode === void 0 ? {} : { mode: draft.mode },
+				...draft.model === void 0 ? {} : { model: draft.model },
+				...draft.reasoningEffort === void 0 ? {} : { reasoningEffort: draft.reasoningEffort },
 				...payload === void 0 ? {} : { integrations: { [entry.extension.id]: payload } },
 				...options?.hidden === true ? { hidden: true } : {}
 			}
@@ -6455,9 +8014,7 @@ var TaskBoardExtensionRegistry = class {
 	patchContent(entry, taskId, patch) {
 		this.assertActive(entry, "patch content");
 		if (this.applyAction === void 0) throw new TaskBoardExtensionError("unavailable", "this deployment serves no action applier");
-		const task = this.ledger.getTask(taskId);
-		if (task === void 0) throw new TaskBoardExtensionError("task-not-found", `no task with id ${taskId}`);
-		if (!canEditTaskContent(task)) throw new TaskBoardExtensionError("content-frozen", `task ${taskId} has started executing; its content is read-only`);
+		if (!canEditTaskContent(this.requireTask(taskId))) throw new TaskBoardExtensionError("content-frozen", `task ${taskId} has started executing; its content is read-only`);
 		if ([
 			"title",
 			"description",
@@ -6479,6 +8036,57 @@ var TaskBoardExtensionRegistry = class {
 			status
 		}, initiator);
 	}
+	/**
+	* Queue one follow-up message into the session of a card's current or most
+	* recent execution.
+	*
+	* A running card is the point of the capability, so an open execution is not
+	* a refusal: the message is queued behind the turn that is already going. What
+	* IS refused is a card with no conversation to deliver into, and a session
+	* this Host no longer reaches — the delivery refuses, and that refusal must
+	* reach the provider as such instead of looking like a silent success.
+	*/
+	async followUp(entry, taskId, text) {
+		this.assertActive(entry, "deliver a follow-up message");
+		const task = this.requireTask(taskId);
+		const message = extensionText(text, "follow-up message");
+		if (task.archivedAt !== void 0) throw new TaskBoardExtensionError("task-archived", `task ${taskId} is archived; an archived card's execution is closed`);
+		const target = followUpTarget(task);
+		if ("refusal" in target) throw new TaskBoardExtensionError(target.refusal, target.message);
+		if (this.followUpDelivery === void 0) throw new TaskBoardExtensionError("unavailable", "this deployment serves no session delivery");
+		try {
+			await this.followUpDelivery(target.sessionId, message);
+		} catch (error) {
+			throw new TaskBoardExtensionError("session-unreachable", `session ${target.sessionId} of task ${taskId} did not accept the message: ${failureText(error)}`);
+		}
+	}
+	/**
+	* Re-run an executed card in its own session with rework instructions.
+	*
+	* The registry decides only what it can read from the ledger — the card
+	* exists, is not archived, is not running, and has a conversation to continue
+	* — and then hands the request to the board's own run path, so the running
+	* lock, the permission confirmation, the acceptance contract and the spend cap
+	* keep judging it. A board refusal surfaces unchanged, exactly as it does for
+	* {@link setStatus}, because those are the board's own words.
+	*/
+	rework(entry, taskId, instructions, initiator) {
+		this.assertActive(entry, "rework a task");
+		if (this.reworkApply === void 0) throw new TaskBoardExtensionError("unavailable", "this deployment serves no rework applier");
+		const task = this.requireTask(taskId);
+		const text = extensionText(instructions, "rework instructions");
+		if (task.archivedAt !== void 0) throw new TaskBoardExtensionError("task-archived", `task ${taskId} is archived; an archived card is read-only`);
+		if (task.executions.some((record) => record.endedAt === void 0)) throw new TaskBoardExtensionError("running", `task ${taskId} is still running; a card is reworked once its run settles`);
+		if (task.executions.length === 0) throw new TaskBoardExtensionError("not-executed", `task ${taskId} has never executed, so there is no run to rework`);
+		if (!task.executions.some((record) => record.sessionId !== void 0)) throw new TaskBoardExtensionError("session-unreachable", `task ${taskId} records no execution session to continue`);
+		this.reworkApply(taskId, text, initiator);
+	}
+	/** One task by id, or the refusal that names the unknown id. */
+	requireTask(taskId) {
+		const task = this.ledger.getTask(taskId);
+		if (task === void 0) throw new TaskBoardExtensionError("task-not-found", `no task with id ${taskId}`);
+		return task;
+	}
 	linkedTasks(entry) {
 		const id = entry.extension.id;
 		const result = [];
@@ -6495,8 +8103,7 @@ var TaskBoardExtensionRegistry = class {
 	writeIntegration(entry, taskId, payload) {
 		this.assertActive(entry, "write integration data");
 		if (!isTaskBoardExtensionPayload(payload)) throw new TaskBoardExtensionError("invalid-payload", "integration payload must be a pure JSON object within the size limit");
-		const task = this.ledger.getTask(taskId);
-		if (task === void 0) throw new TaskBoardExtensionError("task-not-found", `no task with id ${taskId}`);
+		const task = this.requireTask(taskId);
 		const id = entry.extension.id;
 		const next = mergePayload(readPayload(task.integrations?.[id]), payload);
 		if (!isTaskBoardExtensionPayload(next)) throw new TaskBoardExtensionError("invalid-payload", `merged integration payload for ${id} exceeds ${taskBoardPayloadBytes(next) ?? "?"} bytes`);
@@ -6556,6 +8163,20 @@ const MAX_TIMER_DELAY_MS = 2147483647;
 */
 const UNREADABLE_SETTLE_POLLS = 24;
 /**
+* Why a member of a run never started: the Host stopped while its launch was
+* still waiting for an admission slot. Recorded rather than left open, so the
+* card leaves the running column instead of waiting for the next Host start's
+* interrupted-start recovery.
+*/
+const ABANDONED_LAUNCH_REASON = "host stopped before this execution started";
+/**
+* Why a rework could not launch: it redoes work in the card's own
+* conversation, so a session the Host cannot continue means there is nothing to
+* send the reviewer's instructions into. Starting a fresh conversation instead
+* would hand those instructions to an agent that never saw the work.
+*/
+const REWORK_SESSION_REASON = "rework: the card's previous execution session is not present and idle in the host session roster, so there is no conversation to send the rework instructions into";
+/**
 * Why an enforced goal execution settled failed while its acceptance DID run:
 * attempts were recorded and none of them passed. The judge answered about the
 * work and the work did not pass.
@@ -6613,10 +8234,74 @@ const PROCESS_TIMERS = {
 		};
 	}
 };
+/**
+* The new-card defaults a snapshot publishes, or undefined when this
+* deployment configures none. A target the board configures nothing for is
+* omitted instead of published blank, so the browser can tell "no default
+* model" from "a blank one" (only a hand-edited settings document can express
+* the latter).
+*/
+function cardDefaultsOf(defaults) {
+	const mode = normalizeTargetId(defaults.mode);
+	const permission = normalizeTargetId(defaults.permission);
+	const model = normalizeTargetId(defaults.model);
+	const reasoningEffort = normalizeTargetId(defaults.reasoningEffort);
+	const published = {
+		...mode === void 0 ? {} : { mode },
+		...isTaskPermission(permission) ? { permission } : {},
+		...model === void 0 ? {} : { model },
+		...reasoningEffort === void 0 ? {} : { reasoningEffort }
+	};
+	return Object.keys(published).length === 0 ? void 0 : published;
+}
+/**
+* Every action kind this board accepts, keyed by the kind itself.
+*
+* Written as a total record of `TaskBoardAction['kind']` on purpose: a new member
+* of that union does not compile until it is listed here, so the table cannot
+* drift behind the protocol. `apply()` validates against it because a caller
+* reaching the board through the in-process capability face forwards its action
+* object verbatim, with no envelope parser in front of it — the HTTP route was the
+* only entrance before that face existed, and its parser is what used to turn an
+* unknown kind into a refusal.
+*/
+const ACTION_KINDS = {
+	import: true,
+	create: true,
+	update: true,
+	delete: true,
+	move: true,
+	archive: true,
+	restore: true,
+	settle: true,
+	"reset-verification": true,
+	"record-external-outcome": true,
+	"set-schedule": true,
+	run: true,
+	rerun: true,
+	rework: true,
+	"confirm-permission": true,
+	"set-parent": true,
+	"rename-tag": true,
+	"delete-tag": true,
+	"extension-action": true
+};
+/**
+* The attachments an action carries, or undefined when it carries none.
+*
+* Only a create and an update can carry attachments: an import refuses them
+* outright, and every other action kind has no attachment surface at all.
+*/
+function attachmentsOfAction(action) {
+	if (action.kind === "create") return action.input.attachments;
+	if (action.kind === "update") return action.patch.attachments ?? void 0;
+}
 var TaskBoardHostService = class {
 	ledger;
 	runner;
 	power;
+	/** The official attachment storage, read live so a late mount is honoured. */
+	attachmentStore;
 	listeners = /* @__PURE__ */ new Set();
 	/** The one recurring timer: the session-roster poll. */
 	pollTimer;
@@ -6634,6 +8319,12 @@ var TaskBoardHostService = class {
 	pollInFlight = false;
 	active = true;
 	/**
+	* Admission control for the session-creating half of a run: one board action
+	* opens a whole subtree, and this is what keeps the Host from asking DSH for
+	* every member's session at once (see {@link LaunchAdmissionQueue}).
+	*/
+	launches;
+	/**
 	* Consecutive unreadable-history polls per open execution (see
 	* {@link noteUnreadableInspection}). Cleared as soon as an inspection
 	* resolves, so a transient reader failure never fails a card.
@@ -6642,10 +8333,24 @@ var TaskBoardHostService = class {
 	preventIdleSleep = false;
 	verificationSettings;
 	verificationCatalog;
-	team;
 	timers;
 	/** Live reader of the global native-/goal switch; frozen per execution. */
 	goalRunEnabled;
+	/** Live reader of the deployment's new-card defaults (published and applied per create). */
+	cardDefaults;
+	/**
+	* Live reader of the run-launch admission width: how many launches may be in
+	* flight at once. Read at every admission, so a settings edit bounds the next
+	* launch without remounting the row. Absent means the default.
+	*/
+	runLaunchWidth;
+	/**
+	* Live reader of the daily token cap; 0 means no gate. Read at each run
+	* action, so closing or raising the cap binds the next action.
+	*/
+	spendBudgetTokens;
+	/** Today's measured spend: absent measurement reads as "cannot see", never as zero. */
+	spendUsedToday;
 	lastPowerJson = "";
 	now;
 	/** The deployment's workspaces, consulted to resolve a card that pins none. */
@@ -6659,15 +8364,27 @@ var TaskBoardHostService = class {
 	constructor(gateway, options = {}) {
 		this.ledger = options.ledger ?? new HostTaskLedger(void 0, void 0, {
 			sessionDefaultPermission: options.sessionDefaultPermission,
-			maxSubtaskDepth: options.maxSubtaskDepth
+			maxSubtaskDepth: options.maxSubtaskDepth,
+			cardDefaults: options.cardDefaults,
+			spendBudgetTokens: options.spendBudgetTokens,
+			spendUsedToday: options.spendUsedToday
 		});
-		this.runner = new HostExecutionRunner(gateway, options.commandDispatcher, options.workspaceRegistry, void 0, options.operatorPeer);
+		this.attachmentStore = options.attachments ?? (() => void 0);
+		this.runner = new HostExecutionRunner(gateway, options.commandDispatcher, options.workspaceRegistry, void 0, options.ownerPeer, {
+			attachments: this.attachmentStore,
+			llm: options.modelInfo,
+			...options.legacyAgentTeams === void 0 ? {} : { legacyAgentTeams: options.legacyAgentTeams }
+		});
 		this.workspaceRegistry = options.workspaceRegistry;
-		this.team = options.team;
 		this.timers = options.timers ?? PROCESS_TIMERS;
 		this.power = options.power ?? new PowerInhibitor();
 		this.now = options.now ?? Date.now;
 		this.goalRunEnabled = options.goalRunEnabled ?? (() => false);
+		this.cardDefaults = options.cardDefaults ?? (() => ({}));
+		this.runLaunchWidth = options.runLaunchWidth ?? (() => 3);
+		this.spendBudgetTokens = options.spendBudgetTokens ?? (() => 0);
+		this.spendUsedToday = options.spendUsedToday ?? ((now) => usedTokensToday(now));
+		this.launches = new LaunchAdmissionQueue(() => normalizeRunLaunchWidth(this.runLaunchWidth()));
 		this.verificationSettings = options.verificationSettings ?? (() => ({
 			enabled: false,
 			model: "",
@@ -6677,6 +8394,14 @@ var TaskBoardHostService = class {
 		this.extensions = new TaskBoardExtensionRegistry({
 			ledger: this.ledger,
 			apply: (action, initiator) => this.applyBoardAction(crypto.randomUUID(), action, initiator),
+			followUp: (sessionId, text) => this.runner.followUp(sessionId, text),
+			rework: (taskId, instructions, initiator) => {
+				this.applyBoardAction(crypto.randomUUID(), {
+					kind: "rework",
+					taskId,
+					instructions
+				}, initiator);
+			},
 			now: this.now
 		});
 		installStreamErrorGuards();
@@ -6741,21 +8466,32 @@ var TaskBoardHostService = class {
 		} else if (!active) this.clearScheduleTimer();
 		this.emit();
 	}
+	/**
+	* The board's published snapshot.
+	*
+	* Every read path serializes this object — the HTTP `state` answer, the
+	* `action` answer through {@link apply}, and the remote bridge's
+	* `board.snapshot` — so a provider's integration credentials are stripped
+	* once, here, instead of at each exit. The ledger keeps them verbatim for the
+	* provider's own in-process read.
+	*/
 	snapshot() {
 		const state = this.ledger.state();
 		const published = this.extensions.published();
-		return {
-			schemaVersion: 6,
+		const cardDefaults = cardDefaultsOf(this.cardDefaults());
+		return projectSnapshotForWire({
+			schemaVersion: 7,
 			revision: state.revision,
 			tasks: state.tasks,
 			scheduler: state.scheduler,
 			power: this.power.snapshot(),
 			sessionDefaultPermission: this.ledger.sessionDefaultPermission,
 			maxSubtaskDepth: this.ledger.maxSubtaskDepth,
-			teamRunAvailable: this.team !== void 0,
 			goalRunEnabled: this.goalRunEnabled(),
+			...cardDefaults === void 0 ? {} : { cardDefaults },
+			...this.attachmentStore() === void 0 ? {} : { attachmentLimits: publishedAttachmentLimits(this.attachmentStore()) },
 			...Object.keys(published).length === 0 ? {} : { extensions: published }
-		};
+		});
 	}
 	/**
 	* Admit one external provider. Idempotent by extension id; the returned
@@ -6829,33 +8565,82 @@ var TaskBoardHostService = class {
 			}
 		};
 	}
+	/**
+	* Apply an action whose attachments the Host proved against the official
+	* storage first.
+	*
+	* This is the board's trust boundary for attachment metadata: the browser
+	* asserts the size, the type and the digest of every object it uploaded, and
+	* the Host reads the stored objects back (an image is compared, a file is
+	* streamed and its digest recomputed) before the ledger commits the claim.
+	* An attachment the storage cannot prove is refused, so a spoofed client
+	* claim never becomes a stored fact.
+	*/
+	async applyVerified(requestId, action, initiator) {
+		if (!this.active) throw new Error("task board is disabled");
+		if (action.kind === "extension-action") return await this.apply(requestId, action, initiator);
+		await this.verifyActionAttachments(action);
+		return projectSnapshotForWire(this.applyBoardAction(requestId, action, initiator, true));
+	}
+	/**
+	* Prove every attachment of an action against the official storage.
+	*
+	* An action without attachments is untouched: the board keeps working in a
+	* deployment that serves no attachment storage at all.
+	*/
+	async verifyActionAttachments(action) {
+		const attachments = attachmentsOfAction(action);
+		if (attachments === void 0 || attachments.length === 0) return;
+		const store = this.attachmentStore();
+		if (store === void 0) throw new Error("this deployment serves no attachment storage");
+		await verifyAttachments(store, attachments);
+	}
 	apply(requestId, action, initiator) {
 		if (!this.active) throw new Error("task board is disabled");
+		const kind = action?.kind;
+		if (typeof kind !== "string" || !Object.hasOwn(ACTION_KINDS, kind)) throw new Error(`unknown task board action kind: ${String(kind)}`);
 		if (action.kind === "extension-action") return this.handleExtensionAction(action);
-		return this.applyBoardAction(requestId, action, initiator);
+		return projectSnapshotForWire(this.applyBoardAction(requestId, action, initiator));
 	}
 	/**
 	* Apply one board-owned action with every gate intact. Provider capability
 	* calls and the same-origin wire both land here, so the two surfaces can
 	* never disagree about a card.
 	*/
-	applyBoardAction(requestId, action, initiator) {
+	applyBoardAction(requestId, action, initiator, attachmentVerified = false) {
+		if (!attachmentVerified && attachmentsOfAction(action) !== void 0) throw new Error("attachments must be applied through the verified attachment action route");
 		const before = this.statusMap();
-		if (this.team === void 0 && (action.kind === "run" || action.kind === "rerun")) {
-			if (this.ledger.state().tasks.find((item) => item.id === action.taskId)?.teamRun === true) throw new Error("Agent Teams is unavailable in this deployment");
-		}
+		if (action.kind === "run" || action.kind === "rerun" || action.kind === "rework") this.assertSpendCap();
 		const result = this.ledger.applyRequest(requestId, this.withInheritedWorkspace(action, initiator), initiator);
 		if (result.runs !== void 0) this.dispatchRuns(result.runs);
 		if (SCHEDULE_WRITE_ACTIONS.has(action.kind)) this.refreshSchedule();
 		this.emitStatusChanges(before, initiator);
 		if (action.kind === "delete") this.extensions.emitTaskDeleted({ taskId: action.taskId });
 		return {
-			schemaVersion: 6,
+			schemaVersion: 7,
 			revision: result.state.revision,
 			tasks: result.state.tasks,
 			scheduler: result.state.scheduler,
 			power: this.power.snapshot()
 		};
+	}
+	/**
+	* Refuse a run whose day already spent the cap.
+	*
+	* A cap of 0 — the shipped default — answers before the measurement is read:
+	* no ledger file is opened and nothing is summed, which is what keeps a board
+	* that never configured a cap identical to the one before it existed.
+	*
+	* The refusal is a thrown message rather than a code: the wire hands its text
+	* to the caller as board-refused, exactly like every other refusal this board
+	* makes.
+	*/
+	assertSpendCap() {
+		const cap = this.spendBudgetTokens();
+		if (!(cap > 0)) return;
+		const used = this.spendUsedToday(this.now());
+		if (used === void 0 || !spendCapReached(used, cap)) return;
+		throw new Error(spendCapMessage(used, cap));
 	}
 	/** Route one provider action and answer the resulting board snapshot. */
 	async handleExtensionAction(action) {
@@ -6886,6 +8671,8 @@ var TaskBoardHostService = class {
 	}
 	dispose() {
 		this.disposed = true;
+		const abandoned = this.launches.drain();
+		if (abandoned.length > 0) safeConsoleError(`[dsh-task-board] ${abandoned.length} run member(s) were still waiting for a launch slot when the Host stopped; each is settled as cancelled`);
 		this.extensions.dispose();
 		this.clearScheduleTimer();
 		this.clearPollBackoff();
@@ -6895,94 +8682,102 @@ var TaskBoardHostService = class {
 		this.ledger.dispose();
 		this.listeners.clear();
 	}
-	async launch(opened, others = [], schedule) {
+	async launch(opened, schedule, freezeContract) {
 		/** The session this launch attached to the execution, once it exists. */
 		let attached;
 		try {
-			const team = opened.task.teamRun === true;
-			const reuseSessionId = team ? void 0 : await this.reuseSessionFor(opened.task);
-			const peers = others.length === 0 ? void 0 : others.map((other) => ({
-				id: other.task.id,
-				title: other.task.title,
-				...team ? { name: teammateName(other.task.title, other.execution.runGroupId ?? other.task.id, other.task.id) } : {}
-			}));
-			const promptContext = peers === void 0 && schedule === void 0 ? void 0 : {
-				...peers === void 0 ? {} : { peers },
-				...team ? { team: true } : {},
-				...schedule === void 0 ? {} : { schedule }
+			const forcedPreset = this.ledger.hasOutstandingDescendants(opened.task.id) ? LIANGSHEN_PRESET_ID : void 0;
+			const descendants = forcedPreset === void 0 ? [] : this.ledger.outstandingDescendants(opened.task.id);
+			const rework = opened.execution.rework;
+			let reuseSessionId;
+			if (rework === void 0) reuseSessionId = forcedPreset === void 0 ? await this.reuseSessionFor(opened.task) : void 0;
+			else {
+				if (forcedPreset !== void 0) throw new Error(REWORK_SESSION_REASON);
+				reuseSessionId = await this.reworkSessionFor(opened.task);
+			}
+			const contextParts = {
+				...descendants.length === 0 ? {} : { descendants: descendants.map((descendant) => ({
+					id: descendant.id,
+					title: descendant.title,
+					status: descendant.status
+				})) },
+				...schedule === void 0 ? {} : { schedule },
+				...rework === void 0 ? {} : { rework }
 			};
-			const settings = this.verificationSettings();
-			const globalGoalEnabled = this.goalRunEnabled() === true;
+			const promptContext = Object.keys(contextParts).length === 0 ? void 0 : contextParts;
+			const { settings, globalGoalEnabled, catalog } = await (freezeContract ?? (() => this.freezeRunContract()))();
 			const goalEnabled = globalGoalEnabled && opened.task.goalRun === true;
 			const skippedBy = opened.task.skipVerification === true ? "skipped" : "disabled";
 			const contract = resolveContract({
 				...settings,
 				enabled: settings.enabled && opened.task.skipVerification !== true
-			}, await this.verificationCatalog());
+			}, catalog);
 			const notArmed = globalGoalEnabled ? "goal-unavailable" : "goal-disabled";
 			const initial = {
 				contract,
 				attempts: [],
-				applicability: team ? "team-member" : !contract.enabled ? skippedBy : notArmed
+				applicability: !contract.enabled ? skippedBy : notArmed
 			};
 			this.ledger.setVerification(opened.task.id, opened.execution.id, initial);
 			const sessionId = await this.runner.launch(opened.task, {
 				...reuseSessionId === void 0 ? {} : { reuseSessionId },
+				...forcedPreset === void 0 ? {} : { agentPreset: forcedPreset },
 				...promptContext === void 0 ? {} : { promptContext },
 				goalEnabled,
+				catalog,
 				onSession: (id) => {
 					attached = id;
 					this.ledger.attachSession(opened.task.id, opened.execution.id, id);
 				},
 				onGoalArmed: (armed) => {
-					this.setApplicability(opened.task.id, opened.execution.id, team ? "team-member" : !contract.enabled ? skippedBy : armed ? "enforced" : notArmed);
+					this.setApplicability(opened.task.id, opened.execution.id, !contract.enabled ? skippedBy : armed ? "enforced" : notArmed);
 				}
 			});
 			if (attached === void 0) this.ledger.attachSession(opened.task.id, opened.execution.id, sessionId);
-			if (team) for (const teammate of others) this.scheduleTeammate(teammate, sessionId);
 		} catch (error) {
 			const launchedSession = error instanceof SessionLaunchError ? error.sessionId : void 0;
 			if (launchedSession !== void 0) this.ledger.attachSession(opened.task.id, opened.execution.id, launchedSession);
-			if (schedule !== void 0 && attached === void 0 && launchedSession === void 0) {
-				this.ledger.refundScheduledOccurrence(opened.task.id, this.now());
-				this.refreshSchedule();
-			}
+			if (schedule !== void 0 && attached === void 0 && launchedSession === void 0) this.refundUnstartedSchedule(opened.task.id);
 			this.settleAndNotify(opened.task.id, opened.execution.id, "failed", error instanceof Error ? error.message : String(error));
 		}
-	}
-	scheduleTeammate(opened, leadSessionId) {
-		this.spawnTeammate(opened, leadSessionId).catch((error) => {
-			safeConsoleError("[dsh-task-board] teammate spawn settlement failed", error);
-		});
 	}
 	/**
-	* Spawn one teammate inside the Lead session and attach the teammate's
-	* session to the subtask execution, so the existing session monitor settles
-	* it from the teammate's own turn like any other execution. A spawn that
-	* fails settles the subtask as failed immediately, which then folds into the
-	* Lead's cascade verdict.
+	* Read the acceptance contract one run group freezes, in the order the board
+	* has always read it: the acceptance settings, then the global native-/goal
+	* switch, then the model catalog that both resolves the contract's route and
+	* decides the reasoning effort the session may be given.
 	*/
-	async spawnTeammate(opened, leadSessionId) {
-		const team = this.team;
-		if (team === void 0) {
-			this.settleAndNotify(opened.task.id, opened.execution.id, "failed", "Agent Teams is unavailable in this deployment");
-			return;
-		}
-		try {
-			const member = await team.spawn({
-				leadSessionId,
-				name: teammateName(opened.task.title, opened.execution.runGroupId ?? opened.task.id, opened.task.id),
-				description: opened.task.title,
-				prompt: promptText(opened.task)
+	async freezeRunContract() {
+		return {
+			settings: this.verificationSettings(),
+			globalGoalEnabled: this.goalRunEnabled() === true,
+			catalog: await this.verificationCatalog()
+		};
+	}
+	/**
+	* A {@link RunContractFreezer} that reads once and hands the SAME value to
+	* every later caller of one run group. A read that fails is not cached: the
+	* next member reads again, exactly as a per-execution read would have.
+	*/
+	contractFreezerForRunGroup() {
+		let pending;
+		return () => {
+			pending ??= this.freezeRunContract().catch((error) => {
+				pending = void 0;
+				throw error;
 			});
-			if (member.sessionId === void 0 || member.sessionId === "") {
-				this.settleAndNotify(opened.task.id, opened.execution.id, "failed", member.error ?? "teammate provisioning failed");
-				return;
-			}
-			this.ledger.attachSession(opened.task.id, opened.execution.id, member.sessionId);
-		} catch (error) {
-			this.settleAndNotify(opened.task.id, opened.execution.id, "failed", error instanceof Error ? error.message : String(error));
-		}
+			return pending;
+		};
+	}
+	/**
+	* Give back the occurrence a launch consumed, for a launch that never reached
+	* a session: a failed launch, or one the Host abandoned while it was still
+	* waiting for an admission slot. A manual run, and a launch that DID reach a
+	* session, are never refunded.
+	*/
+	refundUnstartedSchedule(taskId) {
+		this.ledger.refundScheduledOccurrence(taskId, this.now());
+		this.refreshSchedule();
 	}
 	/**
 	* One roster pass, and whether it could read the session tree.
@@ -7034,10 +8829,13 @@ var TaskBoardHostService = class {
 	* reads no roster at all, and a read that fails mints a fresh conversation
 	* exactly as an unknown roster always did.
 	* @param task - the task about to run.
+	* @param force - continue the settled session regardless of the card's own
+	*   opt-in (a rework), which the reuse rule accepts without waiving any of its
+	*   evidence conditions.
 	* @returns the session id to continue in, or undefined for a fresh session.
 	*/
-	async reuseSessionFor(task) {
-		if (task.reuseSession !== true) return void 0;
+	async reuseSessionFor(task, force) {
+		if (task.reuseSession !== true && force !== true) return void 0;
 		let running;
 		try {
 			running = await this.runner.listRunning();
@@ -7047,7 +8845,24 @@ var TaskBoardHostService = class {
 			return;
 		}
 		if (!running.known) return void 0;
-		return reusableSessionId(task, new Set(running.items.filter((item) => !item.running).map((item) => item.sessionId)));
+		return reusableSessionId(task, new Set(running.items.filter((item) => !item.running).map((item) => item.sessionId)), force === true ? { force: true } : {});
+	}
+	/**
+	* The session a rework continues, or the refusal that says why it cannot.
+	*
+	* A rework exists for one conversation — the one the reviewer read before
+	* sending the work back — so the evidence that this Host still reaches it is
+	* required, exactly as it is for a card that opted into reuse. What a rework
+	* does NOT get is the fresh-conversation fallback: launching there would hand
+	* the reviewer's instructions to an agent that never saw the work, so the run
+	* fails with a readable reason instead.
+	* @param task - the card being reworked.
+	* @returns the session id this rework continues in.
+	*/
+	async reworkSessionFor(task) {
+		const sessionId = await this.reuseSessionFor(task, true);
+		if (sessionId === void 0) throw new Error(REWORK_SESSION_REASON);
+		return sessionId;
 	}
 	/** Reuse the session list this poll already fetched: one list RPC per tick, not 1 + E. */
 	async reconcileExecutions(sessions, executions) {
@@ -7067,10 +8882,10 @@ var TaskBoardHostService = class {
 				}
 				this.unreadablePolls.delete(execution.executionId);
 				if (result.outcome === "succeeded" && verificationRequired(verification) && passedAttempt(verification) === void 0) {
-					this.settleAndNotify(execution.taskId, execution.executionId, "failed", verificationNeverInvoked(verification) ? NEVER_INVOKED_VERIFICATION_REASON : verificationOnlyInvalid(verification) ? INVALID_ONLY_VERIFICATION_REASON : NO_MATCHING_PASS_VERIFICATION_REASON);
+					this.settleAndNotify(execution.taskId, execution.executionId, "failed", verificationNeverInvoked(verification) ? NEVER_INVOKED_VERIFICATION_REASON : verificationOnlyInvalid(verification) ? INVALID_ONLY_VERIFICATION_REASON : NO_MATCHING_PASS_VERIFICATION_REASON, result.summary);
 					continue;
 				}
-				this.settleAndNotify(execution.taskId, execution.executionId, result.outcome, "error" in result ? result.error : void 0);
+				this.settleAndNotify(execution.taskId, execution.executionId, result.outcome, "error" in result ? result.error : void 0, result.summary);
 			} catch {}
 		}
 		const open = new Set(executions.map((execution) => execution.executionId));
@@ -7085,20 +8900,14 @@ var TaskBoardHostService = class {
 	* ancestor of it — in the running column with no way out. The first poll of
 	* each streak is logged, so the Host log names the session.
 	*/
-	settleAndNotify(taskId, executionId, outcome, error) {
-		const before = this.ledger.getTask(taskId);
-		if (before?.executions.find((entry) => entry.id === executionId)?.endedAt !== void 0) {
-			this.ledger.settle(taskId, executionId, outcome, error);
+	settleAndNotify(taskId, executionId, outcome, error, summary) {
+		if (this.ledger.getTask(taskId)?.executions.find((entry) => entry.id === executionId)?.endedAt !== void 0) {
+			this.ledger.settle(taskId, executionId, outcome, error, summary);
 			return;
 		}
-		const previousStatus = before?.status;
-		this.ledger.settle(taskId, executionId, outcome, error);
-		const task = this.ledger.getTask(taskId);
-		if (task !== void 0 && previousStatus !== void 0 && previousStatus !== task.status) this.extensions.emitStatusChanged({
-			taskId,
-			status: task.status,
-			previous: previousStatus
-		});
+		const statuses = this.statusMap();
+		this.ledger.settle(taskId, executionId, outcome, error, summary);
+		this.emitStatusChanges(statuses);
 		this.extensions.emitExecutionSettled({
 			taskId,
 			executionId,
@@ -7238,18 +9047,18 @@ var TaskBoardHostService = class {
 		return this.ledger.armedScheduleCount();
 	}
 	/**
-	* Launch one run set. The root goes first and receives the run shape in its
-	* prompt (which members this run opens, and how they run); every plain-cascade
-	* member then launches on its own so one refused participant cannot hold the
-	* others back. A team run's members are spawned inside the root's Lead
-	* session instead, once that session exists.
+	* Launch the one run a run request opened. A run request names one card and
+	* opens one execution for it; the card's own session dispatches its subtasks
+	* as subagents, so nothing else is enqueued here.
+	*
+	* The launch still goes through the admission queue, which admits at most
+	* `runLaunchWidth` launches at a time — that bound now applies across
+	* concurrent runs rather than across the members of one run.
 	*/
 	dispatchRuns(runs, schedule) {
-		if (runs.length === 0) return;
-		const root = runs.find((run) => run.dispatch !== "teammate") ?? runs[0];
-		const others = runs.filter((run) => run !== root);
-		this.scheduleLaunch(root, others, schedule);
-		for (const run of others) if (run.dispatch !== "teammate") this.scheduleLaunch(run, [], schedule);
+		const root = runs[0];
+		if (root === void 0) return;
+		this.scheduleLaunch(root, schedule, this.contractFreezerForRunGroup());
 	}
 	/**
 	* Move one execution's applicability without touching its frozen contract or
@@ -7263,10 +9072,50 @@ var TaskBoardHostService = class {
 			applicability
 		});
 	}
-	scheduleLaunch(opened, others = [], schedule) {
-		this.launch(opened, others, schedule).catch((error) => {
+	scheduleLaunch(opened, schedule, freezeContract) {
+		this.enqueueLaunch(opened, () => this.launch(opened, schedule, freezeContract).catch((error) => {
 			safeConsoleError("[dsh-task-board] execution launch settlement failed", error);
-		});
+		}), schedule);
+	}
+	/**
+	* Hand one launch to the admission queue, or abandon it on the spot when the
+	* Host is already stopping: a queue entry created after {@link dispose} would
+	* otherwise never be drained, and its card would sit in the running column
+	* until the next Host start recovered it.
+	*/
+	enqueueLaunch(opened, start, schedule) {
+		const launch = {
+			groupId: opened.execution.runGroupId ?? opened.task.id,
+			start: async () => {
+				if (!this.isExecutionOpen(opened)) return;
+				await start();
+			},
+			abandon: () => this.abandonQueuedRun(opened, schedule)
+		};
+		if (this.disposed) {
+			launch.abandon();
+			return;
+		}
+		this.launches.enqueue(launch);
+	}
+	/** Whether one opened execution is still open in the ledger. */
+	isExecutionOpen(opened) {
+		const execution = this.ledger.getTask(opened.task.id)?.executions.find((entry) => entry.id === opened.execution.id);
+		return execution !== void 0 && execution.endedAt === void 0;
+	}
+	/**
+	* Take one launch that never started out of the running column.
+	*
+	* Settled as CANCELLED, not failed: nothing about the run's work went wrong —
+	* the Host stopped before the launch got a slot, which is exactly what the
+	* next start's interrupted-start recovery records for an execution that never
+	* reached a session. A scheduled occurrence that never reached a session is
+	* refunded on the same terms as any other pre-session failure, so a run the
+	* Host never started cannot silently spend the user's run budget.
+	*/
+	abandonQueuedRun(opened, schedule) {
+		if (schedule !== void 0) this.refundUnstartedSchedule(opened.task.id);
+		this.settleAndNotify(opened.task.id, opened.execution.id, "cancelled", ABANDONED_LAUNCH_REASON);
 	}
 	schedulePoll() {
 		if (this.pollInFlight || this.disposed) return;
@@ -7731,6 +9580,7 @@ function taskSummary(task, tasks, sessionDefault) {
 		...task.mode === void 0 ? {} : { mode: task.mode },
 		...task.permission === void 0 ? {} : { permission: task.permission },
 		...task.model === void 0 ? {} : { model: task.model },
+		...task.reasoningEffort === void 0 ? {} : { reasoningEffort: task.reasoningEffort },
 		...task.reuseSession === true ? { reuseSession: true } : {},
 		...task.teamRun === true ? { teamRun: true } : {},
 		...task.goalRun === true ? { goalRun: true } : {},
@@ -7827,8 +9677,8 @@ function buildSetParentTool(host) {
 		description: [
 			"Attach an existing task under a parent (making it a subtask) or detach it back to the root board by setting its parentId.",
 			"Pass an empty parentId to detach.",
-			"The Host refuses the link when the parent is unknown or archived, when the moved task is one of its own descendants, when the resulting depth exceeds the deployment subtask limit (default one level, maximum three), or while the task has an unsettled execution (its link may still be a running cascade parent pointer).",
-			"Running a task runs its whole subtree concurrently; a parent card settles only after its own turn and every direct subtask settle."
+			"The Host refuses the link when the parent is unknown or archived, when the moved task is one of its own descendants, when the resulting depth exceeds the deployment subtask limit (default one level, maximum three), or while the task has an unsettled execution (its link may still be a stored run group parent pointer).",
+			"Running a task opens one run group over its subtree concurrently and leaves a subtask that already sits in the done column alone; a parent card settles only after its own turn and every direct subtask it opened have settled."
 		].join(" "),
 		parameters: {
 			taskId: {
@@ -7870,17 +9720,16 @@ function buildRunTool(host) {
 		name: "task_board_run",
 		description: [
 			"Run a task on the board now, or re-run a settled one.",
-			"Running a task also runs its whole subtask tree CONCURRENTLY: the Host opens one real DSH session per member under one run group, each replaying its card pinned workspace, agent preset, permission and model; a subtask that does not pin them inherits its nearest ancestor.",
-			"The parent card stays in the running column until its own turn and every direct subtask have settled, and it fails when any member failed; one failing subtask never stops the others.",
+			"Running a card opens ONE session for that card: no session is opened for its subtasks, and the card agent dispatches them itself with subagent. A card whose subtasks are still unfinished runs under the liangshen agent preset and is told which cards to pick up.",
+			"Clicking a subtask runs that subtask as its own root, again without opening anything for its descendants.",
 			"A card whose effective permission is above the deployment session default is refused with confirmation-required until a HUMAN confirms the binding in the board UI; this tool cannot confirm it.",
-			"A card whose task carries teamRun instead starts ONE Team Lead session and the Host spawns a teammate per subtask inside it, so those cards run as an Agent Team rather than as independent sessions; that mode needs the deployment Agent Teams service and is refused when it is missing.",
 			"Executions consume real API quota. Sessions are created asynchronously, so read their ids and outcomes back with task_board_get."
 		].join(" "),
 		parameters: {
 			taskId: {
 				type: "string",
 				required: true,
-				description: "The task to run; running a root task runs its whole subtree."
+				description: "The task to run; only this card gets a session, its unfinished subtasks are dispatched by that session own agent."
 			},
 			rerun: {
 				type: "boolean",
@@ -7912,7 +9761,7 @@ function buildRunTool(host) {
 					ok: true,
 					started,
 					...root === void 0 ? {} : { task: taskSummary(root, snapshot.tasks, snapshot.sessionDefaultPermission) },
-					note: "Executions run asynchronously; call task_board_get to read session ids and the settled outcome. The parent settles only after its own turn and every direct subtask settle."
+					note: "Executions run asynchronously; call task_board_get to read session ids and the settled outcome."
 				});
 			} catch (error) {
 				const message = messageOf(error);
@@ -7928,7 +9777,7 @@ function buildManageTool(host) {
 			"Move, archive, restore, delete, or settle one task board card.",
 			"move-backlog, move-todo, move-running, move-done and move-failed are the manual column moves and cover every column; a card the runner is executing (one with an open execution) cannot be moved.",
 			"A manual move writes the card column only and never fabricates an execution record, so the card reports a declaration rather than evidence of a run: done/failed declare work finished (or failed) outside a Host-run execution — human work, an external system, a decision made elsewhere — and running says the work is under way without a tracked session. Use task_board_run when the work should actually run in a session here.",
-			"record-external-outcome is the record-backed version of move-done and move-failed: use it when YOU, or another agent outside this Host, actually finished or failed the card with your own model, so the terminal column and the run history both derive from one execution record. It takes result (succeeded or failed) and initiatedBy (who completed it, for example your own agent name) plus an optional summary, and it is refused while the card still has an open execution: the Host stays the only authority over a run it is executing. It cannot record running or cancelled — those remain Host-only.",
+			"record-external-outcome is the record-backed version of move-done and move-failed: use it when YOU, or another agent outside this Host, actually finished or failed the card with your own model, so the terminal column and the run history both derive from one execution record. It takes result (succeeded or failed) and initiatedBy (who completed it, for example your own agent name) plus an optional summary, and it is refused while the card still has an open execution: the Host stays the only authority over a run it is executing. It cannot record running or cancelled — those remain Host-only. A parent card that dispatched its subtasks uses it once, at the end, to backfill every subtask card with the conclusion it reached; the Host records an inherited verdict on a subtask the parent never wrote back, so the write-back is what keeps each subtask conclusion its own.",
 			"settle force-closes the open execution of a card the board can no longer observe (a stuck running card) and records it cancelled with the caller as the reason, so the card returns to the todo column and can be run again.",
 			"reset-verification clears the acceptance anomalies (timeouts, authentication failures, an unresolvable judge route, or an attempt the time budget ended) recorded on a card open execution, so the next update_goal(action: complete) runs a fresh acceptance. It is refused unless that execution really carries such anomalies, it never clears a quality verdict, and a spent anomaly budget otherwise HOLDS the card open instead of failing it: tell the user the acceptance environment is unusable and that this action is how they clear it once they have fixed it.",
 			"archive takes the whole subtask tree off the board and is refused while any member has an unsettled execution; restore brings the task, its ancestors and its subtree back; delete removes one card and is refused while it still has subtasks (detach or delete them first) or while it runs.",
@@ -8079,7 +9928,7 @@ function buildScheduleTool(host) {
 			"Arm, change, or disarm a task scheduled runs. Two kinds of plan exist: a recurring 5-field cron rule (day-of-month and day-of-week follow Vixie semantics: both restricted means OR, otherwise AND), and a one-shot that runs once at a future instant.",
 			"For a one-shot pass mode \"once\" with at (the planned instant, ms since epoch UTC). For a recurring rule pass mode \"cron\" (or omit mode) with a cron expression, optionally capped by maxRuns (a positive whole number of scheduled executions; omit for unlimited, pass 0 to clear a cap).",
 			"The wall clock is read in the rule stored IANA time zone; omit timeZone to use the Host zone reported by task_board_list/task_board_get. DST gaps are skipped and an ambiguous fall-back time fires once, at the earlier instant.",
-			"A due scheduled task runs the same cascade a manual run does, so a root task runs its whole subtask tree.",
+			"A due scheduled task runs exactly what a manual run of that card does: one session for the card, never one per subtask.",
 			"The scheduler counts executions it actually starts; once a rule reaches its run budget it stops itself in the ledger, and a manual run never consumes the budget. A schedule whose tree contains an unconfirmed above-default permission is refused and does not consume the budget; the reason is reported in the list board summary as schedulerError.",
 			"Missed occurrences during Host downtime are skipped, never queued (a one-shot whose instant passed while the Host was down is stopped as missed); a task that is already running skips its occurrence without consuming the budget."
 		].join(" "),
@@ -8233,7 +10082,11 @@ function buildListTool(host) {
 function buildGetTool(host) {
 	return defineTool({
 		name: "task_board_get",
-		description: ["Read one task board card in full: prompt, description, labels, column, parent link, direct subtasks, execution targets, schedule, permission gate state, and the last ten execution attempts with their session ids and outcomes.", "Use it before running or editing a card, and after a run to read the settled outcome."].join(" "),
+		description: [
+			"Read one task board card in full: prompt, description, labels, column, parent link, direct subtasks, execution targets, schedule, permission gate state, and the last ten execution attempts with their session ids and outcomes.",
+			"Use it before running or editing a card, after a run to read the settled outcome, and to read each subtask card before dispatching it with subagent.",
+			"A card written before team runs were retired may still report teamRun: true; the field is history and never changes how the Host runs the card."
+		].join(" "),
 		parameters: { taskId: {
 			type: "string",
 			required: true,
@@ -8260,7 +10113,7 @@ function buildCreateTool(host) {
 		name: "task_board_create",
 		description: [
 			"Create a task on the DSH task board, or a subtask by passing parentId.",
-			"A subtask inherits every execution target it does not override (workspace, agent preset, permission, model) from its parent, and inherits the parent human permission confirmation together with an inherited binding.",
+			"A subtask inherits every execution target it does not override (workspace, agent preset, permission, model, reasoning effort) from its parent, and inherits the parent human permission confirmation together with an inherited binding.",
 			"The deployment caps subtask depth (default one level, maximum three): a subtask of a subtask is refused unless the board is configured deeper.",
 			"The task lands in the todo column and does NOT run; call task_board_run to execute it."
 		].join(" "),
@@ -8288,24 +10141,24 @@ function buildCreateTool(host) {
 			},
 			mode: {
 				type: "string",
-				description: "Agent preset id the execution session is composed from; omit for the deployment default or the parent value."
+				description: "Agent preset id the execution session is composed from; omit to adopt the board new-card default, and the deployment default when none is configured."
 			},
 			permission: {
 				type: "string",
 				enum: [...TASK_PERMISSIONS],
-				description: "Permission preset for the execution session. Omit to inherit the parent binding; a value above the session default needs a human confirmation in the board UI before the card can run."
+				description: "Permission preset for the execution session; omit to adopt the board new-card default. An omitted permission is never taken from a parent: the launch resolves the parent binding instead. A value above the session default needs a human confirmation in the board UI before the card can run."
 			},
 			model: {
 				type: "string",
-				description: "Pinned model as provider/model (or a model id); omit for the host default or the parent value."
+				description: "Pinned model as provider/model (or a model id); omit to adopt the board new-card default, and the host default when none is configured."
+			},
+			reasoningEffort: {
+				type: "string",
+				description: "Reasoning effort id for that model (an adapter-owned level such as \"high\"); omit to adopt the board new-card default for that model, and the model own default when none applies. Only an effort the target model declares is sent; an empty string clears it back to the default."
 			},
 			reuseSession: {
 				type: "boolean",
 				description: "Continue later runs in the previous execution session instead of a fresh conversation."
-			},
-			teamRun: {
-				type: "boolean",
-				description: "Run this task as an Agent Team: running it starts one Team Lead session and the Host spawns a teammate per subtask inside it. Omit or false for one independent session per member. Refused when the deployment serves no Agent Teams service."
 			},
 			goalRun: {
 				type: "boolean",
@@ -8384,8 +10237,9 @@ function buildCreateTool(host) {
 				...args.mode === void 0 || args.mode === "" ? {} : { mode: args.mode },
 				...args.permission === void 0 ? {} : { permission: args.permission },
 				...args.model === void 0 || args.model === "" ? {} : { model: args.model },
+				...args.reasoningEffort === void 0 || args.reasoningEffort === "" ? {} : { reasoningEffort: args.reasoningEffort },
+				applyCardDefaults: true,
 				...args.reuseSession === true ? { reuseSession: true } : {},
-				...args.teamRun === true ? { teamRun: true } : {},
 				...args.goalRun === true ? { goalRun: true } : {},
 				...args.skipVerification === true ? { skipVerification: true } : {},
 				...tags.length === 0 ? {} : { tags },
@@ -8419,7 +10273,7 @@ function buildUpdateTool(host) {
 	return defineTool({
 		name: "task_board_update",
 		description: [
-			"Edit a task board card: title, description, prompt, labels, and the execution targets (workspace, agent preset, permission, model, session reuse).",
+			"Edit a task board card: title, description, prompt, labels, and the execution targets (workspace, agent preset, permission, model, reasoning effort, session reuse).",
 			"Only the fields you pass change; pass an empty string to clear a target, or an empty labels array to clear the labels.",
 			"Title, description and prompt freeze once the task has started executing; the execution targets stay editable because they only affect future runs.",
 			"Changing the pinned permission re-arms the permission confirmation gate."
@@ -8464,13 +10318,13 @@ function buildUpdateTool(host) {
 				type: "string",
 				description: "New pinned model; an empty string clears it."
 			},
+			reasoningEffort: {
+				type: "string",
+				description: "New reasoning effort id for the pinned model; an empty string clears it back to the model own default. Only an effort the target model declares is sent at run time."
+			},
 			reuseSession: {
 				type: "boolean",
 				description: "Continue later runs in the previous execution session."
-			},
-			teamRun: {
-				type: "boolean",
-				description: "Switches this task between a plain cascade (one session per member) and an Agent Team run (Lead session plus a teammate per subtask)."
 			},
 			goalRun: {
 				type: "boolean",
@@ -8512,9 +10366,9 @@ function buildUpdateTool(host) {
 			if (has(args, "workspaceId") && typeof args.workspaceId === "string") patch.workspaceId = args.workspaceId;
 			if (has(args, "mode") && typeof args.mode === "string") patch.mode = args.mode;
 			if (has(args, "model") && typeof args.model === "string") patch.model = args.model;
+			if (has(args, "reasoningEffort") && typeof args.reasoningEffort === "string") patch.reasoningEffort = args.reasoningEffort;
 			if (has(args, "permission") && typeof args.permission === "string") patch.permission = args.permission === "" ? void 0 : args.permission;
 			if (has(args, "reuseSession")) patch.reuseSession = args.reuseSession === true;
-			if (has(args, "teamRun")) patch.teamRun = args.teamRun === true;
 			if (has(args, "goalRun")) patch.goalRun = args.goalRun === true ? true : false;
 			if (has(args, "skipVerification")) patch.skipVerification = args.skipVerification === true ? true : false;
 			if (has(args, "tags")) {
@@ -8576,7 +10430,8 @@ function buildUpdateTool(host) {
 */
 const PLUGIN_TOOL_SECTION_ORDERS = {
 	ssh: 150,
-	"task-board": 200
+	"task-board": 200,
+	agents: 220
 };
 /**
 * Build a section provider that renders \`text\` only while at least one of
@@ -8644,12 +10499,26 @@ function isLoopbackHostname(hostname) {
 	return isIPv4Loopback(hostname);
 }
 /**
+* Whether a reverse proxy stood between the client and this host: the request
+* carries CF-Connecting-IP or X-Forwarded-For. Either header is stamped by a
+* hop that forwards traffic, so the request did not originate on this machine.
+* @param request - node HTTP request.
+* @returns true when a forwarding header is present.
+*/
+function isProxiedRequest(request) {
+	return request.headers["cf-connecting-ip"] !== void 0 || request.headers["x-forwarded-for"] !== void 0;
+}
+/**
 * Request-level trust fence: a loopback socket address AND a loopback Host
 * header, plus browser same-origin markers. The socket address is
-* authoritative; X-Forwarded-For is never trusted.
+* authoritative for a direct connection; a request that carries a forwarding
+* header is refused outright, because a proxy in front of the host makes both
+* the socket address and the Host header describe the proxy rather than the
+* client. X-Forwarded-For is therefore never evidence *for* loopback.
 */
 function isLoopbackRequest(request) {
 	if (!isLoopbackAddress(request.socket.remoteAddress)) return false;
+	if (isProxiedRequest(request)) return false;
 	const host = request.headers.host;
 	if (typeof host !== "string") return false;
 	let hostUrl;
@@ -8668,10 +10537,41 @@ function isLoopbackRequest(request) {
 		return false;
 	}
 }
+/**
+* Whether a forwarded request landed on this machine's loopback upstream: a
+* forwarding header (the proxy's own stamp), a loopback socket address (the
+* proxy dials 127.0.0.1:<port>), and a loopback Host header (the proxy rewrote
+* the authority to its upstream literal).
+*
+* This is a fact about the route, not a trust decision. A public request to a
+* tunnel satisfies all three by construction, because the proxy is the client
+* of this process: only a caller that operates the proxy can decide it stands
+* for the browser, which is why every consumer keeps this behind an explicit
+* default-off switch and its own browser markers. isLoopbackRequest is
+* unchanged and still refuses a forwarded request (issue #1906).
+* @param request - node HTTP request.
+* @returns true when a forwarding header, a loopback socket, and a loopback Host all hold.
+*/
+function isForwardedLoopbackRequest(request) {
+	if (!isProxiedRequest(request)) return false;
+	if (!isLoopbackAddress(request.socket.remoteAddress)) return false;
+	const host = request.headers.host;
+	if (typeof host !== "string") return false;
+	try {
+		return isLoopbackHostname(new URL("http://" + host).hostname);
+	} catch {
+		return false;
+	}
+}
 //#endregion
 //#region src/host-routes.ts
 const ACTION_LIMIT = 64 * 1024;
 const IMPORT_LIMIT = 2 * 1024 * 1024;
+/**
+* Comment-frame cadence on the event stream. It keeps the connection alive
+* through intermediaries that would close an idle one; it is not a frame the
+* browser reports to the panel (an SSE comment is invisible to EventSource).
+*/
 const HEARTBEAT_MS = 15e3;
 /** Header replaced by an authenticated same-host reverse proxy. */
 const TASK_BOARD_PROXY_TOKEN_HEADER = "x-dsh-task-board-proxy-token";
@@ -8702,7 +10602,9 @@ function resolveAccess(access) {
 	if (trustedProxyHosts.size > 0 && (access.proxyToken === void 0 || access.proxyToken === "")) throw new Error("task-board: authenticated proxy hosts require a non-empty proxy token");
 	return {
 		trustedProxyHosts,
-		...access.proxyToken === void 0 ? {} : { proxyToken: access.proxyToken }
+		trustForwardedProxy: access.trustForwardedProxy ?? (() => false),
+		...access.proxyToken === void 0 ? {} : { proxyToken: access.proxyToken },
+		...access.connection === void 0 ? {} : { connection: access.connection }
 	};
 }
 /**
@@ -8772,10 +10674,29 @@ function matchesToken(candidate, expected) {
 * tripwire, the socket/Host/origin-equality checks carry the authority).
 * Authenticated proxies must be explicitly allowlisted and replace the
 * internal token header after their own authentication step.
+*
+* A third party's proxy cannot inject that token, so a deployment whose own
+* tunnel dials the loopback upstream (issue #1918) can instead turn on
+* trustForwardedProxy: a forwarded request that landed on this machine
+* (loopback socket AND loopback Host) is then admitted on the same browser
+* marker alone. The switch defaults off, so an unconfigured board keeps
+* refusing every forwarded request (issue #1906).
+*
+* A deployment behind a reverse proxy or ingress that DSH itself serves
+* (`--trusted-host`, TLS terminated at the edge) is admitted by the Host's
+* `connection` service instead: a request whose Host/Origin fence and signed
+* browser session it accepts needs no board-specific allowlist, which is why
+* the check runs first when the service is mounted (issue #1930). The fence
+* below stays untouched as the fallback, so a deployment without the service,
+* and every direct client the service does not admit, keeps exactly the
+* pre-existing decision.
 */
 function isTrustedTaskBoardRequest(req, access) {
+	const connection = access.connection?.();
+	if (connection !== void 0 && connection.requestRejection(req) === void 0) return true;
 	if (!browserSameOriginMarker(req)) return false;
 	if (isLoopbackRequest(req)) return true;
+	if (access.trustForwardedProxy() && req.headers["sec-fetch-site"] !== "cross-site" && isForwardedLoopbackRequest(req)) return true;
 	if (!isLoopbackAddress(req.socket.remoteAddress)) return false;
 	const host = req.headers.host;
 	if (typeof host !== "string") return false;
@@ -8798,6 +10719,17 @@ async function readBody(req) {
 		raw,
 		value: JSON.parse(raw)
 	};
+}
+/**
+* The query parameters of one request, read against a fixed base so a
+* relative request target still parses.
+*/
+function requestQuery(req) {
+	try {
+		return new URL(req.url ?? "/", "http://localhost").searchParams;
+	} catch {
+		return new URLSearchParams();
+	}
 }
 function makeTaskBoardRoutes(service, access = {}, options = {}) {
 	const resolvedAccess = resolveAccess(access);
@@ -8846,9 +10778,17 @@ function makeTaskBoardRoutes(service, access = {}, options = {}) {
 						ok: false,
 						error: "body-too-large"
 					}, { "cache-control": "no-store" });
-					writeJson(res, 200, await service.apply(parsed.requestId, parsed.action, parsed.initiator), { "cache-control": "no-store" });
+					writeJson(res, 200, await service.applyVerified(parsed.requestId, parsed.action, parsed.initiator), { "cache-control": "no-store" });
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
+					if (error instanceof TaskBoardAttachmentError) {
+						writeJson(res, attachmentErrorStatus(error.code), {
+							ok: false,
+							code: error.code,
+							error: message
+						}, { "cache-control": "no-store" });
+						return;
+					}
 					writeJson(res, message === "body-too-large" ? 413 : 400, {
 						ok: false,
 						error: message
@@ -8871,20 +10811,40 @@ function makeTaskBoardRoutes(service, access = {}, options = {}) {
 					"cache-control": "no-cache",
 					connection: "keep-alive"
 				});
+				let heartbeat;
+				let release;
+				const stop = () => {
+					if (heartbeat !== void 0) {
+						clearInterval(heartbeat);
+						heartbeat = void 0;
+					}
+					const unsubscribe = release;
+					release = void 0;
+					unsubscribe?.();
+				};
+				const drop = () => {
+					if (release === void 0) return;
+					stop();
+					res.destroy();
+				};
+				const write = (chunk) => {
+					if (release === void 0 || res.writableEnded || res.destroyed) return;
+					res.write(chunk, (error) => {
+						if (error !== null && error !== void 0) drop();
+					});
+				};
 				const push = () => {
-					const payload = service.eventPayload();
-					res.write(`data: ${JSON.stringify(payload)}\n\n`);
+					write(`data: ${JSON.stringify(service.eventPayload())}\n\n`);
 				};
-				const unsubscribe = service.subscribe(push);
-				const heartbeat = setInterval(() => {
-					res.write(": ping\n\n");
+				release = service.subscribe(push);
+				heartbeat = setInterval(() => {
+					write(": ping\n\n");
 				}, HEARTBEAT_MS);
-				const close = () => {
-					clearInterval(heartbeat);
-					unsubscribe();
-				};
-				req.once("close", close);
-				res.once("close", close);
+				req.once("close", stop);
+				res.once("close", stop);
+				res.on("error", () => {
+					drop();
+				});
 				push();
 			}
 		},
@@ -8963,6 +10923,98 @@ function makeTaskBoardRoutes(service, access = {}, options = {}) {
 					writeJson(res, 500, {
 						ok: false,
 						error: error instanceof Error ? error.message : String(error)
+					}, { "cache-control": "no-store" });
+				}
+			}
+		},
+		{
+			kind: "exact",
+			path: `${TASK_BOARD_API_PREFIX}/attachments/upload`,
+			handler: async (req, res) => {
+				if (req.method !== "POST") return writeJson(res, 405, {
+					ok: false,
+					error: "method-not-allowed"
+				}, { "cache-control": "no-store" });
+				if (!guard(req, res)) return;
+				const store = options.attachments?.();
+				if (store === void 0) return writeJson(res, 503, {
+					ok: false,
+					code: "storage-unavailable",
+					error: "this deployment serves no attachment storage"
+				}, { "cache-control": "no-store" });
+				const query = requestQuery(req);
+				const kind = query.get("kind");
+				if (kind !== "image" && kind !== "file") return writeJson(res, 400, {
+					ok: false,
+					code: "invalid-request",
+					error: "the attachment kind must be image or file"
+				}, { "cache-control": "no-store" });
+				const name = sanitizeAttachmentName(query.get("name"));
+				const mediaType = query.get("mediaType") ?? "";
+				try {
+					if (kind === "image") {
+						if (mediaType === "") return writeJson(res, 400, {
+							ok: false,
+							code: "invalid-request",
+							error: "an image upload must declare its media type"
+						}, { "cache-control": "no-store" });
+						writeJson(res, 200, {
+							ok: true,
+							attachment: await storeImage(store, await readRequestBytes(req, effectiveImageByteLimit(store)), name, mediaType)
+						}, { "cache-control": "no-store" });
+						return;
+					}
+					writeJson(res, 200, {
+						ok: true,
+						attachment: (await storeFile(store, requestChunks(req), name, mediaType)).attachment
+					}, { "cache-control": "no-store" });
+				} catch (error) {
+					req.resume();
+					const failure = error instanceof TaskBoardAttachmentError ? error : new TaskBoardAttachmentError("storage-unavailable", "the attachment storage is unavailable", { cause: error });
+					writeJson(res, attachmentErrorStatus(failure.code), {
+						ok: false,
+						code: failure.code,
+						error: failure.message
+					}, { "cache-control": "no-store" });
+				}
+			}
+		},
+		{
+			kind: "exact",
+			path: `${TASK_BOARD_API_PREFIX}/attachments/image`,
+			handler: async (req, res) => {
+				if (req.method !== "GET") return writeJson(res, 405, {
+					ok: false,
+					error: "method-not-allowed"
+				}, { "cache-control": "no-store" });
+				if (!guard(req, res)) return;
+				const store = options.attachments?.();
+				if (store === void 0) return writeJson(res, 503, {
+					ok: false,
+					code: "storage-unavailable",
+					error: "this deployment serves no attachment storage"
+				}, { "cache-control": "no-store" });
+				const id = requestQuery(req).get("id") ?? "";
+				const referenced = service.ledger.allTasks().flatMap((task) => task.attachments ?? []).find((attachment) => attachment.kind === "image" && attachment.attachmentId === id);
+				if (referenced === void 0) return writeJson(res, 404, {
+					ok: false,
+					code: "not-found",
+					error: "no card references this attachment"
+				}, { "cache-control": "no-store" });
+				try {
+					const stored = await store.readImage(imageRefOf(referenced));
+					res.writeHead(200, {
+						"content-type": stored.ref.mediaType,
+						"content-length": String(stored.data.byteLength),
+						"cache-control": "no-store"
+					});
+					res.end(Buffer.from(stored.data));
+				} catch (error) {
+					const failure = error instanceof TaskBoardAttachmentError ? error : new TaskBoardAttachmentError("unreadable", "the stored attachment could not be read back", { cause: error });
+					writeJson(res, attachmentErrorStatus(failure.code), {
+						ok: false,
+						code: failure.code,
+						error: failure.message
 					}, { "cache-control": "no-store" });
 				}
 			}
@@ -10078,7 +12130,6 @@ const DEFAULT_PROXY_TOKEN_ENV = "DSH_TASK_BOARD_PROXY_TOKEN";
 const inject = [
 	"systemPrompt",
 	"typertGateway",
-	"connection",
 	"workspaceRegistry",
 	"webServer",
 	"agents",
@@ -10086,22 +12137,23 @@ const inject = [
 ];
 /** Model-facing announcement: plugin presence, capabilities, and limits. */
 const TASK_BOARD_GUIDANCE = "本机已安装 dsh-task-board 插件（DSH Web GUI 的任务看板）：侧边栏「任务看板」入口；在 dsh-web 插件全家桶仓库（packages/dsh-task-board）统一维护，经聚合包 web-ui-all 一键安装。能力：多列看板管理任务；Host 权威账本；关闭浏览器后仍由 Host 执行和结算；任务可钉住工作区、agent 预设和权限；任务可建子任务（深度上限可配 1..3，默认 1 层，子任务不能再带子任务），执行父任务会并发执行其子任务树，子任务可单独覆盖权限与模型；另注册 task_board_* agent 工具（list/get/create/update/set_parent/run/manage/schedule），任何会话都可直接读写看板、子任务与定时计划，但运行任务会真实执行并消耗额度，高于会话默认权限的绑定仍必须由用户在 GUI 人工确认（工具刻意不提供确认能力）；支持 Host 本地时区的 5 段 cron，错过的触发点不补跑；可选且默认关闭的空闲系统睡眠保护允许屏幕熄灭，但不承诺拦截合盖、手动睡眠、休眠、关机或唤醒已睡眠机器。执行消耗 API 额度。用户提到「任务看板 / 看板 / 定时任务」时即指本插件，请据此协作。若你同时用 todo_write 维护会话顶部的可见计划列表，最终回复前必须再次调用 todo_write 收尾：没有剩余工作时不要保留 in_progress，已完成的最后一步要标为 completed。";
-/**
-* Continuable-subagent provider for fresh teammates, matching the Agent Teams
-* tool plugin's own `freshProvider` default.
-*/
-const DEFAULT_TEAM_PROVIDER = "spawn";
 const Config = z.object({
 	announceToAgent: z.boolean().default(false).volatile(),
 	enabled: z.boolean().default(true).volatile(),
 	preventIdleSleep: z.boolean().default(false).volatile(),
 	trustedProxyHosts: z.array(z.string()).default([]),
 	proxyTokenEnv: z.string().min(1).default(DEFAULT_PROXY_TOKEN_ENV),
+	trustForwardedProxy: z.boolean().default(false).volatile(),
 	sessionDefaultPermission: z.union(TASK_PERMISSIONS),
 	maxSubtaskDepth: z.number().min(1).max(3).default(1).volatile(),
 	sessionPollSeconds: z.number().min(1).max(300).default(5).volatile(),
-	teamProvider: z.string().min(1).default(DEFAULT_TEAM_PROVIDER),
+	runLaunchWidth: z.number().min(1).max(16).default(3).volatile(),
+	spendBudgetTokens: z.number().min(0).default(0).volatile(),
 	goalRunEnabled: z.boolean().default(false).volatile(),
+	cardDefaultMode: z.string().default("").volatile(),
+	cardDefaultPermission: z.union([...TASK_PERMISSIONS, ""]).default("").volatile(),
+	cardDefaultModel: z.string().default("").volatile(),
+	cardDefaultReasoningEffort: z.string().default("").volatile(),
 	goalVerification: z.boolean().default(true).volatile(),
 	goalVerificationModel: z.string().default("").volatile(),
 	goalVerificationReasoningEffort: z.string().default("").volatile(),
@@ -10132,18 +12184,63 @@ function readConfigField(field, fallback) {
 	if (typeof field === "object" && field !== null && typeof field.get === "function") return field.get();
 	return field;
 }
-/** Resolve proxy access without ever placing the token value in plugin config. */
+/**
+* Resolve proxy access without ever placing the token value in plugin config.
+*
+* The forwarded-proxy switch travels as a reader rather than a value: it is
+* schema-volatile, so the fence must read it when a request arrives instead of
+* when the routes are registered.
+* @param config - the resolved plugin config.
+* @param env - environment holding the proxy token value.
+* @returns the route access handed to {@link makeTaskBoardRoutes}.
+*/
 function resolveProxyAccess(config, env = process.env) {
+	const trustForwardedProxy = () => readConfigField(config?.trustForwardedProxy, false);
 	const trustedProxyHosts = config?.trustedProxyHosts ?? [];
-	if (trustedProxyHosts.length === 0) return { trustedProxyHosts };
+	if (trustedProxyHosts.length === 0) return {
+		trustedProxyHosts,
+		trustForwardedProxy
+	};
 	const proxyTokenEnv = config?.proxyTokenEnv ?? "DSH_TASK_BOARD_PROXY_TOKEN";
 	if (proxyTokenEnv.trim() === "") throw new Error("task-board: proxyTokenEnv must not be empty");
 	const proxyToken = env[proxyTokenEnv];
 	if (proxyToken === void 0 || proxyToken === "") throw new Error(`task-board: trustedProxyHosts requires a non-empty ${proxyTokenEnv} environment variable`);
 	return {
 		trustedProxyHosts,
-		proxyToken
+		proxyToken,
+		trustForwardedProxy
 	};
+}
+/**
+/**
+* Schema default for the forwarded-proxy switch, re-read for hand-built
+* contexts. Deliberately false: a deployment that never configured it keeps
+* refusing every forwarded request, which is the #1906 fence.
+*/
+const DEFAULT_TRUST_FORWARDED_PROXY = false;
+/**
+* Resolve the composition's optional `connection` service.
+*
+* The service is the Host's own browser-session authority: it fronts every
+* `/api` request with the Host/Origin fence and the signed `dsh-auth-*` cookie,
+* which is what a deployment behind a reverse proxy or ingress validates on the
+* same authority the GUI is served from. The board bridges it instead of
+* repeating that check, so a proxy request the Host already authenticated is
+* admitted without a board-specific host allowlist (issue #1930). It is
+* deliberately resolved like the agent-tool registry rather than injected:
+* a composition that serves no connection keeps mounting the board on the
+* pre-existing loopback fence, and one that mounts the service later is picked
+* up on the next request because the fence asks this resolver each time.
+* @param ctx - the plugin context.
+* @returns the trust face, or undefined when this deployment serves none.
+*/
+function resolveConnectionTrust(ctx) {
+	try {
+		const connection = ctx.get("connection");
+		return connection !== void 0 && typeof connection.requestRejection === "function" ? connection : void 0;
+	} catch {
+		return;
+	}
 }
 /** The lookup half of a resolved registry, when it exposes one. */
 function lookupOf(registry) {
@@ -10210,65 +12307,6 @@ function resolveHostDefaultPermission(ctx) {
 	}
 }
 /**
-* How long one teammate may take to reach its durable active or failed edge.
-* Agent Teams provisioning normally resolves in seconds; the bound exists so a
-* hung spawn settles the subtask instead of holding the cascade open forever.
-*/
-const TEAMMATE_PROVISION_TIMEOUT_MS = 6e5;
-/**
-* Resolve the optional Agent Teams service. Like the tool registry and the llm
-* runtime, it is deliberately not injected: a deployment without Agent Teams
-* must still mount the whole board and only lose team-mode runs.
-* @param ctx - the plugin context.
-* @returns the service, or undefined when this deployment serves none.
-*/
-function resolveAgentTeams(ctx) {
-	try {
-		const teams = ctx.get("agentTeams");
-		return teams !== void 0 && typeof teams.spawnTeammate === "function" ? teams : void 0;
-	} catch {
-		return;
-	}
-}
-/**
-* Build the team dispatcher: the run's Lead session spawns one teammate per
-* subtask through the Agent Teams service, and the teammate's session id is
-* attached to that subtask's execution so the ordinary session monitor settles
-* it. Returns undefined when the deployment serves no Agent Teams service or
-* no live-agent registry, which makes a team run fail closed.
-* @param ctx - the plugin context.
-* @param provider - the continuable-subagent provider for fresh teammates.
-* @returns the dispatcher, or undefined when team runs cannot be served.
-*/
-function buildTeamDispatcher(ctx, provider) {
-	const teams = resolveAgentTeams(ctx);
-	if (teams === void 0) return void 0;
-	if (typeof ctx.agents?.get !== "function") return void 0;
-	return { async spawn(input) {
-		const lead = ctx.agents.get(input.leadSessionId);
-		if (lead === void 0) return { error: `lead session ${input.leadSessionId} is not live` };
-		try {
-			const member = (await teams.spawnTeammate(lead, {
-				name: input.name,
-				description: input.description,
-				prompt: [{
-					type: "text",
-					text: input.prompt
-				}],
-				context: "fresh",
-				provider,
-				signal: AbortSignal.timeout(TEAMMATE_PROVISION_TIMEOUT_MS)
-			}))?.member;
-			if (member === void 0) return { error: "Agent Teams returned no teammate" };
-			if (member.phase === "failed") return { error: member.error ?? "teammate provisioning failed" };
-			if (typeof member.id !== "string" || member.id === "") return { error: "Agent Teams returned no teammate session" };
-			return { sessionId: member.id };
-		} catch (error) {
-			return { error: `teammate provisioning failed: ${error instanceof Error ? error.message : String(error)}` };
-		}
-	} };
-}
-/**
 * Read the optional `llm` service. The board deliberately does not inject it:
 * a deployment without a model must still mount the board, and the parse route
 * answers a typed failure instead of the plugin failing to load (issue #1540).
@@ -10282,6 +12320,91 @@ function resolveLlmRuntime(ctx) {
 	} catch {
 		return;
 	}
+}
+/**
+* Resolve the optional attachment storage.
+*
+* The board does not inject the service: a deployment without one must still
+* mount the board, and every attachment surface then answers with a typed
+* "storage unavailable" failure instead of the plugin failing to load.
+* @param ctx - the plugin context.
+* @returns the attachment storage, or undefined when this deployment serves none.
+*/
+function resolveAttachmentStore(ctx) {
+	try {
+		const store = ctx.get("attachments");
+		return store !== void 0 && typeof store.saveImage === "function" ? store : void 0;
+	} catch {
+		return;
+	}
+}
+/**
+* The model-info reader the image preflight uses.
+*
+* It asks the OFFICIAL model service about one exact route. The model catalog
+* the board already publishes carries no modality information and must not be
+* used to answer that question: only the model's own declared input
+* modalities can refuse an image route, and a route whose modalities cannot be
+* read is UNKNOWN and therefore allowed.
+* @param ctx - the plugin context.
+* @returns the reader, or undefined when the deployment serves no model service.
+*/
+function resolveModelInfoReader(ctx) {
+	return async (provider, model) => {
+		const llm = resolveLlmRuntime(ctx);
+		if (llm === void 0) return void 0;
+		try {
+			const info = await llm.resolveModelInfo(provider, model);
+			return { ...info.inputModalities === void 0 ? {} : { inputModalities: info.inputModalities } };
+		} catch (error) {
+			console.warn("[dsh-task-board] could not resolve the model info of " + provider + "/" + model + "; the image preflight allows the route", error);
+			return;
+		}
+	};
+}
+/**
+* Resolve the optional `sessionController` service. Like the tool registry and
+* the llm runtime, it is read dynamically so capture-only test contexts that do
+* not mount the full session controller still activate the board.
+* @param ctx - the plugin context.
+* @returns the session controller face, or undefined when unavailable.
+*/
+function resolveSessionController(ctx) {
+	try {
+		const controller = ctx.get?.("sessionController");
+		return controller !== void 0 && typeof controller.resolveAgent === "function" ? controller : void 0;
+	} catch {
+		return;
+	}
+}
+/**
+* Resolve the live Agent for an execution session, resuming a cold persisted
+* session through `sessionController.resolveAgent` when it is not yet in
+* `ctx.agents` (issue #1861).
+*
+* A fresh run (`session/create`) or a session the browser is currently
+* following is already in `ctx.agents`, so the fast path returns immediately.
+* A scheduled or manual reuse of a cold session — one that `session/list`
+* reports as idle from disk without activating its Agent — is not in
+* `ctx.agents` when `pinAndPrompt` runs `/permission` ahead of
+* `session/selectModel` and `session/prompt`; delegating to
+* `sessionController.resolveAgent` resumes it with its recorded preset and
+* model-selection state, matching what those gateway endpoints do next.
+* @param ctx - the plugin context.
+* @param sessionId - the target execution session id.
+* @returns the live Agent for `sessionId`.
+*/
+async function resolveExecutionAgent(ctx, sessionId) {
+	const live = ctx.agents.get(sessionId);
+	if (live !== void 0) return live;
+	const controller = resolveSessionController(ctx);
+	if (controller !== void 0) {
+		const resolved = await controller.resolveAgent(sessionId);
+		if ("agent" in resolved && resolved.agent !== void 0) return resolved.agent;
+		const detail = "error" in resolved && typeof resolved.error?.message === "string" && resolved.error.message !== "" ? `: ${resolved.error.message}` : "";
+		throw new Error(`execution session ${sessionId} is not available${detail}`);
+	}
+	throw new Error(`execution session ${sessionId} is not available`);
 }
 /**
 * Activate the board's host half: ledger, routes, cron scheduler, power
@@ -10308,6 +12431,18 @@ function applyImpl(ctx, config) {
 	const maxSubtaskDepth = () => readConfigField(config?.maxSubtaskDepth, 1);
 	/** Current roster-poll cadence in seconds (read live: the settings card edits it in place). */
 	const sessionPollSeconds = () => readConfigField(config?.sessionPollSeconds, 5);
+	/**
+	* Current run-launch admission width. Read live on every admission, so the
+	* settings card bounds the next launch of a run that is still queueing without
+	* remounting the row; the Host clamps a hand-edited value into the schema range.
+	*/
+	const runLaunchWidth = () => readConfigField(config?.runLaunchWidth, 3);
+	/**
+	* Current daily token cap, read at each gate like the width above. The value
+	* decides first: 0 — the default — ends the gate before a file is opened, so
+	* a board that never set a cap pays nothing for it.
+	*/
+	const spendBudgetTokens = () => readConfigField(config?.spendBudgetTokens, 0);
 	/**
 	* The baseline the permission confirmation gate judges against: the row's own
 	* `sessionDefaultPermission` when the deployment pins one, otherwise the Host's
@@ -10340,19 +12475,48 @@ function applyImpl(ctx, config) {
 	* executions that start afterwards.
 	*/
 	const goalRunEnabled = () => readConfigField(config?.goalRunEnabled, false);
+	/**
+	* Live reader of the new-card defaults, read at every use like the switch
+	* above: the create dialog prefills from the published snapshot, and each
+	* creating session re-reads them when it submits the create. A blank value
+	* means "not set" and reaches the resolver as an absent target.
+	*/
+	const cardDefaults = () => {
+		const permission = readConfigField(config?.cardDefaultPermission, "");
+		return {
+			mode: readConfigField(config?.cardDefaultMode, "").trim() || void 0,
+			permission: isTaskPermission(permission) ? permission : void 0,
+			model: readConfigField(config?.cardDefaultModel, "").trim() || void 0,
+			reasoningEffort: readConfigField(config?.cardDefaultReasoningEffort, "").trim() || void 0
+		};
+	};
+	const ownerPeer = createOwnerPeer(ctx);
+	const legacyAgentTeams = () => {
+		const lookup = lookupOf(resolveToolRegistry(ctx));
+		if (lookup === void 0) return false;
+		try {
+			return lookup.get(LEGACY_AGENT_TEAMS_TOOL) !== void 0;
+		} catch {
+			return false;
+		}
+	};
 	const host = new TaskBoardHostService(ctx.typertGateway, {
 		workspaceRegistry: ctx.workspaceRegistry,
-		operatorPeer: () => ctx.connection.operator,
+		ownerPeer,
 		sessionDefaultPermission,
 		maxSubtaskDepth: maxSubtaskDepth(),
 		goalRunEnabled,
+		runLaunchWidth,
+		spendBudgetTokens,
+		cardDefaults,
 		verificationSettings,
 		verificationCatalog,
+		attachments: () => resolveAttachmentStore(ctx),
+		modelInfo: () => resolveModelInfoReader(ctx),
+		legacyAgentTeams,
 		timers: resolveHostTimers(ctx),
-		team: buildTeamDispatcher(ctx, config?.teamProvider ?? "spawn"),
 		commandDispatcher: { async execute(sessionId, line, signal) {
-			const agent = ctx.agents.get(sessionId);
-			if (agent === void 0) throw new Error(`execution session ${sessionId} is not available`);
+			const agent = await resolveExecutionAgent(ctx, sessionId);
 			return (await ctx.commands.execute(agent, line, [], signal))?.result;
 		} }
 	});
@@ -10361,7 +12525,11 @@ function applyImpl(ctx, config) {
 	host.start();
 	if (typeof ctx.provide === "function") ctx.provide(TASK_BOARD_SERVICE_NAME, {
 		registerExtension: (extension) => host.registerExtension(extension),
-		isExtensionEnabled: (extensionId) => host.extensions.isActive(extensionId)
+		isExtensionEnabled: (extensionId) => host.extensions.isActive(extensionId),
+		snapshot: () => host.snapshot(),
+		apply: (requestId, action, initiator) => host.apply(requestId, action, initiator),
+		subscribe: (listener) => host.subscribe(listener),
+		verificationOptions: () => host.verificationOptions()
 	});
 	let disposeTools;
 	const setToolsEnabled = (active) => {
@@ -10426,11 +12594,17 @@ function applyImpl(ctx, config) {
 					handle.dispose();
 				});
 			}
-			const routes = makeTaskBoardRoutes(host, resolveProxyAccess(config), { parseTask: async (request, signal) => {
-				const llm = resolveLlmRuntime(ctx);
-				if (llm === void 0) throw new TaskParseError("no-model", "this deployment serves no llm service");
-				return await parseTaskDraft(llm, request, signal);
-			} });
+			const routes = makeTaskBoardRoutes(host, {
+				...resolveProxyAccess(config),
+				connection: () => resolveConnectionTrust(ctx)
+			}, {
+				attachments: () => resolveAttachmentStore(ctx),
+				parseTask: async (request, signal) => {
+					const llm = resolveLlmRuntime(ctx);
+					if (llm === void 0) throw new TaskParseError("no-model", "this deployment serves no llm service");
+					return await parseTaskDraft(llm, request, signal);
+				}
+			});
 			for (const route of routes) disposers.push(ctx.webServer.register(route));
 		} catch (error) {
 			setToolsEnabled(false);
@@ -10476,4 +12650,4 @@ function applyImpl(ctx, config) {
 	sync();
 }
 //#endregion
-export { Config, DEFAULT_GOAL_RUN, DEFAULT_GOAL_VERIFICATION, DEFAULT_PROXY_TOKEN_ENV, DEFAULT_TEAM_PROVIDER, TASK_BOARD_GUIDANCE, apply, buildTeamDispatcher, inject, readConfigField, resolveAgentTeams, resolveHostDefaultPermission, resolveHostTimers, resolveLlmRuntime, resolveProxyAccess, resolveToolRegistry };
+export { Config, DEFAULT_GOAL_RUN, DEFAULT_GOAL_VERIFICATION, DEFAULT_PROXY_TOKEN_ENV, DEFAULT_TRUST_FORWARDED_PROXY, TASK_BOARD_GUIDANCE, apply, inject, readConfigField, resolveAttachmentStore, resolveConnectionTrust, resolveExecutionAgent, resolveHostDefaultPermission, resolveHostTimers, resolveLlmRuntime, resolveModelInfoReader, resolveProxyAccess, resolveSessionController, resolveToolRegistry };

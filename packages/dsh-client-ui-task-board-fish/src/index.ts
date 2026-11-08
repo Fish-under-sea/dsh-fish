@@ -12,17 +12,19 @@ import type {} from '@deepseek-ai/dsh-commands'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-api-gateway'
-import type {} from '@deepseek-ai/dsh-client-connection'
 import type {} from '@deepseek-ai/dsh-workspace'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-tools'
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
-import { TaskBoardHostService, type HostTimerFace, type TaskBoardTeamDispatcher } from './host-service.ts'
+import { TaskBoardHostService, type HostTimerFace } from './host-service.ts'
+import { createOwnerPeer } from './host-runner.ts'
 import { parseTaskDraft, TaskParseError } from './host-ai.ts'
 import { TASK_PERMISSIONS, isTaskPermission, type TaskPermission } from './core/tasks.ts'
-import { DEFAULT_SUBTASK_DEPTH, SUBTASK_DEPTH_MAX, SUBTASK_DEPTH_MIN } from './core/subtask.ts'
+import { LEGACY_AGENT_TEAMS_TOOL, DEFAULT_SUBTASK_DEPTH, SUBTASK_DEPTH_MAX, SUBTASK_DEPTH_MIN } from './core/subtask.ts'
 import { DEFAULT_SESSION_POLL_SECONDS, SESSION_POLL_MAX_SECONDS, SESSION_POLL_MIN_SECONDS } from './core/poll-cadence.ts'
+import { DEFAULT_RUN_LAUNCH_WIDTH, RUN_LAUNCH_WIDTH_MAX, RUN_LAUNCH_WIDTH_MIN } from './core/launch-width.ts'
+import { DEFAULT_SPEND_BUDGET_TOKENS } from './core/spend-budget.ts'
 import {
   DEFAULT_VERIFICATION_BUDGET_SECONDS,
   DEFAULT_VERIFICATION_CALL_TIMEOUT_SECONDS,
@@ -34,10 +36,13 @@ import {
   verificationCallTimeoutMs,
 } from './core/verification-budget.ts'
 import { DEFAULT_SESSION_PERMISSION } from './core/handover.ts'
+import type { CardDefaults } from './core/card-defaults.ts'
 import { buildTaskBoardTools, TASK_BOARD_TOOL_NAMES } from './host/agent-tools.ts'
 import { PLUGIN_TOOL_SECTION_ORDERS, visibleToolText } from './tool-surface.ts'
-import { makeTaskBoardRoutes } from './host-routes.ts'
+import { makeTaskBoardRoutes, type TaskBoardConnectionTrust } from './host-routes.ts'
+import type { ModelInfoResolver, TaskBoardAttachmentStore } from './host/attachments.ts'
 import { TASK_BOARD_SERVICE_NAME, type TaskBoardExtension } from './core/extension.ts'
+import type { TaskBoardAction } from './protocol.ts'
 import { mountOnce } from './mount-once.ts'
 import { createGoalVerificationGate, type GoalFace } from './host/verification-gate.ts'
 import { normalizeCatalog, type ModelCatalogView, type VerificationSettings } from './core/verification.ts'
@@ -49,7 +54,7 @@ const SECTION_ORDER = PLUGIN_TOOL_SECTION_ORDERS['task-board']
 /** Default environment variable holding the authenticated proxy token. */
 export const DEFAULT_PROXY_TOKEN_ENV = 'DSH_TASK_BOARD_PROXY_TOKEN'
 
-export const inject = ['systemPrompt', 'typertGateway', 'connection', 'workspaceRegistry', 'webServer', 'agents', 'commands']
+export const inject = ['systemPrompt', 'typertGateway', 'workspaceRegistry', 'webServer', 'agents', 'commands']
 
 /** Model-facing announcement: plugin presence, capabilities, and limits. */
 export const TASK_BOARD_GUIDANCE = '本机已安装 dsh-task-board 插件（DSH Web GUI 的任务看板）：侧边栏「任务看板」入口；在 dsh-web 插件全家桶仓库（packages/dsh-task-board）统一维护，经聚合包 web-ui-all 一键安装。能力：多列看板管理任务；Host 权威账本；关闭浏览器后仍由 Host 执行和结算；任务可钉住工作区、agent 预设和权限；任务可建子任务（深度上限可配 1..3，默认 1 层，子任务不能再带子任务），执行父任务会并发执行其子任务树，子任务可单独覆盖权限与模型；另注册 task_board_* agent 工具（list/get/create/update/set_parent/run/manage/schedule），任何会话都可直接读写看板、子任务与定时计划，但运行任务会真实执行并消耗额度，高于会话默认权限的绑定仍必须由用户在 GUI 人工确认（工具刻意不提供确认能力）；支持 Host 本地时区的 5 段 cron，错过的触发点不补跑；可选且默认关闭的空闲系统睡眠保护允许屏幕熄灭，但不承诺拦截合盖、手动睡眠、休眠、关机或唤醒已睡眠机器。执行消耗 API 额度。用户提到「任务看板 / 看板 / 定时任务」时即指本插件，请据此协作。若你同时用 todo_write 维护会话顶部的可见计划列表，最终回复前必须再次调用 todo_write 收尾：没有剩余工作时不要保留 in_progress，已完成的最后一步要标为 completed。'
@@ -85,6 +90,19 @@ export interface Config {
   /** Environment variable whose value the authenticated proxy injects upstream. */
   proxyTokenEnv?: string
   /**
+   * Whether the operator's OWN reverse proxy or tunnel may speak for the
+   * browser (default OFF). Off keeps the pre-existing fence exactly: a request
+   * that carries a forwarding header is never local, so only a direct loopback
+   * client or an allowlisted token-injecting proxy reaches the board (issue
+   * #1906). On admits one narrower case — a forwarded request whose socket and
+   * Host are both this machine's loopback upstream, i.e. the proxy dials the
+   * board itself (issue #1918) — and still requires the browser same-origin
+   * marker, so a third party's tunnel is only trusted while the operator says
+   * it is. Volatile: the fence reads it at each request, so an edit binds the
+   * next request without re-registering the routes.
+   */
+  trustForwardedProxy?: Volatile<boolean>
+  /**
    * An explicit baseline for the permission confirmation gate. Left unset, the
    * board follows the Host's own default permission preset — the value new DSH
    * sessions start at — and falls back to `read-only` when the deployment
@@ -96,8 +114,8 @@ export interface Config {
   /**
    * Subtask depth limit, 1..3 (default 1). At 1 a task may carry one level of
    * subtasks and a subtask cannot be given subtasks of its own; raising it
-   * allows deeper trees. Every extra level multiplies the sessions one run
-   * of the root task opens, so the ceiling is deliberately small.
+   * allows deeper trees. Every extra level is another tree the card's own
+   * session may have to dispatch, so the ceiling is deliberately small.
    */
   maxSubtaskDepth?: Volatile<number>
   /**
@@ -108,11 +126,25 @@ export interface Config {
    */
   sessionPollSeconds?: Volatile<number>
   /**
-   * Continuable-subagent provider the Agent Teams service uses to compose a
-   * teammate. Matches the Agent Teams tool plugin's `freshProvider` default;
-   * only team-mode runs use it.
+   * How many run launches this board may have in flight at once (1..16,
+   * default 3). A run opens one session, so a burst is several cards run at
+   * once (several tabs, or a due schedule firing while a manual run starts);
+   * without a bound the Host would ask DSH for all of them in the same tick.
+   * This is the mechanism that enforces the repository's measured guidance for
+   * heavy implementation subagents. Runs wait their turn instead of being
+   * dropped, and every one of them still starts. Read at each admission, so an
+   * edit bounds the next launch of a run that is still queueing.
    */
-  teamProvider?: string
+  runLaunchWidth?: Volatile<number>
+  /**
+   * Daily token ceiling for the work this board dispatches (default 0 = no
+   * gate). Tokens, not money: the ledger the board measures against prices
+   * DeepSeek's own routes only, so a cost cap would read 0 elsewhere. Read at
+   * each gate, so an edit binds the next run without a remount; a manual
+   * run/rerun whose day already spent the cap is refused, and a due occurrence
+   * is skipped onto the scheduler with its run budget untouched.
+   */
+  spendBudgetTokens?: Volatile<number>
   /**
    * GLOBAL native /goal switch (default OFF), the master control over whether
    * this board starts a run with dsh's built-in /goal at all. A run uses native
@@ -129,6 +161,33 @@ export interface Config {
    * becomes a goal run.
    */
   goalRunEnabled?: Volatile<boolean>
+  /**
+   * Agent preset a NEW card starts from (volatile, default blank = not set).
+   * A prefill, never a pin: the create dialog opens with it selected, the
+   * caller may override it, and the card stores what it was created with. It
+   * reaches the create path only when that caller opts in with
+   * `applyCardDefaults`, so the extension provider's own create and the legacy
+   * import are untouched.
+   */
+  cardDefaultMode?: Volatile<string>
+  /**
+   * Permission a NEW card starts from (volatile, default blank = not set), one
+   * of the three presets. A prefill like the rest: a value above
+   * `sessionDefaultPermission` still has to be confirmed by a human before the
+   * card may run, because the pre-execution gate is what decides that.
+   */
+  cardDefaultPermission?: Volatile<TaskPermission | ''>
+  /**
+   * Model a NEW card starts from (volatile, default blank = not set).
+   */
+  cardDefaultModel?: Volatile<string>
+  /**
+   * Reasoning level a NEW card starts from (volatile, default blank = not set).
+   * Bound to `cardDefaultModel` exactly as a card's own level is bound to its
+   * own model: it applies only while the card's final model IS that default
+   * model, and a blank `cardDefaultModel` makes it inert.
+   */
+  cardDefaultReasoningEffort?: Volatile<string>
   /**
    * Goal acceptance for executions this board starts (default ON). When on,
    * update_goal(action: complete) inside a task execution is refused until an
@@ -174,17 +233,11 @@ export interface Config {
 }
 
 /**
- * Continuable-subagent provider for fresh teammates, matching the Agent Teams
- * tool plugin's own `freshProvider` default.
- */
-export const DEFAULT_TEAM_PROVIDER = 'spawn'
-
-/**
  * Profile-patch shape of {@link Config}: what the Host validates the row's
  * config against, before the schema turns volatile fields into live references
  * and applies defaults. Declared separately because the two sides no longer
  * share one shape, so the schema is annotated `z<ConfigInput, Config>` — the
- * same split `dsh-git-graph` uses. The annotation is also what keeps the
+ * same split the git-family packages use. The annotation is also what keeps the
  * emitted declaration portable: an unannotated schema holding a nested object
  * array infers a type that cannot be named without reaching into a transitive
  * dependency's own types.
@@ -200,16 +253,28 @@ export interface ConfigInput {
   trustedProxyHosts?: string[]
   /** Environment variable whose value the authenticated proxy injects. */
   proxyTokenEnv?: string
+  /** Trust a forwarded request that landed on this machine's loopback upstream; default off. */
+  trustForwardedProxy?: boolean
   /** Explicit baseline for the permission confirmation gate; unset follows the Host default. */
   sessionDefaultPermission?: TaskPermission
   /** Subtask depth limit, 1..3. */
   maxSubtaskDepth?: number
   /** Roster-poll cadence in seconds while the board has work to reconcile. */
   sessionPollSeconds?: number
-  /** Continuable-subagent provider the Agent Teams service composes a teammate from. */
-  teamProvider?: string
+  /** Concurrent run launches allowed at once, 1..16. */
+  runLaunchWidth?: number
+  /** Daily token ceiling for board runs; 0 disables the gate. */
+  spendBudgetTokens?: number
   /** Global native /goal switch; default off, frozen per execution. */
   goalRunEnabled?: boolean
+  /** Agent preset a new card starts from; blank = not set. */
+  cardDefaultMode?: string
+  /** Permission a new card starts from; blank = not set. */
+  cardDefaultPermission?: TaskPermission | ''
+  /** Model a new card starts from; blank = not set. */
+  cardDefaultModel?: string
+  /** Reasoning level a new card starts from; blank = not set. */
+  cardDefaultReasoningEffort?: string
   /** Goal acceptance switch. */
   goalVerification?: boolean
   /** Judge model route for goal acceptance; blank inherits the host default. */
@@ -228,11 +293,17 @@ export const Config: z<ConfigInput, Config> = z.object({
   preventIdleSleep: z.boolean().default(false).volatile(),
   trustedProxyHosts: z.array(z.string()).default([]),
   proxyTokenEnv: z.string().min(1).default(DEFAULT_PROXY_TOKEN_ENV),
+  trustForwardedProxy: z.boolean().default(false).volatile(),
   sessionDefaultPermission: z.union(TASK_PERMISSIONS),
   maxSubtaskDepth: z.number().min(SUBTASK_DEPTH_MIN).max(SUBTASK_DEPTH_MAX).default(DEFAULT_SUBTASK_DEPTH).volatile(),
   sessionPollSeconds: z.number().min(SESSION_POLL_MIN_SECONDS).max(SESSION_POLL_MAX_SECONDS).default(DEFAULT_SESSION_POLL_SECONDS).volatile(),
-  teamProvider: z.string().min(1).default(DEFAULT_TEAM_PROVIDER),
+  runLaunchWidth: z.number().min(RUN_LAUNCH_WIDTH_MIN).max(RUN_LAUNCH_WIDTH_MAX).default(DEFAULT_RUN_LAUNCH_WIDTH).volatile(),
+  spendBudgetTokens: z.number().min(DEFAULT_SPEND_BUDGET_TOKENS).default(DEFAULT_SPEND_BUDGET_TOKENS).volatile(),
   goalRunEnabled: z.boolean().default(false).volatile(),
+  cardDefaultMode: z.string().default('').volatile(),
+  cardDefaultPermission: z.union([...TASK_PERMISSIONS, '']).default('').volatile(),
+  cardDefaultModel: z.string().default('').volatile(),
+  cardDefaultReasoningEffort: z.string().default('').volatile(),
   goalVerification: z.boolean().default(true).volatile(),
   goalVerificationModel: z.string().default('').volatile(),
   goalVerificationReasoningEffort: z.string().default('').volatile(),
@@ -283,17 +354,66 @@ export function readConfigField<T>(field: Volatile<T> | T | undefined, fallback:
   return field as T
 }
 
-/** Resolve proxy access without ever placing the token value in plugin config. */
-export function resolveProxyAccess(config: Config | undefined, env: NodeJS.ProcessEnv = process.env): { trustedProxyHosts: string[]; proxyToken?: string } {
+/**
+ * Resolve proxy access without ever placing the token value in plugin config.
+ *
+ * The forwarded-proxy switch travels as a reader rather than a value: it is
+ * schema-volatile, so the fence must read it when a request arrives instead of
+ * when the routes are registered.
+ * @param config - the resolved plugin config.
+ * @param env - environment holding the proxy token value.
+ * @returns the route access handed to {@link makeTaskBoardRoutes}.
+ */
+export function resolveProxyAccess(config: Config | undefined, env: NodeJS.ProcessEnv = process.env): {
+  trustedProxyHosts: string[]
+  proxyToken?: string
+  trustForwardedProxy: () => boolean
+} {
+  const trustForwardedProxy = (): boolean => readConfigField(config?.trustForwardedProxy, DEFAULT_TRUST_FORWARDED_PROXY)
   const trustedProxyHosts = config?.trustedProxyHosts ?? []
-  if (trustedProxyHosts.length === 0) return { trustedProxyHosts }
+  if (trustedProxyHosts.length === 0) return { trustedProxyHosts, trustForwardedProxy }
   const proxyTokenEnv = config?.proxyTokenEnv ?? DEFAULT_PROXY_TOKEN_ENV
   if (proxyTokenEnv.trim() === '') throw new Error('task-board: proxyTokenEnv must not be empty')
   const proxyToken = env[proxyTokenEnv]
   if (proxyToken === undefined || proxyToken === '') {
     throw new Error(`task-board: trustedProxyHosts requires a non-empty ${proxyTokenEnv} environment variable`)
   }
-  return { trustedProxyHosts, proxyToken }
+  return { trustedProxyHosts, proxyToken, trustForwardedProxy }
+}
+
+/**
+/**
+ * Schema default for the forwarded-proxy switch, re-read for hand-built
+ * contexts. Deliberately false: a deployment that never configured it keeps
+ * refusing every forwarded request, which is the #1906 fence.
+ */
+export const DEFAULT_TRUST_FORWARDED_PROXY = false
+
+/**
+ * Resolve the composition's optional `connection` service.
+ *
+ * The service is the Host's own browser-session authority: it fronts every
+ * `/api` request with the Host/Origin fence and the signed `dsh-auth-*` cookie,
+ * which is what a deployment behind a reverse proxy or ingress validates on the
+ * same authority the GUI is served from. The board bridges it instead of
+ * repeating that check, so a proxy request the Host already authenticated is
+ * admitted without a board-specific host allowlist (issue #1930). It is
+ * deliberately resolved like the agent-tool registry rather than injected:
+ * a composition that serves no connection keeps mounting the board on the
+ * pre-existing loopback fence, and one that mounts the service later is picked
+ * up on the next request because the fence asks this resolver each time.
+ * @param ctx - the plugin context.
+ * @returns the trust face, or undefined when this deployment serves none.
+ */
+export function resolveConnectionTrust(ctx: Context): TaskBoardConnectionTrust | undefined {
+  try {
+    const connection = ctx.get('connection') as Partial<TaskBoardConnectionTrust> | undefined
+    return connection !== undefined && typeof connection.requestRejection === 'function'
+      ? connection as TaskBoardConnectionTrust
+      : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /** The registry face the agent tools register into. */
@@ -377,80 +497,6 @@ export function resolveHostDefaultPermission(ctx: Context): TaskPermission | und
 }
 
 /**
- * How long one teammate may take to reach its durable active or failed edge.
- * Agent Teams provisioning normally resolves in seconds; the bound exists so a
- * hung spawn settles the subtask instead of holding the cascade open forever.
- */
-const TEAMMATE_PROVISION_TIMEOUT_MS = 600_000
-
-/** The subset of the Agent Teams service this plugin drives. */
-interface AgentTeamsFace {
-  spawnTeammate(caller: unknown, request: {
-    name: string
-    description: string
-    prompt: Array<{ type: 'text'; text: string }>
-    context: 'fresh' | 'fork'
-    provider: string
-    signal: AbortSignal
-  }): Promise<{ member?: { id?: string; phase?: string; error?: string } }>
-}
-
-/**
- * Resolve the optional Agent Teams service. Like the tool registry and the llm
- * runtime, it is deliberately not injected: a deployment without Agent Teams
- * must still mount the whole board and only lose team-mode runs.
- * @param ctx - the plugin context.
- * @returns the service, or undefined when this deployment serves none.
- */
-export function resolveAgentTeams(ctx: Context): AgentTeamsFace | undefined {
-  try {
-    const teams = ctx.get('agentTeams') as AgentTeamsFace | undefined
-    return teams !== undefined && typeof teams.spawnTeammate === 'function' ? teams : undefined
-  } catch {
-    return undefined
-  }
-}
-
-/**
- * Build the team dispatcher: the run's Lead session spawns one teammate per
- * subtask through the Agent Teams service, and the teammate's session id is
- * attached to that subtask's execution so the ordinary session monitor settles
- * it. Returns undefined when the deployment serves no Agent Teams service or
- * no live-agent registry, which makes a team run fail closed.
- * @param ctx - the plugin context.
- * @param provider - the continuable-subagent provider for fresh teammates.
- * @returns the dispatcher, or undefined when team runs cannot be served.
- */
-export function buildTeamDispatcher(ctx: Context, provider: string): TaskBoardTeamDispatcher | undefined {
-  const teams = resolveAgentTeams(ctx)
-  if (teams === undefined) return undefined
-  if (typeof (ctx.agents as { get?: unknown } | undefined)?.get !== 'function') return undefined
-  return {
-    async spawn(input) {
-      const lead = ctx.agents.get(input.leadSessionId as Parameters<typeof ctx.agents.get>[0])
-      if (lead === undefined) return { error: `lead session ${input.leadSessionId} is not live` }
-      try {
-        const result = await teams.spawnTeammate(lead, {
-          name: input.name,
-          description: input.description,
-          prompt: [{ type: 'text', text: input.prompt }],
-          context: 'fresh',
-          provider,
-          signal: AbortSignal.timeout(TEAMMATE_PROVISION_TIMEOUT_MS),
-        })
-        const member = result?.member
-        if (member === undefined) return { error: 'Agent Teams returned no teammate' }
-        if (member.phase === 'failed') return { error: member.error ?? 'teammate provisioning failed' }
-        if (typeof member.id !== 'string' || member.id === '') return { error: 'Agent Teams returned no teammate session' }
-        return { sessionId: member.id }
-      } catch (error) {
-        return { error: `teammate provisioning failed: ${error instanceof Error ? error.message : String(error)}` }
-      }
-    },
-  }
-}
-
-/**
  * Read the optional `llm` service. The board deliberately does not inject it:
  * a deployment without a model must still mount the board, and the parse route
  * answers a typed failure instead of the plugin failing to load (issue #1540).
@@ -464,6 +510,113 @@ export function resolveLlmRuntime(ctx: Context): LlmRuntime | undefined {
   } catch {
     return undefined
   }
+}
+
+/**
+ * Resolve the optional attachment storage.
+ *
+ * The board does not inject the service: a deployment without one must still
+ * mount the board, and every attachment surface then answers with a typed
+ * "storage unavailable" failure instead of the plugin failing to load.
+ * @param ctx - the plugin context.
+ * @returns the attachment storage, or undefined when this deployment serves none.
+ */
+export function resolveAttachmentStore(ctx: Context): TaskBoardAttachmentStore | undefined {
+  try {
+    const store = ctx.get('attachments') as TaskBoardAttachmentStore | undefined
+    return store !== undefined && typeof store.saveImage === 'function' ? store : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The model-info reader the image preflight uses.
+ *
+ * It asks the OFFICIAL model service about one exact route. The model catalog
+ * the board already publishes carries no modality information and must not be
+ * used to answer that question: only the model's own declared input
+ * modalities can refuse an image route, and a route whose modalities cannot be
+ * read is UNKNOWN and therefore allowed.
+ * @param ctx - the plugin context.
+ * @returns the reader, or undefined when the deployment serves no model service.
+ */
+export function resolveModelInfoReader(ctx: Context): ModelInfoResolver | undefined {
+  return async (provider: string, model: string): Promise<{ inputModalities?: readonly string[] } | undefined> => {
+    const llm = resolveLlmRuntime(ctx)
+    if (llm === undefined) return undefined
+    try {
+      const info = await llm.resolveModelInfo(provider, model)
+      return { ...(info.inputModalities === undefined ? {} : { inputModalities: info.inputModalities }) }
+    } catch (error) {
+      console.warn('[dsh-task-board] could not resolve the model info of ' + provider + '/' + model + '; the image preflight allows the route', error)
+      return undefined
+    }
+  }
+}
+
+/**
+ * The subset of `sessionController` the board uses to wake a cold persisted
+ * session before running a slash command on it (issue #1861).
+ */
+interface SessionControllerFace {
+  resolveAgent(
+    sessionId: Parameters<Context['agents']['get']>[0],
+  ): Promise<
+    | { readonly agent: Parameters<Context['commands']['execute']>[0] }
+    | { readonly error: { readonly message?: string } }
+  >
+}
+
+/**
+ * Resolve the optional `sessionController` service. Like the tool registry and
+ * the llm runtime, it is read dynamically so capture-only test contexts that do
+ * not mount the full session controller still activate the board.
+ * @param ctx - the plugin context.
+ * @returns the session controller face, or undefined when unavailable.
+ */
+export function resolveSessionController(ctx: Context): SessionControllerFace | undefined {
+  try {
+    const controller = (ctx as { get?: (name: string) => unknown }).get?.('sessionController') as SessionControllerFace | undefined
+    return controller !== undefined && typeof controller.resolveAgent === 'function' ? controller : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Resolve the live Agent for an execution session, resuming a cold persisted
+ * session through `sessionController.resolveAgent` when it is not yet in
+ * `ctx.agents` (issue #1861).
+ *
+ * A fresh run (`session/create`) or a session the browser is currently
+ * following is already in `ctx.agents`, so the fast path returns immediately.
+ * A scheduled or manual reuse of a cold session — one that `session/list`
+ * reports as idle from disk without activating its Agent — is not in
+ * `ctx.agents` when `pinAndPrompt` runs `/permission` ahead of
+ * `session/selectModel` and `session/prompt`; delegating to
+ * `sessionController.resolveAgent` resumes it with its recorded preset and
+ * model-selection state, matching what those gateway endpoints do next.
+ * @param ctx - the plugin context.
+ * @param sessionId - the target execution session id.
+ * @returns the live Agent for `sessionId`.
+ */
+export async function resolveExecutionAgent(
+  ctx: Context,
+  sessionId: Parameters<Context['agents']['get']>[0],
+): Promise<Parameters<Context['commands']['execute']>[0]> {
+  const live = ctx.agents.get(sessionId)
+  if (live !== undefined) return live
+  const controller = resolveSessionController(ctx)
+  if (controller !== undefined) {
+    const resolved = await controller.resolveAgent(sessionId)
+    if ('agent' in resolved && resolved.agent !== undefined) return resolved.agent
+    const detail = 'error' in resolved && typeof resolved.error?.message === 'string' && resolved.error.message !== ''
+      ? `: ${resolved.error.message}`
+      : ''
+    throw new Error(`execution session ${sessionId} is not available${detail}`)
+  }
+  throw new Error(`execution session ${sessionId} is not available`)
 }
 
 /**
@@ -492,6 +645,18 @@ function applyImpl(ctx: Context, config?: Config): void {
   const maxSubtaskDepth = (): number => readConfigField(config?.maxSubtaskDepth, DEFAULT_SUBTASK_DEPTH)
   /** Current roster-poll cadence in seconds (read live: the settings card edits it in place). */
   const sessionPollSeconds = (): number => readConfigField(config?.sessionPollSeconds, DEFAULT_SESSION_POLL_SECONDS)
+  /**
+   * Current run-launch admission width. Read live on every admission, so the
+   * settings card bounds the next launch of a run that is still queueing without
+   * remounting the row; the Host clamps a hand-edited value into the schema range.
+   */
+  const runLaunchWidth = (): number => readConfigField(config?.runLaunchWidth, DEFAULT_RUN_LAUNCH_WIDTH)
+  /**
+   * Current daily token cap, read at each gate like the width above. The value
+   * decides first: 0 — the default — ends the gate before a file is opened, so
+   * a board that never set a cap pays nothing for it.
+   */
+  const spendBudgetTokens = (): number => readConfigField(config?.spendBudgetTokens, DEFAULT_SPEND_BUDGET_TOKENS)
   /**
    * The baseline the permission confirmation gate judges against: the row's own
    * `sessionDefaultPermission` when the deployment pins one, otherwise the Host's
@@ -530,20 +695,59 @@ function applyImpl(ctx: Context, config?: Config): void {
    * executions that start afterwards.
    */
   const goalRunEnabled = (): boolean => readConfigField(config?.goalRunEnabled, DEFAULT_GOAL_RUN)
+  /**
+   * Live reader of the new-card defaults, read at every use like the switch
+   * above: the create dialog prefills from the published snapshot, and each
+   * creating session re-reads them when it submits the create. A blank value
+   * means "not set" and reaches the resolver as an absent target.
+   */
+  const cardDefaults = (): CardDefaults => {
+    const permission = readConfigField<TaskPermission | ''>(config?.cardDefaultPermission, '')
+    return {
+      mode: readConfigField(config?.cardDefaultMode, '').trim() || undefined,
+      permission: isTaskPermission(permission) ? permission : undefined,
+      model: readConfigField(config?.cardDefaultModel, '').trim() || undefined,
+      reasoningEffort: readConfigField(config?.cardDefaultReasoningEffort, '').trim() || undefined,
+    }
+  }
+  // The 0.2.1 gateway requires every request to name the peer it speaks for:
+  // the board calls as the host-local owner, so its peer is minted on this
+  // fiber and aborts with it (see createOwnerPeer).
+  const ownerPeer = createOwnerPeer(ctx)
+  // A deployment that registers the legacy Agent Teams fingerprint cannot
+  // orchestrate under the dispatcher preset: the preset's own compatibility
+  // gate stops and waits for a human reply, which a scheduled or unattended run
+  // never brings (issue #2031). Read at launch, so a runtime mounted after this
+  // row is still judged, and read tolerantly: no registry, no lookup half, or a
+  // throw all answer false, which keeps today's behaviour rather than refusing
+  // cards on a guess.
+  const legacyAgentTeams = (): boolean => {
+    const lookup = lookupOf(resolveToolRegistry(ctx))
+    if (lookup === undefined) return false
+    try {
+      return lookup.get(LEGACY_AGENT_TEAMS_TOOL) !== undefined
+    } catch {
+      return false
+    }
+  }
   const host = new TaskBoardHostService(ctx.typertGateway, {
     workspaceRegistry: ctx.workspaceRegistry,
-    operatorPeer: () => ctx.connection.operator,
+    ownerPeer,
     sessionDefaultPermission,
     maxSubtaskDepth: maxSubtaskDepth(),
     goalRunEnabled,
+    runLaunchWidth,
+    spendBudgetTokens,
+    cardDefaults,
     verificationSettings,
     verificationCatalog,
+    attachments: () => resolveAttachmentStore(ctx),
+    modelInfo: () => resolveModelInfoReader(ctx),
+    legacyAgentTeams,
     timers: resolveHostTimers(ctx),
-    team: buildTeamDispatcher(ctx, config?.teamProvider ?? DEFAULT_TEAM_PROVIDER),
     commandDispatcher: {
       async execute(sessionId, line, signal) {
-        const agent = ctx.agents.get(sessionId)
-        if (agent === undefined) throw new Error(`execution session ${sessionId} is not available`)
+        const agent = await resolveExecutionAgent(ctx, sessionId)
         return (await ctx.commands.execute(agent, line, [], signal))?.result
       },
     },
@@ -558,10 +762,22 @@ function applyImpl(ctx: Context, config?: Config): void {
   // provider package can resolve it and admit itself; the board itself knows
   // no provider vocabulary. A capture-only test context implements no service
   // registry and the board still serves its own surfaces.
+  //
+  // The same service carries the read/write face an in-process consumer drives
+  // the board through — the remote bridge's board plugin reads and applies over
+  // it instead of opening an HTTP surface of its own, which the board's routes
+  // would refuse anyway (their guard admits a browser-shaped request, not a
+  // process). Every member is a forward of the Host service method of the same
+  // name: no gate, no normalization and no state lives here, so a consumer
+  // reaching the board this way is refused by exactly what refuses a browser.
   if (typeof (ctx as { provide?: unknown }).provide === 'function') {
     ctx.provide(TASK_BOARD_SERVICE_NAME, {
       registerExtension: (extension: TaskBoardExtension) => host.registerExtension(extension),
       isExtensionEnabled: (extensionId: string) => host.extensions.isActive(extensionId),
+      snapshot: () => host.snapshot(),
+      apply: (requestId: string, action: TaskBoardAction, initiator?: string) => host.apply(requestId, action, initiator),
+      subscribe: (listener: () => void) => host.subscribe(listener),
+      verificationOptions: () => host.verificationOptions(),
     })
   }
 
@@ -654,7 +870,11 @@ function applyImpl(ctx: Context, config?: Config): void {
         const handle = offGate as { dispose(): void }
         disposers.push(() => { handle.dispose() })
       }
-      const routes = makeTaskBoardRoutes(host, resolveProxyAccess(config), {
+      const routes = makeTaskBoardRoutes(host, {
+        ...resolveProxyAccess(config),
+        connection: () => resolveConnectionTrust(ctx),
+      }, {
+        attachments: () => resolveAttachmentStore(ctx),
         parseTask: async (request, signal) => {
           const llm = resolveLlmRuntime(ctx)
           if (llm === undefined) throw new TaskParseError('no-model', 'this deployment serves no llm service')

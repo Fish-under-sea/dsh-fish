@@ -24,14 +24,18 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 // Type-only: pulls the workspace plugin's Context merge (ctx.uiWorkspace), the
 // multi-instance navigation face that replaced ISessions.open().
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
-import { BoardController, TASK_BOARD_PANEL_ID } from '../core/controller.ts'
+import { BoardController, TASK_BOARD_PANEL_ID, type ExecutionModelOption, type ExecutionPresetOption } from '../core/controller.ts'
+import { modelOptionsFromCatalog, modelOptionsFromDiscoveredModels } from './board/model-options.ts'
+import { presetOptionsFromRoster, readPresetRoster, type PresetRemote } from './board/preset-roster.ts'
 import { mainViewSessionId } from './main-session.ts'
 import { LocalStorageTaskStore } from '../core/store.ts'
+import { hasOpenExecution } from '../core/tasks.ts'
 import { claimTaskboardApply, releaseTaskboardApply } from './apply-guard.ts'
 import { registerTaskBoardPanel } from './native-panel.tsx'
 import { TaskBoardSettingsCard, TaskBoardSettingsCardController, type TaskBoardSettings } from './TaskBoardSettingsCard.tsx'
 import { en, zh, setRuntimeTranslate, type TaskBoardKey } from './locales.ts'
 import { HttpTaskBoardHostTransport } from './host-api.ts'
+import { startPendingVerification } from './pending-verify.ts'
 import { installPluginCard } from './plugin-card-seat.ts'
 import { createServedEntryForm } from './settings-entry-form.ts'
 import { TaskBoardClientService } from './service.ts'
@@ -139,39 +143,11 @@ declare module '@deepseek-ai/cordis' {
  */
 export const inject = ['slots', 'sessions', 'workspaces', 'connection', 'configForms', 'locale', 'remote', 'remote.session', 'uiWorkspace', 'layout']
 
-/** The generated Remote namespace the mode picker reads its roster from. */
-type PresetRemote = ClientRemote['agentPresets']
-
-/** One agent-preset row the mode picker consumes. */
-interface PresetRosterRow {
-  id: string
-  name?: string
-  description?: string
-  /** Why this preset cannot compose a session; absent when it can. */
-  broken?: string
-  isDefault: boolean
-}
-
-/**
- * Read the agent-preset roster through the generated api-remotes face. The
- * caller passes the namespace resolved inside its scoped inject, so a host
- * that serves no such namespace never reaches here; a host that serves it
- * answers `ok: false` instead, which leaves the picker options untouched.
- * @param remote - the `remote.agentPresets` namespace.
- * @returns the roster, or a failed read the caller ignores.
- */
-async function readPresetRoster(remote: PresetRemote): Promise<{ ok: boolean; presets: readonly PresetRosterRow[] }> {
-  const response = await remote.list()
-  if (!response.ok) return { ok: false, presets: [] }
-  return { ok: true, presets: response.value.presets }
-}
-
 /**
  * Mount the task board.
  * @param ctx - client root context (services: sessions, workspaces).
  */
 export function apply(ctx: ClientContext): void {
-
   // A duplicated client injection (module factory executed twice in one page
   // lifetime) would otherwise mount a second sidebar entry and board view.
   // First application wins; later calls become no-ops (see apply-guard.ts).
@@ -225,6 +201,48 @@ export function apply(ctx: ClientContext): void {
   })
   ctx.effect(() => () => { settingsCard.dispose() }, 'task-board: settings card')
 
+  // The agent-preset roster is a runtime fact of the deployment, not ledger
+  // state, and TWO surfaces read it: the board's mode pickers and the settings
+  // card's new-card-defaults topic. It is wired here, outside the board view,
+  // because the settings card stays reachable while the board itself is
+  // disabled — that is where it is switched back on — and its default-preset
+  // field must not lose the roster with the view. The namespace mounts with the
+  // official api-remotes assembly, which the page applies beside this entry: at
+  // mount time it is usually still absent, and reading it through
+  // `remote.agentPresets` before it lands throws ("cannot get property ...
+  // without inject"), so a one-shot probe would leave both pickers with nothing
+  // but "inherit" for the page lifetime. A hard inject is no better — it would
+  // pend the whole plugin on a deployment that never mounts the namespace. The
+  // scoped inject runs the feed exactly when the namespace exists and re-runs it
+  // if the namespace is replaced; the reconnect read inside covers a deployment
+  // change behind the same namespace.
+  let presetRoster: readonly ExecutionPresetOption[] | undefined
+  let liveController: BoardController | undefined
+  const pushPresetOptions = async (presetRemote: PresetRemote): Promise<void> => {
+    try {
+      const roster = await readPresetRoster(presetRemote)
+      if (!roster.ok) return
+      const presets = presetOptionsFromRoster(roster.presets)
+      presetRoster = presets
+      settingsCard.setPresetRoster(presets)
+      liveController?.setExecutionOptions({ presets })
+    } catch (error) {
+      // A failed roster read leaves the previous options in place: the pickers
+      // stay usable, the default-preset field keeps the inherit choice alone,
+      // and the next reconnect retries the read.
+      console.error('[dsh-task-board] agent preset roster read failed', error)
+    }
+  }
+  const presetRosterFeed = ctx.inject(['remote.agentPresets'], (inner) => {
+    const presetRemote = inner.get('remote.agentPresets') as PresetRemote | undefined
+    if (presetRemote === undefined) return
+    void pushPresetOptions(presetRemote)
+    // Subscribed inside the injected scope, so a namespace that goes away takes
+    // its listener with it instead of leaving one per remount.
+    return inner.on('connection/reset', () => { void pushPresetOptions(presetRemote) })
+  })
+  ctx.effect(() => () => { void presetRosterFeed.dispose() }, 'task-board: agent preset roster')
+
   // The sidebar entry and board view mount once the settings form settles;
   // while the form is still loading, the composition default is unknown, so
   // nothing mounts yet. Only an unavailable form (no settings surface served)
@@ -271,12 +289,44 @@ export function apply(ctx: ClientContext): void {
     clientService.attach(controller)
 
     const disposers: Array<() => void> = []
+    // The board follows the live controller for the roster feed wired above,
+    // which serves the settings card whether or not the view is mounted.
+    liveController = controller
+    if (presetRoster !== undefined) controller.setExecutionOptions({ presets: presetRoster })
+    // While the mirror shows work in flight it verifies that state itself: the
+    // pushed frame is unverifiable from the browser (a stream can stay open and
+    // silent), and a settled card would otherwise keep rendering as running for
+    // as long as the tab stays open. Nothing is read once nothing is in flight.
+    disposers.push(startPendingVerification({
+      pending: () => controller.getSnapshot().tasks.some(hasOpenExecution),
+      refresh: () => { controller.refreshHostState() },
+      subscribe: listener => controller.subscribe(listener),
+    }))
+
+    // The new-card defaults are written through the very settings form this
+    // plugin binds (that is the card's save), and the Host republishes its
+    // snapshot on that write. Its SSE frame carries the value as of BEFORE the
+    // write, though, so a mirror that only followed frames would hand the create
+    // dialog the previous defaults for the rest of the page session — the
+    // "configure a default, create a card, get nothing" report. Follow the form
+    // instead: when the four defaults it holds change, re-read the authoritative
+    // snapshot. The signature keeps one write to one GET (the form announces a
+    // settled document more than once) and keeps an unrelated settings write, or
+    // any board action, from pulling the ledger again.
+    let followedDefaults = cardDefaultSignature(settingsForm.getSnapshot().value)
+    disposers.push(settingsForm.subscribe(() => {
+      const next = cardDefaultSignature(settingsForm.getSnapshot().value)
+      if (next === followedDefaults) return
+      followedDefaults = next
+      controller.refreshHostState()
+    }))
 
     // Execution-target option feeds: the workspace list drives the workspace
     // picker, and the agent-preset roster drives the mode picker. Both are
     // runtime facts (not ledger state), so the wiring pushes them into the
-    // controller on change; the preset roster is re-read after reconnects
-    // because a reconnect may serve a different deployment.
+    // controller on change; the preset roster feed itself lives beside the
+    // settings card (see apply) because that card's new-card-defaults topic
+    // reads the same roster while this view may not be mounted at all.
     const pushWorkspaceOptions = (): void => {
       const snapshot = workspaces.list.getSnapshot()
       controller.setExecutionOptions({
@@ -295,47 +345,9 @@ export function apply(ctx: ClientContext): void {
       const created = await workspaces.create({ path })
       return { workspaceId: created.workspaceId }
     })
-    const pushPresetOptions = async (presetRemote: PresetRemote): Promise<void> => {
-      try {
-        const roster = await readPresetRoster(presetRemote)
-        if (!roster.ok) return
-        controller.setExecutionOptions({
-          presets: roster.presets.map(preset => ({
-            id: preset.id,
-            name: preset.name,
-            description: preset.description,
-            broken: preset.broken,
-            isDefault: preset.isDefault,
-          })),
-        })
-      } catch (error) {
-        // A failed roster read leaves the previous options in place; the
-        // picker stays usable and the next reconnect retries the read.
-        console.error('[dsh-task-board] agent preset roster read failed', error)
-      }
-    }
-    // The roster namespace mounts with the official api-remotes assembly,
-    // which the page applies beside this entry: at mount time the namespace is
-    // usually still absent, and reading it through `remote.agentPresets`
-    // before it lands throws ("cannot get property ... without inject"), so a
-    // one-shot probe leaves the mode picker with nothing but "inherit" for the
-    // page lifetime. A hard inject is no better — it would pend the whole
-    // board on a deployment that never mounts the namespace. The scoped inject
-    // runs the feed exactly when the namespace exists and re-runs it if the
-    // namespace is replaced; the reconnect read inside covers a deployment
-    // change behind the same namespace.
-    const presetRosterFeed = ctx.inject(['remote.agentPresets'], (inner) => {
-      const presetRemote = inner.get('remote.agentPresets') as PresetRemote | undefined
-      if (presetRemote === undefined) return
-      void pushPresetOptions(presetRemote)
-      // Subscribed inside the injected scope, so a namespace that goes away
-      // takes its listener with it instead of leaving one per remount.
-      return inner.on('connection/reset', () => { void pushPresetOptions(presetRemote) })
-    })
-    disposers.push(() => { void presetRosterFeed.dispose() })
     const pushModelOptions = async (): Promise<void> => {
       try {
-        let models: Array<{ id: string; name?: string; provider?: string }> = []
+        let models: ExecutionModelOption[] = []
         let sessionRemote: ClientRemote['session'] | undefined
         try {
           sessionRemote = (remote as Partial<ClientRemote>).session
@@ -344,15 +356,7 @@ export function apply(ctx: ClientContext): void {
         }
         if (typeof sessionRemote?.modelCatalog === 'function') {
           const res = await sessionRemote.modelCatalog()
-          if (res.ok && Array.isArray(res.value?.groups)) {
-            for (const g of res.value.groups) {
-              const provider = (g as { id?: string; provider?: string }).id ?? (g as { id?: string; provider?: string }).provider
-              for (const m of g.models ?? []) {
-                const qualifiedId = provider ? `${provider}/${m.id}` : m.id
-                models.push({ id: qualifiedId, name: m.name ?? m.id, provider })
-              }
-            }
-          }
+          if (res.ok) models = modelOptionsFromCatalog(res.value)
         }
         if (models.length === 0) {
           const conn = ctx.get('connection') as {
@@ -364,11 +368,8 @@ export function apply(ctx: ClientContext): void {
           } | undefined
           if (conn?.api) {
             if (typeof conn.api.llm?.discoverModels === 'function') {
-              const res = await conn.api.llm.discoverModels() as { result?: { value?: { models?: Array<{ id: string; name?: string }> } } }
-              const list = res?.result?.value?.models
-              if (Array.isArray(list)) {
-                models = list.map(m => ({ id: m.id, name: m.name }))
-              }
+              const res = await conn.api.llm.discoverModels() as { result?: { value?: { models?: unknown } } }
+              models = modelOptionsFromDiscoveredModels(res?.result?.value?.models)
             }
             const catalogFn = typeof conn.api.session?.modelCatalog === 'function'
               ? conn.api.session.modelCatalog
@@ -376,17 +377,8 @@ export function apply(ctx: ClientContext): void {
                 ? conn.api.sessions.modelCatalog
                 : undefined
             if (models.length === 0 && catalogFn !== undefined) {
-              const res = await catalogFn() as { result?: { value?: { groups?: Array<{ id?: string; provider?: string; models?: Array<{ id: string; name?: string }> }> } } }
-              const groups = res?.result?.value?.groups
-              if (Array.isArray(groups)) {
-                for (const g of groups) {
-                  const provider = g.id ?? g.provider
-                  for (const m of g.models ?? []) {
-                    const qualifiedId = provider ? `${provider}/${m.id}` : m.id
-                    models.push({ id: qualifiedId, name: m.name ?? m.id, provider })
-                  }
-                }
-              }
+              const res = await catalogFn() as { result?: { value?: unknown } }
+              models = modelOptionsFromCatalog(res?.result?.value)
             }
           }
         }
@@ -423,6 +415,7 @@ export function apply(ctx: ClientContext): void {
       for (const dispose of disposers.splice(0)) dispose()
       clientService.detach()
       controller.dispose()
+      liveController = undefined
       uiDisposer = undefined
     }
   }
@@ -474,6 +467,27 @@ export function bindSettingsForm(ctx: ClientContext): ConfigForm<TaskBoardSettin
     forms: ctx.configForms,
     entryIds: TASK_BOARD_ENTRY_IDS,
   })
+}
+
+/**
+ * The four new-card defaults one settings document holds, as a change
+ * signature.
+ *
+ * Deliberately nothing but those four keys: the settings form also carries the
+ * board's own switches and the acceptance configuration, and an edit to one of
+ * those says nothing about the defaults the create dialog prefills from. Not a
+ * second normalization of Host state — the value never leaves this comparison.
+ * @param value - the settings form's effective section, if it has one.
+ * @returns a stable string that changes exactly when the defaults do.
+ */
+function cardDefaultSignature(value: unknown): string {
+  const section = (value ?? {}) as Record<string, unknown>
+  return JSON.stringify([
+    section.cardDefaultMode,
+    section.cardDefaultPermission,
+    section.cardDefaultModel,
+    section.cardDefaultReasoningEffort,
+  ])
 }
 
 /**

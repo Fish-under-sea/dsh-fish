@@ -1,11 +1,14 @@
 {
   "name": "@fish-under-sea/dsh-client-ui-task-board-fish",
   "description": "Host-authoritative task board for the DSH Web GUI with real session execution, Host cron scheduling, and optional cross-platform idle-sleep protection; mounted without DSH source changes.",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "icon": "icon.svg",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
+  "engines": {
+    "node": ">=24.9.0"
+  },
   "exports": {
     ".": {
       "types": "./lib/types/index.d.ts",
@@ -16,11 +19,13 @@
       "default": "./lib/client.js"
     },
     "./src/*": "./src/*",
+    "./locale/en.json": "./locale/en.json",
+    "./locale/zh.json": "./locale/zh.json",
     "./package.json": "./package.json"
   },
   "dsh": {
     "engines": {
-      "dsh": ">=0.2.0-rc.2"
+      "dsh": ">=0.2.2-rc.1"
     },
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -47,37 +52,38 @@
     "test": "node --experimental-transform-types --test test/*.test.mjs"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh": ">=0.2.0-rc.2",
+    "@deepseek-ai/dsh": ">=0.2.2-rc.1",
     "react": "^18.2.0"
   },
   "dependencies": {
-    "@deepseek-ai/schemastery": "^3.18.4",
+    "@deepseek-ai/schemastery": "^3.19.0",
     "marked": "^18.0.14"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "^4.0.4",
-    "@deepseek-ai/dsh-agent": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-agent-preset-registry": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-api-gateway": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-api-remotes": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-api-session-controller": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-api-workspace-controller": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-connection": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-locale": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-store": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-layout": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-renderer": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-settings": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-sidebar": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-workspace": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-commands": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-host-webserver": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-llm": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-settings": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-system-prompt": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-tools": "^0.2.0-rc.2",
-    "@deepseek-ai/dsh-workspace": "^0.2.0-rc.2",
+    "@deepseek-ai/cordis": "^4.1.0",
+    "@deepseek-ai/dsh-agent": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-agent-preset-registry": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-attachment": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-api-gateway": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-api-remotes": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-api-session-controller": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-api-workspace-controller": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-connection": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-locale": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-store": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-layout": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-settings": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-sidebar": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-client-ui-workspace": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-commands": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-host-webserver": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-llm": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-settings": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-system-prompt": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-tools": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-workspace": "^0.2.2-rc.1",
     "@types/node": "^22.20.0",
     "@types/react": "~18.3.1",
     "@types/react-dom": "^18.3.5",
@@ -97,6 +103,7 @@
     "src",
     "cordis.patch.yml",
     "icon.svg",
+    "locale",
     "README.en.md",
     "LICENSE",
     "NOTICE"

@@ -45,6 +45,18 @@
   --dsh-tb-motion-close: 140ms;
   --dsh-tb-ease: cubic-bezier(0.2, 0, 0, 1);
 
+  /* Card surface geometry. Every consumer below reads these in a grid or flex
+     track — the column rail, the card's stripe track, its content track and
+     each row's reserved slot height — so a card's alignment is a track
+     boundary rather than a per-element pixel nudge. Declared here because the
+     label filter row and the detail panel's label list are siblings of the
+     columns, not descendants of one. */
+  --dsh-tb-rail: 12px;
+  --dsh-tb-card-stripe: 3px;
+  --dsh-tb-card-inset: 8px;
+  --dsh-tb-card-row: 18px;
+  --dsh-tb-card-gap: 6px;
+
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
@@ -79,9 +91,11 @@
   margin-left: auto;
 }
 
+/* The board's own title sits on the same three-step scale as the detail panel
+   (15 title / 13 body / 12 meta); the column area below adds no fourth size. */
 .boardTitle {
   margin: 0;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   color: var(--dsw-alias-label-primary);
   white-space: nowrap;
@@ -159,11 +173,17 @@
   overflow: hidden;
 }
 
+/* The header's content box starts on the column rail, exactly where the first
+   card's left edge starts; the status dot is the header's own leading marker,
+   the counterpart of a card's outcome stripe. */
 .columnHeader {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 8px var(--dsh-tb-rail);
+  /* One height with and without the density switch (the archive column has
+     none), so moving between columns never shifts the cards below. */
+  min-height: calc(var(--dsh-tb-card-row) + 18px);
   flex: none;
 }
 
@@ -181,11 +201,12 @@
 .columnCount {
   flex: none;
   min-width: 0;
+  padding: 0 8px;
   font-size: 12px;
+  line-height: var(--dsh-tb-card-row);
   color: var(--dsw-alias-label-tertiary);
   background: var(--dsw-alias-interactive-bg-hover);
   border-radius: 999px;
-  padding: 1px 8px;
 }
 
 .statusDot {
@@ -201,18 +222,21 @@
 .statusDot[data-status='done'] { background: var(--dsw-alias-state-success-primary); }
 .statusDot[data-status='failed'] { background: var(--dsw-alias-state-error-primary); }
 
+/* The inset is the same rail the header uses, so a card's left edge lines up
+   under the header's content box in every column. */
 .cards {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 2px 8px 10px;
+  padding: 2px var(--dsh-tb-rail) 10px;
   overflow-y: auto;
   flex: 1;
   min-height: 0;
 }
 
+/* The empty state takes its inset from the column rail like everything else. */
 .columnEmpty {
-  padding: 24px 8px;
+  padding: 24px 0;
   text-align: center;
   font-size: 12px;
   color: var(--dsw-alias-label-tertiary);
@@ -223,14 +247,22 @@
 /* The card is an article; the stretched .cardOpen button is its keyboard and
    accessibility target. Content sits above the button (z-index 1) so the
    badges keep their own tooltips, and the article's click handler opens the
-   detail for any click that is not a quick action. */
+   detail for any click that is not a quick action.
+
+   The card is a two-track grid: the outcome stripe owns the first track and
+   every piece of content the second. One placement rule below puts all
+   children on the content track, so the title row, excerpt, meta line, labels
+   and quick actions share one rail instead of each one being nudged into
+   place. */
 .card {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: var(--dsh-tb-card-stripe) minmax(0, 1fr);
+  column-gap: var(--dsh-tb-card-inset);
+  row-gap: var(--dsh-tb-card-gap);
+  align-content: start;
   flex: none;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px 10px 14px;
+  padding: 10px calc(var(--dsh-tb-card-stripe) + var(--dsh-tb-card-inset)) 10px 0;
   text-align: left;
   background: var(--dsw-alias-bg-base);
   border: 1px solid var(--dsw-alias-border-l2);
@@ -242,19 +274,25 @@
   transition: box-shadow 120ms ease, border-color 120ms ease, transform 120ms ease;
 }
 
+/* One placement rule for every in-flow child: the card's content track. */
 .card > :not(.cardOpen) {
+  grid-column: 2;
+  min-width: 0;
   position: relative;
   z-index: 1;
 }
 
 /* State stripe: the latest execution's outcome, readable while scanning a
-   column without reading the run count. No tone (never ran, archived) paints
-   nothing. */
+   column without reading the run count. It is the same token that declares the
+   card grid's first track, so the stripe and the content rail cannot drift.
+   No tone (never ran, archived) paints nothing. */
 .card::before {
   content: '';
   position: absolute;
-  inset: 0 auto 0 0;
-  width: 3px;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--dsh-tb-card-stripe);
   background: transparent;
   pointer-events: none;
 }
@@ -304,14 +342,16 @@
   min-width: 0;
 }
 
+/* Neutral filled slot on the meta tier: the type prefix is a label, not a
+   fourth type size, and its row-tall line box sits it on the title's first
+   line without a pixel offset. */
 .cardKind {
   flex: none;
-  margin-top: 1px;
-  padding: 0 6px;
-  border-radius: 4px;
-  font-size: 10px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
   font-weight: 600;
-  line-height: 16px;
+  line-height: var(--dsh-tb-card-row);
   white-space: nowrap;
   color: var(--dsw-alias-label-secondary);
   background: var(--dsw-alias-interactive-bg-hover);
@@ -321,7 +361,7 @@
   min-width: 0;
   font-size: 13px;
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.4;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -329,7 +369,7 @@
 }
 
 .card[data-compact] {
-  gap: 2px;
+  row-gap: 2px;
   padding-top: 6px;
   padding-bottom: 6px;
 }
@@ -363,16 +403,19 @@
   -webkit-box-orient: vertical;
 }
 
-/* The meta line holds values that all have to stay readable — the update
-   stamp, the label/schedule/roll-up chips and the run count — so it wraps
-   instead of squeezing the stamp down to an unreadable stub on a narrow
-   column, and the stamp itself keeps its full width. */
+/* The meta line holds values that all have to stay readable — the stamp, the
+   label/schedule/roll-up chips — so it wraps instead of squeezing the stamp
+   down to an unreadable stub on a narrow column, and the stamp keeps its full
+   width. It reserves one row slot, and every chip on it is exactly one slot
+   tall, so a state that swaps content in never re-measures the row. */
 .cardMeta {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 4px 8px;
-  font-size: 11px;
+  min-height: var(--dsh-tb-card-row);
+  font-size: 12px;
+  line-height: var(--dsh-tb-card-row);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -382,6 +425,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Tabular figures keep a ticking stamp from re-measuring the row. */
+  font-variant-numeric: tabular-nums;
 }
 
 .cardSchedule {
@@ -390,17 +435,27 @@
   gap: 4px;
   flex: none;
   min-width: 0;
+  height: var(--dsh-tb-card-row);
+  padding: 0 8px;
   font-size: 12px;
   line-height: 1;
   white-space: nowrap;
-  padding: 2px 6px;
   border-radius: 999px;
   color: var(--dsw-alias-label-secondary);
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* The run line: one filled result badge beside the run count, both inside the
+   same fixed slot, so a settled run never re-measures the row it sits on. */
 .cardRun {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   flex: none;
+  height: var(--dsh-tb-card-row);
+  font-size: 12px;
+  line-height: var(--dsh-tb-card-row);
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .cardRun[data-declared] {
@@ -408,27 +463,52 @@
   text-underline-offset: 2px;
 }
 
-.cardRun[data-result='failed'] {
-  color: var(--dsw-alias-state-error-primary);
+/* The detail panel's badge slot, on the card: the outcome's secondary surface
+   carries the outcome's primary colour as text, so running, succeeded, failed
+   and cancelled all read with one weight instead of a filled/unfilled mix. */
+.cardResult {
+  flex: none;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: var(--dsh-tb-card-row);
+  color: var(--dsw-alias-state-warn-primary);
+  background: var(--dsw-alias-state-warn-secondary);
 }
 
-.cardRun[data-result='succeeded'] {
+.cardResult[data-result='succeeded'] {
   color: var(--dsw-alias-state-success-primary);
+  background: var(--dsw-alias-state-success-secondary);
 }
 
+.cardResult[data-result='failed'] {
+  color: var(--dsw-alias-state-error-primary);
+  background: var(--dsw-alias-state-error-secondary);
+}
+
+.cardResult[data-result='cancelled'] {
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* The session mark keeps the row slot whether it is an action or an inert
+   stamp, so a card with a session and a card without one line up. */
 .cardSession {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   flex: none;
+  width: var(--dsh-tb-card-row);
+  height: var(--dsh-tb-card-row);
   color: var(--dsw-alias-state-business-primary);
 }
 
-/* A quick action on a card: a compact icon button above the open control. */
+/* A quick action on a card: an 18px glyph box on the status rail whose pointer
+   target is the board's 44px minimum, expanded exactly like the header's icon
+   buttons, so the visible box never has to grow. */
 .cardAction {
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  margin: -4px -4px -4px 0;
+  position: relative;
   padding: 0;
   border: 0;
   border-radius: 6px;
@@ -437,13 +517,23 @@
   font-family: inherit;
 }
 
+.cardAction::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--dsh-tb-hit-size);
+  height: var(--dsh-tb-hit-size);
+  transform: translate(-50%, -50%);
+}
+
 .cardAction:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .cardAction:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
 /* Recency groups inside a settled column. */
@@ -453,12 +543,14 @@
   gap: 6px;
 }
 
+/* Group headers sit on the same rail as the cards they fold. */
 .cardGroupHeader {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 2px 0;
-  font-size: 11px;
+  padding: 4px 0 0;
+  min-height: var(--dsh-tb-card-row);
+  font-size: 12px;
   font-weight: 600;
   color: var(--dsw-alias-label-tertiary);
 }
@@ -469,23 +561,52 @@
 
 .cardGroupHeader .linkButton {
   margin-left: auto;
-  font-size: 11px;
+  font-size: 12px;
 }
 
-/* Per-column density switch in the column header. */
+/* Provider-owned source groups wrap recency groups without adding a new
+   semantic part. Long owner/repository labels wrap instead of pushing the
+   count and disclosure beyond a narrow column. */
+.sourceGroup {
+  gap: 8px;
+}
+
+.sourceGroupHeader {
+  color: var(--dsw-alias-label-secondary);
+}
+
+.sourceGroupLabel {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Per-column density switch in the column header: one row slot, 44px pointer
+   target from the same expansion the card's quick action uses. */
 .densityToggle {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 22px;
-  height: 22px;
+  width: var(--dsh-tb-card-row);
+  height: var(--dsh-tb-card-row);
   padding: 0;
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
+}
+
+.densityToggle::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--dsh-tb-hit-size);
+  height: var(--dsh-tb-hit-size);
+  transform: translate(-50%, -50%);
 }
 
 .densityToggle:hover,
@@ -496,17 +617,68 @@
 
 .densityToggle:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
-  outline-offset: 1px;
+  outline-offset: 2px;
+}
+
+/* The status rail exists on every full card — idle, running, settled, archived,
+   folded into a group — with one reserved slot height. A run that starts adds a
+   label and a spinner inside that slot instead of growing the card. */
+.cardStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--dsh-tb-card-row);
+  font-size: 12px;
+  line-height: var(--dsh-tb-card-row);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The two zones of the rail: the state text and the result on the leading
+   side, then the reserved spinner box and the quick action. */
+.cardStatusText {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.cardStatusTrail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.cardRuns {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .cardRunningLabel {
-  font-size: 11px;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
   color: var(--dsw-alias-state-warn-primary);
 }
 
+/* Reserved spinner box: its size is the same whether or not a run is open, so
+   the trailing edge of the rail never moves. */
+.cardSpinnerSlot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: var(--dsh-tb-card-row);
+  height: var(--dsh-tb-card-row);
+}
+
 .cardSpinner {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   flex: none;
   border: 2px solid var(--dsw-alias-state-warn-primary);
   border-top-color: transparent;
@@ -724,7 +896,7 @@
 
 .modalTitle {
   margin: 0;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
 }
 
@@ -755,6 +927,12 @@
 .modalHeader > .modalTitle {
   flex: 1;
   min-width: 0;
+  /* A header can now carry a fixed-width control cluster (the label manager's
+     clear rule), so the title has to shrink honestly instead of overflowing onto
+     it — the longer localised titles are where this shows. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tagManageList {
@@ -788,7 +966,7 @@
 
 .tagManageCount {
   flex: none;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -799,8 +977,118 @@
 
 .tagManageMerge {
   flex: 1 0 100%;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--dsw-alias-label-tertiary);
+}
+
+/* --- label cleanup (bulk clear) ----------------------------------------------
+ * Clearing acts on the whole ledger, not on the row above it, so the control sits
+ * in the card's corner beside the title instead of trailing the list. Only the
+ * cluster, the `?` and the field's width are new — the threshold field reuses the
+ * labeled field contract the schedule rows carry (.scheduleZone is already a label
+ * wrapping its text and its control) and both buttons reuse .ghostButton and
+ * .helpButton, so the corner never grows a second control style. The rule itself
+ * is not painted in the body: the `?` carries it as a bubble anchored under the
+ * button, which keeps it inside the modal box this stylesheet clips at .modal, and
+ * the same element is the button's aria-describedby target — one copy, shown on
+ * pointer hover and on keyboard focus alike. The notice
+ * stays plain supporting text in the body, not the error slot: "nothing matched"
+ * is an answer, not a failure.
+ * ----------------------------------------------------------------------------- */
+
+.tagCleanup {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: var(--dsh-tb-control-gap);
+}
+
+.tagCleanup .ghostButton {
+  flex: none;
+}
+
+/* The rule's carrier: a round `?` sized to the control rail, so it aligns with the
+   threshold field and the commit beside it. */
+.helpButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  flex: none;
+  width: var(--dsh-tb-control-h);
+  height: var(--dsh-tb-control-h);
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 50%;
+  color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: help;
+}
+
+.helpButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Anchor for the bubble: the header's flex row sizes it like the button alone. */
+.helpTipWrap {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+/* The rule itself, anchored under the `?` so it stays inside the modal box that
+   .modal clips. pre-line keeps the two sentences in their own paragraphs, and the
+   element doubles as the button's description. */
+.helpTip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 4;
+  box-sizing: border-box;
+  width: max-content;
+  /* Anchored to the left edge of the `?` and opening rightwards: the `?` sits just
+     left of the clear control, so a right-anchored bubble would run past the modal's
+     left edge and be clipped by .modal's own overflow. 240px leaves room for the
+     narrowest shipped locale's control cluster while still staying inside the card. */
+  max-width: 240px;
+  padding: 10px 12px;
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  box-shadow: var(--dsw-shadow-lv3);
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: left;
+  white-space: pre-line;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+
+.helpTipWrap:hover .helpTip,
+.helpTipWrap:focus-within .helpTip {
+  opacity: 1;
+  visibility: visible;
+}
+
+.tagCleanupInput {
+  flex: none;
+  width: 64px;
+}
+
+.tagCleanupNotice {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-secondary);
 }
 
 /* --- form sections (create/edit dialog) --------------------------------------
@@ -809,6 +1097,13 @@
  * every collapsed header carries a one-line summary of what it holds. The
  * body keeps an overflow fallback for tiny viewports. The chevron is drawn
  * with borders (no glyph), so no font or emoji can change it.
+ *
+ * The region is the SAME disclosure contract the card panel's folds use: the
+ * same markup (data-open, aria-expanded/aria-controls, one summary track), a
+ * 12px header row, a label that shrinks and ellipsizes before the summary
+ * does, a summary held on the one right-hand track by its auto margin, and a
+ * 44px pointer target expanded past the row. Only the spacing rhythm around
+ * the regions is the dialog's own, at the dialog's control geometry.
  * ----------------------------------------------------------------------------- */
 
 .modalBody {
@@ -826,32 +1121,57 @@
   flex: none;
 }
 
+/* A row is shorter than its 44px target, so the section stops clipping and the
+   header carries the section's inner radius itself — which is what
+   `overflow: hidden` used to do. */
 .formSection {
   display: flex;
   flex-direction: column;
   border: 1px solid var(--dsw-alias-separator-primary);
   border-radius: 10px;
-  overflow: hidden;
+  overflow: visible;
 }
 
+/* 28px row on the dialog's 30px control height (plus the section border). */
 .formSectionHeader {
+  position: relative;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 7px 10px;
+  min-height: 28px;
+  padding: 6px 10px;
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: 12px;
+  line-height: 16px;
   font-weight: 600;
   color: var(--dsw-alias-label-primary);
   text-align: left;
   background: transparent;
   border: 0;
+  border-radius: 9px;
   cursor: pointer;
 }
 
 .formSectionHeader:hover {
   background: var(--dsw-alias-bg-mask-1);
+}
+
+.formSection[data-open='true'] .formSectionHeader {
+  border-radius: 9px 9px 0 0;
+}
+
+/* Pointer target: the board's 44px minimum, expanded past the row exactly like
+   the panel's fold row and the board's card actions. */
+.formSectionHeader::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--dsh-tb-hit-size);
+  height: var(--dsh-tb-hit-size);
+  transform: translate(-50%, -50%);
 }
 
 .formSectionChevron {
@@ -869,13 +1189,22 @@
   transform: rotate(90deg);
 }
 
+/* Title and summary both shrink, so a long summary never takes the row: the
+   label keeps its own width and the line that gives way is the one that
+   ellipsizes. The summary's auto margin is what puts every region's summary on
+   the dialog's one right-hand track. */
 .formSectionTitle {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .formSectionSummary {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
+  margin-left: auto;
   overflow: hidden;
   font-weight: 400;
   color: var(--dsw-alias-label-tertiary);
@@ -949,12 +1278,22 @@
   color: var(--dsw-alias-state-error-primary);
 }
 
-/* --- detail ------------------------------------------------------------------- */
+/* --- detail -------------------------------------------------------------------
+ * Two columns on a wide panel, one column under 1024px: the card's content
+ * (description, prompt, labels, subtasks, freeze/handover) reads on the left and
+ * what the board does with it (execution settings, schedule, history, status) on
+ * the right. Both columns open on the same baseline, and every padding and gap
+ * here is a multiple of 8 so the two tracks keep one rhythm.
+ *
+ * The view's whole type scale is three steps: 15 title, 13 body, 12 meta.
+ * Hierarchy inside that scale comes from weight and the label colour role,
+ * never from a fourth size.
+ * --------------------------------------------------------------------------- */
 
 .detail {
   display: flex;
   flex-direction: column;
-  width: min(640px, calc(100vw - 48px));
+  width: min(960px, calc(100vw - 48px));
   max-height: calc(100vh - 80px);
   background: var(--dsw-alias-bg-base);
   border: 1px solid var(--dsw-alias-border-l2);
@@ -965,10 +1304,12 @@
 }
 
 .detailHeader {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 14px 18px;
+  gap: 8px;
+  padding: 16px 24px;
   border-bottom: 1px solid var(--dsw-alias-separator-primary);
   flex: none;
 }
@@ -976,8 +1317,10 @@
 .detailTitle {
   margin: 0;
   flex: 1;
+  min-width: 0;
   font-size: 15px;
   font-weight: 700;
+  line-height: 1.4;
   overflow-wrap: anywhere;
 }
 
@@ -1006,26 +1349,60 @@
 }
 
 .detailBody {
-  padding: 14px 18px;
+  padding: 16px 24px 24px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 16px;
   flex: 1;
+  min-height: 0;
+}
+
+.detailColumns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 24px;
+}
+
+.detailColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* The panel's folded regions read as one list. A group container — not a
+   per-row margin — owns the tighter spacing, so the 8px between two folds
+   cannot leak onto the sections above and below them: those keep the panel's
+   16px section rhythm because they are siblings of the group, not of a fold. */
+.detailFolds {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* The two tracks only exist while the panel can carry them; below this the
+   reading order is the single column above. */
+@media (min-width: 1024px) {
+  .detailColumns {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  }
 }
 
 .detailSection {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
+  min-width: 0;
 }
 
 .detailSection h4 {
   margin: 0;
   font-size: 12px;
   font-weight: 700;
-  color: var(--dsw-alias-label-tertiary);
-  text-transform: none;
+  color: var(--dsw-alias-label-secondary);
 }
 
 .detailText {
@@ -1035,6 +1412,21 @@
   color: var(--dsw-alias-label-primary);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* The view's controls are shared with the board's form dialogs, where this
+   scale does not apply; inside the panel they read as body copy or as meta so
+   the three-step budget holds. */
+.detailBody .scheduleInput,
+.detailBody .schedulePreset,
+.detailBody .promptBlock {
+  font-size: 13px;
+}
+
+.detailBody .scheduleZone,
+.detailBody .scheduleMeta,
+.detailBody .cardTag {
+  font-size: 12px;
 }
 
 /* --- scheduled runs ---------------------------------------------------------- */
@@ -1063,7 +1455,6 @@
   flex: 1;
   min-width: 0;
   font-family: var(--dsw-font-markdown-code-block-small);
-  font-size: 12.5px;
 }
 
 .scheduleInputInvalid {
@@ -1079,7 +1470,6 @@
   box-sizing: border-box;
   height: var(--dsh-tb-control-h);
   padding: 0 8px;
-  font-size: 12.5px;
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-specific-input-major);
   border: 1px solid var(--dsw-alias-border-l2);
@@ -1093,7 +1483,6 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12.5px;
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -1104,7 +1493,6 @@
 
 .scheduleMeta {
   margin: 0;
-  font-size: 12px;
   color: var(--dsw-alias-label-secondary);
   overflow-wrap: anywhere;
 }
@@ -1112,7 +1500,6 @@
 .promptBlock {
   margin: 0;
   padding: 10px 12px;
-  font-size: 12.5px;
   line-height: 1.5;
   font-family: var(--dsw-font-markdown-code-block-small);
   color: var(--dsw-alias-label-primary);
@@ -1157,6 +1544,21 @@
   align-self: flex-start;
 }
 
+/* --- execution history -------------------------------------------------------
+ * One row per run, two lines each: identity on the head line (status, start and
+ * end in one absolute format, the session jump) and the evidence the run
+ * produced underneath. The newest five rows are always visible; the rest sit
+ * behind one disclosure whose open and close legs are the same motion reversed
+ * (see `dshTbRowsIn` / `dshTbRowsOut`).
+ * --------------------------------------------------------------------------- */
+
+.executionLog {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
 .executionList {
   list-style: none;
   margin: 0;
@@ -1164,23 +1566,50 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
+}
+
+.executionExtra {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
 }
 
 .executionRow {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: 8px;
-  flex-wrap: wrap;
+  min-width: 0;
 }
 
+.executionRowHead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.executionRowEvidence {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* One filled slot per outcome: the secondary state surface carries the state
+   colour as text, so running, succeeded, failed and cancelled read with the
+   same weight instead of mixing a filled and an unfilled badge. */
 .executionBadge {
   flex: none;
   padding: 1px 8px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
+  line-height: 18px;
   border-radius: 999px;
   color: var(--dsw-alias-state-warn-primary);
   background: var(--dsw-alias-state-warn-secondary);
@@ -1188,50 +1617,442 @@
 
 .executionBadge[data-result='succeeded'] {
   color: var(--dsw-alias-state-success-primary);
-  background: transparent;
+  background: var(--dsw-alias-state-success-secondary);
 }
 
 .executionBadge[data-result='failed'] {
   color: var(--dsw-alias-state-error-primary);
-  background: transparent;
+  background: var(--dsw-alias-state-error-secondary);
 }
 
 .executionBadge[data-result='cancelled'] {
-  color: var(--dsw-alias-label-tertiary);
-  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .executionTimes {
   font-size: 12px;
+  line-height: 1.5;
   color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
 }
 
 .executionError {
-  width: 100%;
   font-size: 12px;
+  line-height: 1.5;
   color: var(--dsw-alias-state-error-primary);
   overflow-wrap: anywhere;
 }
 
-.moveRow {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+/* The session jump rides the row's head line, pushed to its trailing edge; its
+   pointer target is grown to the 44px minimum without moving the glyph. */
+.executionSession {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 0 2px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--dsw-alias-state-business-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
 }
+
+.executionSession::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 100%;
+  height: var(--dsh-tb-hit-size);
+  transform: translate(-50%, -50%);
+}
+
+.executionSession:hover {
+  text-decoration: underline;
+}
+
+.executionDisclosure {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+}
+
+/* One disclosure chevron for every folded region of the panel: drawn from
+   borders so it never depends on a glyph font, and it turns by the same 120ms
+   motion the rest of the board uses. */
+.disclosureChevron {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 120ms var(--dsh-tb-ease);
+}
+
+.disclosureChevron[data-open='true'] {
+  transform: rotate(225deg);
+}
+
+/* --- acceptance report -------------------------------------------------------
+ * The row carries the verdict only. Everything the board decided on stays one
+ * press away inside the fold: counts, judge route, per-criterion scores, the
+ * findings, the evidence scope and the usage are all rendered there, unchanged.
+ * --------------------------------------------------------------------------- */
+
+.verifyReport {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.verifyBadge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 2px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-interactive-bg-hover);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.verifyBadge::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: var(--dsh-tb-hit-size);
+  transform: translateY(-50%);
+}
+
+.verifyBadge[data-tone='warn'] {
+  color: var(--dsw-alias-state-warn-primary);
+  background: var(--dsw-alias-state-warn-secondary);
+  border-color: transparent;
+}
+
+.verifyBadge[data-tone='success'] {
+  color: var(--dsw-alias-state-success-primary);
+  background: var(--dsw-alias-state-success-secondary);
+  border-color: transparent;
+}
+
+.verifyBadge[data-tone='error'] {
+  color: var(--dsw-alias-state-error-primary);
+  background: var(--dsw-alias-state-error-secondary);
+  border-color: transparent;
+}
+
+.verifyVerdict {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.verifyPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.attemptRow {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.attemptHead {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* --- free-text references (handover bundle) --------------------------------- */
+
+.referenceList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.referenceRow {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* --- compact action menu (status moves, secondary card actions) ---------------
+ * One trigger on the control track, the choices only while it is open. Escape
+ * and an outside press close it and focus returns to the trigger; the panel
+ * paints above the scrolling body, so the menu never clips against it.
+ * --------------------------------------------------------------------------- */
+
+.menuRoot {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.menuChevron {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  margin-top: -3px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 120ms var(--dsh-tb-ease);
+}
+
+.menuChevron[data-open='true'] {
+  margin-top: 0;
+  transform: rotate(225deg);
+}
+
+.menuPanel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  box-shadow: var(--dsw-shadow-lv2);
+}
+
+/* The header's menu hangs from the panel's trailing edge instead. */
+.detailHeader .menuPanel {
+  left: auto;
+  right: 0;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  min-height: var(--dsh-tb-hit-size);
+  padding: 0 10px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.menuItem:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.menuItem:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* --- detail footer -----------------------------------------------------------
+ * Exactly three controls on the normal track: edit (ghost), run (primary) and
+ * delete (danger). The stamp separates the destructive control from the primary
+ * action, so the two are never adjacent.
+ * --------------------------------------------------------------------------- */
 
 .detailFooter {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 18px;
+  gap: 8px;
+  padding: 16px 24px;
   border-top: 1px solid var(--dsw-alias-separator-primary);
   flex: none;
 }
 
 .detailMeta {
-  margin-left: auto;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
+}
+
+.detailFooter > .detailMeta {
+  margin-left: 0;
+}
+
+.detailStamp {
+  margin-left: auto;
+  text-align: end;
+}
+
+/* --- disclosure motion -------------------------------------------------------
+ * The folded regions of the panel (the rest of the history, the acceptance
+ * detail) appear and leave as one reversed pair: the same 6px travel on the
+ * same curve, only opposite in direction. `usePresence` keeps the node mounted
+ * through the exit leg, so the close never snaps.
+ * --------------------------------------------------------------------------- */
+
+.executionExtra,
+.verifyPanel,
+.detailBody .formSectionBody {
+  animation: dshTbRowsIn var(--dsh-tb-motion-enter) var(--dsh-tb-ease) both;
+}
+
+.executionExtra[data-execution-fold='closing'],
+.verifyPanel[data-state='closing'],
+.detailBody .formSectionBody[data-state='closing'] {
+  animation: dshTbRowsOut var(--dsh-tb-motion-close) var(--dsh-tb-ease) both;
+}
+
+/* The task dialogs' regions are the same fold body under another name, so they
+   ride the same pair rather than a third disclosure style: one keyframe pair,
+   one 6px travel, the panel's two duration tokens. `usePresence` in
+   `CollapsibleSection` keeps the body mounted through the exit leg. */
+.formSectionBody {
+  animation: dshTbRowsIn var(--dsh-tb-motion-enter) var(--dsh-tb-ease) both;
+}
+
+.formSectionBody[data-state='closing'] {
+  animation: dshTbRowsOut var(--dsh-tb-motion-close) var(--dsh-tb-ease) both;
+}
+
+@keyframes dshTbRowsIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes dshTbRowsOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-6px); }
+}
+
+@keyframes dshTbFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes dshTbFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Reduced motion: the same folds keep their short fade and drop only the
+   spatial travel. Both legs stay the reversed pair and `usePresence` still
+   unmounts on the close duration. */
+@media (prefers-reduced-motion: reduce) {
+  .executionExtra,
+  .verifyPanel,
+  .detailBody .formSectionBody {
+    animation: dshTbFadeIn var(--dsh-tb-motion-close) linear both;
+  }
+
+  .executionExtra[data-execution-fold='closing'],
+  .verifyPanel[data-state='closing'],
+  .detailBody .formSectionBody[data-state='closing'] {
+    animation: dshTbFadeOut var(--dsh-tb-motion-close) linear both;
+  }
+
+  .formSectionBody {
+    animation: dshTbFadeIn var(--dsh-tb-motion-close) linear both;
+  }
+
+  .formSectionBody[data-state='closing'] {
+    animation: dshTbFadeOut var(--dsh-tb-motion-close) linear both;
+  }
+}
+
+/* --- folded regions of the panel ---------------------------------------------
+ * The panel folds reuse the task form's own region contract (`.formSection`);
+ * only the sizes and the spacing rhythm are the panel's, so the form dialogs
+ * keep their own scale. Nothing here is a second disclosure style.
+ * --------------------------------------------------------------------------- */
+
+/* A fold row is 30px tall and its pointer target is still the board's 44px
+   minimum, expanded past the row exactly like `.cardAction`. A target that
+   overflows the row cannot live inside a clipping section, so the section stops
+   clipping and the header carries the section's inner radius itself — which is
+   what `overflow: hidden` used to do. */
+.detailBody .formSection {
+  min-width: 0;
+  overflow: visible;
+}
+
+.detailBody .formSectionHeader {
+  position: relative;
+  box-sizing: border-box;
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 16px;
+  border-radius: 9px;
+}
+
+.detailBody .formSection[data-open='true'] .formSectionHeader {
+  border-radius: 9px 9px 0 0;
+}
+
+.detailBody .formSectionHeader::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--dsh-tb-hit-size);
+  height: var(--dsh-tb-hit-size);
+  transform: translate(-50%, -50%);
+}
+
+/* Title and summary both shrink, so a long summary never takes the row: the
+   label keeps its own width and the line that gives way is the one that
+   ellipsizes. The summary's auto margin is what puts every fold's summary on
+   the panel's one right-hand track, two glyphs or clipped alike. */
+.detailBody .formSectionTitle {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detailBody .formSectionSummary {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+}
+
+.detailBody .formSectionBody {
+  gap: 8px;
 }
 
 /* --- constrained board containers ------------------------------------------ */
@@ -1393,26 +2214,40 @@
 
   .detailHeader {
     flex-wrap: wrap;
-    padding-top: max(12px, env(safe-area-inset-top));
-    padding-right: max(14px, env(safe-area-inset-right));
-    padding-left: max(14px, env(safe-area-inset-left));
+    padding-top: max(16px, env(safe-area-inset-top));
+    padding-right: max(16px, env(safe-area-inset-right));
+    padding-left: max(16px, env(safe-area-inset-left));
   }
 
   .detailTitle {
     min-width: 0;
   }
 
+  /* One reading column: the panel is narrower than the two tracks can carry. */
+  .detailColumns {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .detailColumn {
+    gap: 16px;
+  }
+
   .detailBody {
     overscroll-behavior-y: contain;
-    padding-right: max(14px, env(safe-area-inset-right));
-    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+    padding-left: max(16px, env(safe-area-inset-left));
   }
 
   .detailFooter {
     flex-wrap: wrap;
-    padding-right: max(14px, env(safe-area-inset-right));
-    padding-bottom: max(12px, env(safe-area-inset-bottom));
-    padding-left: max(14px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+    padding-left: max(16px, env(safe-area-inset-left));
+  }
+
+  .menuPanel {
+    min-width: 200px;
   }
 
   .detailFooter > button {
@@ -1448,6 +2283,9 @@
 .dangerButton:focus-visible,
 .iconButton:focus-visible,
 .linkButton:focus-visible,
+.menuItem:focus-visible,
+.verifyBadge:focus-visible,
+.executionSession:focus-visible,
 .search:focus-visible,
 .input:focus-visible,
 .select:focus-visible,
@@ -1464,6 +2302,9 @@
 .dangerButton,
 .iconButton,
 .linkButton,
+.menuItem,
+.verifyBadge,
+.executionSession,
 .search,
 .input,
 .select,
@@ -1526,6 +2367,11 @@
   .dangerButton,
   .iconButton,
   .linkButton,
+  .menuItem,
+  .verifyBadge,
+  .executionSession,
+  .disclosureChevron,
+  .menuChevron,
   .search,
   .input,
   .select,
@@ -1555,6 +2401,7 @@
   .modalBackdrop[data-state='closing'] .detail {
     animation: dshTbBackdropOut var(--dsh-tb-motion-close) linear both;
   }
+
 }
 
 /* --- task tags (issue #1521) ---------------------------------------------------
@@ -1571,16 +2418,21 @@
   gap: 4px;
 }
 
+/* An empty label list paints no row at all instead of a gap-sized sliver. */
+.cardTags:empty {
+  display: none;
+}
+
 .cardTag {
   max-width: 100%;
-  padding: 0 7px;
+  padding: 0 8px;
   overflow: hidden;
   border: 1px solid var(--dsh-task-tag-border);
   border-radius: 999px;
   background: var(--dsh-task-tag-fill);
   color: var(--dsw-alias-label-primary);
-  font-size: 10px;
-  line-height: 16px;
+  font-size: 12px;
+  line-height: 1.5;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1589,7 +2441,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   /* The board's own row rhythm spaces this row from the header and the
      columns; a local margin would double it. */
   margin: 0;
@@ -1598,10 +2450,13 @@
 
 .tagFilterLabel {
   color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
+  font-size: 12px;
 }
 
+/* A filter chip keeps its compact box and takes the 44px pointer target from
+   the same expansion the card's quick action uses. */
 .tagChip {
+  position: relative;
   padding: 1px 9px;
   border: 1px solid var(--dsh-task-tag-border);
   border-radius: 999px;
@@ -1609,8 +2464,23 @@
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
   font-family: inherit;
-  font-size: 11px;
-  line-height: 18px;
+  font-size: 12px;
+  line-height: var(--dsh-tb-card-row);
+}
+
+.tagChip::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--dsh-tb-hit-size);
+  height: var(--dsh-tb-hit-size);
+  transform: translate(-50%, -50%);
+}
+
+.tagChip:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 2px;
 }
 
 .tagChip[data-active='true'] {
@@ -1655,8 +2525,9 @@
 }
 
 .fieldHint {
+  margin: 0;
   color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.4;
 }
 
@@ -1677,6 +2548,72 @@
 
 .tagAddButton {
   align-self: flex-start;
+}
+
+/* --- card attachments (#1979) ------------------------------------------------- */
+
+.attachmentDrop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px dashed var(--dsw-alias-border-secondary);
+  border-radius: 8px;
+}
+
+.attachmentDrop[data-state='active'] {
+  border-color: var(--dsw-alias-border-focus);
+  background: var(--dsw-alias-surface-raised);
+}
+
+.attachmentDropHint {
+  flex: 1 1 12em;
+  min-width: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.attachmentList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attachmentRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border: 1px solid var(--dsw-alias-border-subtle);
+  border-radius: 6px;
+}
+
+.attachmentThumb {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--dsw-alias-surface-raised);
+}
+
+.attachmentName {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.attachmentMeta {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
 }
 
 /* --- project partition (#1536) ------------------------------------------------ */
@@ -1746,33 +2683,35 @@
  * with their statuses.
  * ----------------------------------------------------------------------------- */
 
+/* Lineage badges reuse the card's filled badge slot: one row-tall pill, the
+   tone's secondary surface with the tone's primary colour as text. The border
+   is gone so the pill is exactly one row slot tall. */
 .cardSubtask {
   max-width: 100%;
-  padding: 0 7px;
+  padding: 0 8px;
   overflow: hidden;
-  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 999px;
-  background: transparent;
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-secondary);
-  font-size: 10px;
-  line-height: 16px;
+  font-size: 12px;
+  line-height: var(--dsh-tb-card-row);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .cardSubtask[data-tone='failed'] {
   color: var(--dsw-alias-state-error-primary);
-  border-color: var(--dsw-alias-state-error-primary);
+  background: var(--dsw-alias-state-error-secondary);
 }
 
 .cardSubtask[data-tone='running'] {
   color: var(--dsw-alias-state-warn-primary);
-  border-color: var(--dsw-alias-state-warn-primary);
+  background: var(--dsw-alias-state-warn-secondary);
 }
 
 .cardSubtask[data-tone='done'] {
   color: var(--dsw-alias-state-success-primary);
-  border-color: var(--dsw-alias-state-success-primary);
+  background: var(--dsw-alias-state-success-secondary);
 }
 
 .subtaskList {

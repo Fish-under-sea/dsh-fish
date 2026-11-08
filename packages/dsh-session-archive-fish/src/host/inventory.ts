@@ -14,7 +14,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ArchiveIssueCode, ArchiveSessionRow, WorkspaceView } from '../core/types.ts'
-import type { LedgerDocument } from './ledger.ts'
+import type { LedgerDocument, LedgerSource } from './ledger.ts'
 import { canonicalSessionId, indexSessionDirs, type SessionDirIndex } from './session-files.ts'
 
 /** Minimal duck-typed face of the host SessionController feed. */
@@ -64,6 +64,15 @@ export interface InventorySources {
    * reads and parses the file itself.
    */
   projcacheIndex?: ProjcacheIndex
+  /**
+   * Optional host-side protection facts the browser half cannot observe: live
+   * SessionStore members (`attached`) and sessions a mutating operation owns
+   * (`in-flight`). The service passes one so the served rows say why the host
+   * will refuse to delete them; absent means rows carry no
+   * {@link ArchiveSessionRow.hostProtectedReason}, exactly as before the field
+   * existed.
+   */
+  hostProtectedReason?: ReadonlyMap<string, 'attached' | 'in-flight'>
 }
 
 /** Enrichment facts from one per-session projection-cache file. */
@@ -108,6 +117,39 @@ interface ProjcacheRecordShape {
 }
 
 /**
+ * The file names one session's per-session projection cache may carry. The
+ * harness names the file from the id form it is holding, so a session's cache
+ * lives under the canonical `session-<id>` spelling or the bare one. The
+ * canonical spelling is tried first: it is what every archive id already is,
+ * so a cache written under it costs exactly one read. `scrubProjcache` deletes
+ * under both spellings for the same reason.
+ */
+function projcacheSpellings(id: string): readonly string[] {
+  const canonical = canonicalSessionId(id)
+  const bare = canonical.startsWith('session-') ? canonical.slice('session-'.length) : canonical
+  return bare === canonical ? [canonical] : [canonical, bare]
+}
+
+/** Parse one projection-cache file; unreadable or shapeless files yield undefined. */
+async function readProjcacheEntry(path: string): Promise<ProjcacheFileEntry | undefined> {
+  try {
+    const parsed = JSON.parse(await readFile(path, 'utf8')) as { record?: ProjcacheRecordShape } & ProjcacheRecordShape
+    const record: ProjcacheRecordShape = parsed.record ?? parsed
+    const title = typeof record.rows?.title?.val === 'string' && record.rows.title.val !== '' ? record.rows.title.val : undefined
+    const createdAt = typeof record.identity?.createdAt === 'number' ? record.identity.createdAt : undefined
+    const cwd = typeof record.identity?.cwd === 'string' && record.identity.cwd !== '' ? record.identity.cwd : undefined
+    if (title === undefined && createdAt === undefined && cwd === undefined) return undefined
+    return {
+      ...(title !== undefined ? { title } : {}),
+      ...(createdAt !== undefined ? { createdAt } : {}),
+      ...(cwd !== undefined ? { cwd } : {}),
+    }
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Fallback enrichment from one per-session projection-cache file
  * (`storages/session_projcache/sessions/<id>.json`). The aggregate index
  * only covers recent sessions, so older/archived rows fall back to these
@@ -118,23 +160,11 @@ export async function readProjcacheFile(dshHome: string, id: string, cache?: Inv
   if (cache !== undefined && cache.has(id)) {
     return cache.get(id) ?? undefined
   }
-  const path = join(dshHome, 'storages', 'session_projcache', 'sessions', `${id}.json`)
+  const dir = join(dshHome, 'storages', 'session_projcache', 'sessions')
   let entry: ProjcacheFileEntry | undefined
-  try {
-    const parsed = JSON.parse(await readFile(path, 'utf8')) as { record?: ProjcacheRecordShape } & ProjcacheRecordShape
-    const record: ProjcacheRecordShape = parsed.record ?? parsed
-    const title = typeof record.rows?.title?.val === 'string' && record.rows.title.val !== '' ? record.rows.title.val : undefined
-    const createdAt = typeof record.identity?.createdAt === 'number' ? record.identity.createdAt : undefined
-    const cwd = typeof record.identity?.cwd === 'string' && record.identity.cwd !== '' ? record.identity.cwd : undefined
-    if (title !== undefined || createdAt !== undefined || cwd !== undefined) {
-      entry = {
-        ...(title !== undefined ? { title } : {}),
-        ...(createdAt !== undefined ? { createdAt } : {}),
-        ...(cwd !== undefined ? { cwd } : {}),
-      }
-    }
-  } catch {
-    entry = undefined
+  for (const spelling of projcacheSpellings(id)) {
+    entry = await readProjcacheEntry(join(dir, `${spelling}.json`))
+    if (entry !== undefined) break
   }
   if (cache !== undefined) cache.set(id, entry ?? null)
   return entry
@@ -155,7 +185,7 @@ export interface BuiltInventory {
 }
 
 /** Ledger entry for a session under either id spelling; canonical wins. */
-export function ledgerEntryFor(ledger: LedgerDocument, canonicalId: string, nativeId?: string): { archivedAt: number; source: 'manual' | 'auto' } | undefined {
+export function ledgerEntryFor(ledger: LedgerDocument, canonicalId: string, nativeId?: string): { archivedAt: number; source: LedgerSource } | undefined {
   return ledger.entries[canonicalId] ?? (nativeId !== undefined && nativeId !== canonicalId ? ledger.entries[nativeId] : undefined)
 }
 
@@ -306,11 +336,15 @@ export async function buildInventory(sources: InventorySources, signal: AbortSig
     const archived = archivedSet.has(draft.id)
     const ledgerEntry = archived ? ledgerEntryFor(sources.ledger, draft.id, nativeIds[draft.id]) : undefined
     const archivedAt = ledgerEntry?.archivedAt
+    // The source only travels with a real archive time: a row without one has
+    // nothing to attribute, and the UI keys the "backfilled" marker off it.
+    const archivedAtSource = ledgerEntry?.source
     if (archived && archivedAt === undefined) issues.push('no-archive-time')
     if (draft.fromFeed === false) issues.push('unreadable')
     if (draft.fromFeed === false && draft.hasDir === false) issues.push('no-data')
     const childList = childIds.get(draft.id) ?? []
     const sizeBytes = dirIndex.sizes.get(draft.id)
+    const hostProtectedReason = sources.hostProtectedReason?.get(draft.id)
     rows.push({
       id: draft.id,
       ...(draft.title !== undefined ? { title: draft.title } : {}),
@@ -319,10 +353,12 @@ export async function buildInventory(sources: InventorySources, signal: AbortSig
       workspaceIds: workspaceOf.get(draft.id) ?? [],
       archived,
       ...(archivedAt !== undefined ? { archivedAt } : {}),
+      ...(archivedAt !== undefined && archivedAtSource !== undefined ? { archivedAtSource } : {}),
       ...(draft.lastActivityAt !== undefined ? { lastActivityAt: draft.lastActivityAt } : {}),
       lastActivityReliable: draft.lastActivityReliable,
       ...(sizeBytes !== undefined ? { sizeBytes } : {}),
       running: draft.running,
+      ...(hostProtectedReason !== undefined ? { hostProtectedReason } : {}),
       blank: draft.blank,
       ...(draft.origin !== undefined ? { origin: draft.origin } : {}),
       ...(draft.parentId !== undefined ? { parentId: draft.parentId } : {}),

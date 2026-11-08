@@ -32,6 +32,7 @@
 export const PLUGIN_TOOL_SECTION_ORDERS = {
   ssh: 150,
   'task-board': 200,
+  agents: 220,
 } as const
 
 /** One plugin id keyed by {@link PLUGIN_TOOL_SECTION_ORDERS}. */

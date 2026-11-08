@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis';
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings';
 import z from '@deepseek-ai/schemastery';
 import { type UsageServiceOptions } from './host/usage-service.ts';
+import { type SpendDisplay } from './core/spend.ts';
 declare module '@deepseek-ai/cordis' {
     interface Events {
         /**
@@ -38,6 +39,10 @@ export interface UsageConfigFields {
     pollIntervalSec?: ConfigField<number>;
     /** Ledger retention in local days. */
     retainDays?: ConfigField<number>;
+    /** Currency the spend figures are DISPLAYED in; the ledger itself stays CNY. */
+    spendCurrency?: ConfigField<'CNY' | 'USD'>;
+    /** CNY per USD, consulted only while the display currency is USD. */
+    cnyPerUsd?: ConfigField<number>;
 }
 /**
  * Plugin config schema. Under the 0.1.7 settings model this schema IS the
@@ -57,13 +62,19 @@ export declare const Config: z<Schemastery.ObjectS<NoInfer<{
     enabled: z<boolean, boolean, "volatile-defined">;
     pollIntervalSec: z<number, number, "volatile-defined">;
     retainDays: z<number, number, "volatile-defined">;
+    spendCurrency: z<"CNY" | "USD", "CNY" | "USD", "volatile-defined">;
+    cnyPerUsd: z<number, number, "volatile-defined">;
 }>>, Schemastery.ObjectT<NoInfer<{
     enabled: z<boolean, boolean, "volatile-defined">;
     pollIntervalSec: z<number, number, "volatile-defined">;
     retainDays: z<number, number, "volatile-defined">;
+    spendCurrency: z<"CNY" | "USD", "CNY" | "USD", "volatile-defined">;
+    cnyPerUsd: z<number, number, "volatile-defined">;
 }>>, "plain">;
 export interface ResolvedConfig extends UsageServiceOptions {
     enabled: boolean;
+    /** The resolved spend display; always present, unlike the optional service option. */
+    display: SpendDisplay;
 }
 /**
  * Resolve the effective settings of one activation. Volatile references are

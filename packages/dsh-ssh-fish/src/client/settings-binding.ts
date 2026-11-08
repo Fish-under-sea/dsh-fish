@@ -66,7 +66,6 @@ const PENDING_SNAPSHOT: ConfigFormSnapshot<never> = {
   user: undefined,
   revision: undefined,
   writable: false,
-  mode: 'host',
 }
 
 /** Whether one Host namespace section carries a field this plugin's schema declares. */

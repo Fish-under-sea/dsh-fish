@@ -77,7 +77,7 @@ export function LinkSubtaskModal({ controller, parent, onClose, phase = 'open' }
                   <span className={css.statusBadge} data-status={task.status}>{t(STATUS_KEY[task.status])}</span>
                   <button
                     type="button"
-                    className={css.primaryButton}
+                    className={css.ghostButton}
                     disabled={pending}
                     onClick={() => { void link(task.id) }}
                   >

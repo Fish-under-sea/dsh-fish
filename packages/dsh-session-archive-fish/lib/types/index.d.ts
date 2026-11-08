@@ -30,6 +30,7 @@ export declare const Config: z<Schemastery.ObjectS<NoInfer<{
     autoArchiveDays: z<number, number, "volatile-defined">;
     autoDeleteEnabled: z<boolean, boolean, "volatile-defined">;
     autoDeleteDays: z<number, number, "volatile-defined">;
+    recordManualArchive: z<boolean, boolean, "volatile-defined">;
     checkIntervalMin: z<number, number, "volatile-defined">;
 }>>, Schemastery.ObjectT<NoInfer<{
     enabled: z<boolean, boolean, "volatile-defined">;
@@ -37,6 +38,7 @@ export declare const Config: z<Schemastery.ObjectS<NoInfer<{
     autoArchiveDays: z<number, number, "volatile-defined">;
     autoDeleteEnabled: z<boolean, boolean, "volatile-defined">;
     autoDeleteDays: z<number, number, "volatile-defined">;
+    recordManualArchive: z<boolean, boolean, "volatile-defined">;
     checkIntervalMin: z<number, number, "volatile-defined">;
 }>>, "plain">;
 export declare const apply: (ctx: Context, config?: SessionArchiveConfigFields) => void;

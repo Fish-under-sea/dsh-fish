@@ -6,7 +6,8 @@
  */
 import { isValidCron, isValidTimeZone, nextRunAtMs, resolveHostTimeZone } from '../schedule.ts'
 import { DEFAULT_SUBTASK_DEPTH, normalizeSubtaskDepth, taskDepth } from '../subtask.ts'
-import { createTask, withSchedule, type NewTaskInput, type TaskRecord } from '../tasks.ts'
+import { resolveCardTargets, type CardDefaults } from '../card-defaults.ts'
+import { createTask, isTaskPermission, withSchedule, type NewTaskInput, type TaskRecord } from '../tasks.ts'
 
 /** Result of a create transition: the new task (when accepted) + the next ledger. */
 export interface CreateTaskResult {
@@ -23,16 +24,20 @@ export interface CreateTaskResult {
  * appended ledger, or the unchanged ledger when the title is blank or the
  * requested parent link is refused.
  *
- * A subtask inherits the execution targets its parent already pins (workspace,
- * agent preset, permission, model) unless the form supplied its own; the
- * parent human permission confirmation travels with an inherited permission,
- * so a subtask of an already-confirmed elevated card is runnable at once.
+ * The execution targets resolve through {@link resolveCardTargets}: what the
+ * caller sent wins, then the parent's own pins, then - only when the caller
+ * opted in with `applyCardDefaults` - the deployment's configured new-card
+ * defaults. Without the flag the resolution sees no defaults at all, which is
+ * exactly the inline parent inheritance this path has always applied. The
+ * workspace is not part of that resolution: a subtask still takes the parent's
+ * workspace, and the defaults never name one.
  * @param tasks - current ledger.
  * @param input - raw user input (title/description/prompt + optional schedule/parent).
  * @param now - clock instant (ms epoch).
  * @param id - minted task id.
  * @param maxSubtaskDepth - deployment subtask depth limit.
  * @param hostTimeZone - zone a rule that stores no zone of its own follows.
+ * @param cardDefaults - the deployment's new-card defaults, read live at creation.
  */
 export function applyCreateTask(
   tasks: readonly TaskRecord[],
@@ -41,6 +46,7 @@ export function applyCreateTask(
   id: string,
   maxSubtaskDepth: number = DEFAULT_SUBTASK_DEPTH,
   hostTimeZone: string = resolveHostTimeZone(),
+  cardDefaults?: CardDefaults,
 ): CreateTaskResult {
   if (input.title.trim() === '') return { task: undefined, tasks, error: 'title is required' }
   const limit = normalizeSubtaskDepth(maxSubtaskDepth)
@@ -53,18 +59,23 @@ export function applyCreateTask(
       return { task: undefined, tasks, error: `subtask depth limit (${limit}) exceeded` }
     }
   }
-  // A subtask copies the execution targets its parent pins so the card shows
-  // what it will run with — EXCEPT the permission. A copied permission would
-  // also have to copy the parent's human confirmation to stay runnable, and the
-  // child would keep both after being detached: one confirmed parent would mint
-  // unbounded confirmed elevated roots. The permission is resolved live from the
-  // attached ancestors at launch instead (see core/subtask.ts), so detaching
-  // removes the inheritance by construction.
-  const effective: NewTaskInput = parent === undefined ? input : {
+  // The execution targets resolve through the one shared rule: the caller's own
+  // choice, then the parent's own pins (never its permission, see
+  // core/card-defaults.ts), then the deployment's new-card defaults — and only
+  // when the caller asked for them, so a create that never opts in stores
+  // exactly what it sent, as it always has.
+  const seed = resolveCardTargets(
+    input.applyCardDefaults === true ? cardDefaults : undefined,
+    parent === undefined ? undefined : { kind: 'parent', task: parent },
+    { mode: input.mode, permission: input.permission, model: input.model, reasoningEffort: input.reasoningEffort },
+  )
+  const effective: NewTaskInput = {
     ...input,
-    workspaceId: input.workspaceId ?? parent.workspaceId,
-    mode: input.mode ?? parent.mode,
-    model: input.model ?? parent.model,
+    workspaceId: input.workspaceId ?? parent?.workspaceId,
+    mode: seed.mode,
+    permission: isTaskPermission(seed.permission) ? seed.permission : undefined,
+    model: seed.model,
+    reasoningEffort: seed.reasoningEffort,
   }
   let task = createTask(effective, now, id)
   // Arm the requested schedule (new-task dialog). The Host wire gate already

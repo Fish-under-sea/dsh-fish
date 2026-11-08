@@ -37,6 +37,8 @@ export declare const zh: {
     readonly 'hosts.deleteConfirm': "确定删除主机「{alias}」？将同时停止其隧道。";
     readonly 'hosts.imported': "解析 {parsed} 个配置块，新增 {added} 台主机，跳过 {skipped} 个。";
     readonly 'hosts.proxyBadge': "代理";
+    readonly 'hosts.forwardAgentBadge': "Agent 转发";
+    readonly 'hosts.forwardAgentHint': "仅对可信主机开启：远端可用本机私钥签名（等价 ssh -A）。";
     readonly 'import.reason.wildcard': "通配符 pattern，需手动配置";
     readonly 'import.reason.existing': "别名已存在";
     readonly 'import.reason.match': "Match 条件块，不支持";
@@ -59,8 +61,8 @@ export declare const zh: {
     readonly 'form.auth.password': "密码";
     readonly 'form.auth.agent': "SSH Agent";
     readonly 'form.agentPath': "Agent 路径";
-    readonly 'form.agentPathHint': "留空自动检测（SSH_AUTH_SOCK / Windows Pageant）；也可填 socket 路径或 pageant";
-    readonly 'form.authKeepHint': "编辑时密钥/密码/Agent 留空将保留原认证方式与已存凭据；如需更换认证方式请填写新凭据。";
+    readonly 'form.agentPathHint': "留空自动检测（SSH_AUTH_SOCK；Windows 上为原生 ssh-agent 命名管道）；也可填 socket 路径或 pageant";
+    readonly 'form.authKeepHint': "编辑时密码 / 私钥留空将保留已存凭据；Agent 路径留空是合法的自动检测，选「SSH Agent」即切换到 agent 认证。";
     readonly 'form.keyPath': "私钥路径";
     readonly 'form.keyPathHint': "如 ~/.ssh/id_ed25519";
     readonly 'form.passphrase': "密钥口令";
@@ -71,6 +73,8 @@ export declare const zh: {
     readonly 'form.proxyJumpHint': "逗号分隔的本地主机别名，或 [user@]host[:port] 地址，按顺序连接";
     readonly 'form.proxyCommand': "ProxyCommand";
     readonly 'form.proxyCommandHint': "OpenSSH ProxyCommand：%h 主机、%p 端口、%r 用户、%n 别名；留空或填 none 表示不使用。与跳板机别名互斥。";
+    readonly 'form.forwardAgent': "启用 Agent 转发";
+    readonly 'form.forwardAgentHint': "把本机 SSH Agent 转发到该主机（等价 ssh -A）：远端可用本机私钥签名。仅对可信主机开启。";
     readonly 'form.description': "备注";
     readonly 'form.environment': "环境";
     readonly 'form.environmentHint': "如 development / production";
@@ -95,6 +99,13 @@ export declare const zh: {
     readonly 'terminal.auth.cancel': "取消";
     readonly 'terminal.auth.placeholder': "请输入验证码或口令";
     readonly 'terminal.auth.hint': "服务器请求进行交互式二次验证（输入仅本次生效，不落盘）：";
+    readonly 'terminal.tabs': "终端标签";
+    readonly 'terminal.newTab': "按当前主机新开标签";
+    readonly 'terminal.closeTab': "关闭标签";
+    readonly 'terminal.authPending': "待验证";
+    readonly 'terminal.tabExited': "已退出";
+    readonly 'terminal.tabError': "出错";
+    readonly 'terminal.closeFailed': "无法确认该标签已关闭：关闭帧未送达宿主。标签已保留——可重试，或切到该标签前台，用它自己的连接关闭。";
     readonly 'transfer.selectHost': "选择主机";
     readonly 'transfer.remotePath': "远程路径";
     readonly 'transfer.remotePathHint': "如 /tmp/ 或 /home/user/app.tar.gz";

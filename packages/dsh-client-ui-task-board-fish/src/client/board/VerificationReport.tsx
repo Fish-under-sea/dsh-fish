@@ -3,15 +3,18 @@
  *
  * Rendered inside the execution-history row, so a rerun or a scheduled run
  * keeps its OWN report and a later cycle never overwrites an earlier verdict.
- * It shows what the board decided and the evidence it decided on: the verdict,
- * the judge route and reasoning level, the acceptance count, the total and
- * per-criterion scores against their threshold, the findings the judge located,
- * the evidence scope with its truncation, and the token usage.
+ * The row itself only carries the verdict: the judge route, the acceptance
+ * count, the per-criterion scores and their threshold, the findings, the
+ * evidence scope and the token usage sit behind one disclosure, because the
+ * same machine explanation repeated on all thirty-four rows of a card was what
+ * buried the row a reader needed. Expanding it shows every field the board
+ * decided on — nothing is dropped, only folded.
  *
  * Deliberately adds no new `data-dsh-part` value: the part enum is owned by the
  * cross-repository semantic-attribute contract, and this report reuses the
  * execution row's existing markup instead of extending that enum.
  */
+import { useId, useState } from 'react'
 import {
   MAX_INVALID_ATTEMPTS,
   MAX_QUALITY_ATTEMPTS,
@@ -29,6 +32,7 @@ import {
 import { t } from '../locales.ts'
 import type { TaskBoardKey } from '../locales.ts'
 import css from '../board.module.css'
+import { usePresence } from './overlay.tsx'
 
 /** Render one 0..1 score as a percentage. */
 function percent(value: number): string {
@@ -52,6 +56,22 @@ const PHASE_STATUS_KEY: Record<ReturnType<typeof verificationPhase>, TaskBoardKe
   passed: 'verify.status.passed',
   failed: 'verify.status.failed',
   invalid: 'verify.status.invalidHeld',
+}
+
+/**
+ * Board phase → the badge's colour slot. One slot per meaning instead of one
+ * per phase: a phase that is still running reads as a warning, a refused
+ * acceptance reads as a failure, and an acceptance that never applied reads as
+ * neutral — never as a pass.
+ */
+const PHASE_TONE: Record<ReturnType<typeof verificationPhase>, 'success' | 'error' | 'warn' | 'neutral'> = {
+  off: 'neutral',
+  executing: 'warn',
+  verifying: 'warn',
+  repairing: 'error',
+  passed: 'success',
+  failed: 'error',
+  invalid: 'error',
 }
 
 /** Evidence location → locale key, for one structured finding's citation. */
@@ -83,6 +103,11 @@ const AUDIT_STAGE_KEY: Record<AcceptanceAuditRecord['stage'], TaskBoardKey> = {
   budget: 'verify.cleanup.stage.budget',
 }
 
+/** Stable key for one finding row. */
+function findingKey(attempt: VerificationAttempt, index: number): string {
+  return attempt.at.toString(36) + '-' + String(index)
+}
+
 /** One recorded attempt: a quality verdict, an invalid veto, an anomaly, or a budget stop. */
 function AttemptRow({ attempt, detailRemoved }: { attempt: VerificationAttempt, detailRemoved: boolean }) {
   // Everything that is not a quality verdict renders as an anomaly row: a
@@ -94,19 +119,21 @@ function AttemptRow({ attempt, detailRemoved }: { attempt: VerificationAttempt, 
   const exception = attempt.stage !== 'quality' && !invalid
   const result = exception ? 'failed' : attempt.passed ? 'succeeded' : 'failed'
   return (
-    <li className={css.executionRow} data-result={result}>
-      <span className={css.executionBadge} data-result={result}>
-        {invalid ? t('verify.status.invalid') : exception ? t('verify.status.exception') : attempt.passed ? t('verify.status.passed') : t('verify.status.failed')}
-      </span>
-      <span className={css.executionTimes}>
-        {invalid
-          ? t('verify.attemptInvalid', { index: String(attempt.index) })
-          : exception
-            ? t('verify.attemptException', { index: String(attempt.index) })
-            : t('verify.attempt', { index: String(attempt.index) })}
-        {' · '}{routeLabel(attempt)}
-        {!exception && !invalid && ' · ' + t('verify.rounds', { rounds: String(attempt.rounds) })}
-      </span>
+    <li className={css.attemptRow} data-result={result}>
+      <div className={css.attemptHead}>
+        <span className={css.executionBadge} data-result={result}>
+          {invalid ? t('verify.status.invalid') : exception ? t('verify.status.exception') : attempt.passed ? t('verify.status.passed') : t('verify.status.failed')}
+        </span>
+        <span className={css.executionTimes}>
+          {invalid
+            ? t('verify.attemptInvalid', { index: String(attempt.index) })
+            : exception
+              ? t('verify.attemptException', { index: String(attempt.index) })
+              : t('verify.attempt', { index: String(attempt.index) })}
+          {' · '}{routeLabel(attempt)}
+          {!exception && !invalid && ' · ' + t('verify.rounds', { rounds: String(attempt.rounds) })}
+        </span>
+      </div>
       {invalid && (
         <span className={css.executionTimes}>
           {t('verify.invalidDetail', { reason: t(invalidReasonKey(attempt)) })}
@@ -195,93 +222,6 @@ function AttemptRow({ attempt, detailRemoved }: { attempt: VerificationAttempt, 
   )
 }
 
-/** Stable key for one finding row. */
-function findingKey(attempt: VerificationAttempt, index: number): string {
-  return attempt.at.toString(36) + '-' + String(index)
-}
-
-/**
- * Render one execution's acceptance report.
- * @param props - the execution's persisted acceptance block.
- * @returns the report, or nothing when acceptance never applied.
- */
-export function VerificationReport({ verification }: { verification: ExecutionVerification }) {
-  const phase = verificationPhase(verification)
-  if (phase === 'off' && verification.contract.enabled === false && verification.applicability !== 'skipped') return null
-  const totals = verificationTotals(verification)
-  const route = verification.contract.route
-  const applicabilityKey: TaskBoardKey | undefined = verification.applicability === 'disabled'
-    ? 'verify.applicability.disabled'
-    : verification.applicability === 'skipped'
-      ? 'verify.applicability.skipped'
-      : verification.applicability === 'goal-unavailable'
-        ? 'verify.applicability.goalUnavailable'
-        : verification.applicability === 'goal-disabled'
-          ? 'verify.applicability.goalDisabled'
-          : verification.applicability === 'team-member' ? 'verify.applicability.teamMember' : undefined
-  return (
-    <div className={css.executionTimes}>
-      <span className={css.executionBadge} data-result={phase === 'passed' ? 'succeeded' : phase === 'failed' ? 'failed' : undefined}>
-        {t('verify.title')} · {t(PHASE_STATUS_KEY[phase])}
-      </span>
-      <span className={css.executionTimes}>
-        {t('verify.invalidCounts', {
-          quality: String(qualityAttempts(verification).length),
-          max: String(MAX_QUALITY_ATTEMPTS),
-          invalid: String(invalidAttempts(verification).length),
-          maxInvalid: String(MAX_INVALID_ATTEMPTS),
-          exceptions: String(exceptionAttempts(verification).length),
-        })}
-      </span>
-      {route !== undefined && (
-        <span className={css.executionTimes}>
-          {verification.contract.modelSource === 'inherit'
-            ? t('verify.judgeInherited', { model: route.provider + '/' + route.model })
-            : t(route.reasoningEffort === undefined || route.reasoningEffort === '' ? 'verify.judgeNoEffort' : 'verify.judge', {
-              model: route.provider + '/' + route.model,
-              ...(route.reasoningEffort === undefined ? {} : { effort: route.reasoningEffort }),
-            })}
-        </span>
-      )}
-      {verification.contract.effortFallback !== undefined && (
-        <span className={css.executionTimes}>
-          {t('verify.effortFallback', {
-            requested: verification.contract.effortFallback.requested,
-            resolved: verification.contract.effortFallback.resolved ?? t('settings.goalVerificationResolvedNoEffort'),
-          })}
-        </span>
-      )}
-      {applicabilityKey !== undefined && <span className={css.executionTimes}>{t(applicabilityKey)}</span>}
-      {verification.failedReason !== undefined && (
-        <span className={css.executionTimes}>{t('verify.finalFailure', { reason: verification.failedReason })}</span>
-      )}
-      {totals.calls > 0 && (
-        <span className={css.executionTimes}>
-          {t('verify.usage', {
-            calls: String(totals.calls),
-            input: String(totals.inputTokens),
-            output: String(totals.outputTokens),
-            reasoning: String(totals.reasoningTokens),
-          })}
-          {totals.usageIncomplete ? t('verify.usageIncomplete') : ''}
-        </span>
-      )}
-      {verification.attempts.length > 0 && (
-        <ul className={css.executionList}>
-          {[...verification.attempts].reverse().map(attempt => (
-            <AttemptRow
-              key={attempt.at.toString(36) + '-' + attempt.stage + '-' + String(attempt.index)}
-              attempt={attempt}
-              detailRemoved={verification.cleanup?.state === 'cleaned'}
-            />
-          ))}
-        </ul>
-      )}
-      {verification.cleanup !== undefined && <CleanupNotice cleanup={verification.cleanup} />}
-    </div>
-  )
-}
-
 /**
  * Retention notice of one execution's acceptance detail.
  *
@@ -318,5 +258,104 @@ function CleanupNotice({ cleanup }: { cleanup: AcceptanceCleanupRecord }) {
         </ul>
       )}
     </>
+  )
+}
+
+/**
+ * Render one execution's acceptance report.
+ * @param props - the execution's persisted acceptance block.
+ * @returns the verdict badge with its fold-out detail, or nothing when
+ * acceptance never applied.
+ */
+export function VerificationReport({ verification }: { verification: ExecutionVerification }) {
+  const [expanded, setExpanded] = useState(false)
+  const presence = usePresence(expanded)
+  const panelId = useId()
+  const phase = verificationPhase(verification)
+  if (phase === 'off' && verification.contract.enabled === false && verification.applicability !== 'skipped') return null
+  const totals = verificationTotals(verification)
+  const route = verification.contract.route
+  const applicabilityKey: TaskBoardKey | undefined = verification.applicability === 'disabled'
+    ? 'verify.applicability.disabled'
+    : verification.applicability === 'skipped'
+      ? 'verify.applicability.skipped'
+      : verification.applicability === 'goal-unavailable'
+        ? 'verify.applicability.goalUnavailable'
+        : verification.applicability === 'goal-disabled'
+          ? 'verify.applicability.goalDisabled'
+          : verification.applicability === 'team-member' ? 'verify.applicability.teamMember' : undefined
+  return (
+    <div className={css.verifyReport}>
+      <button
+        type="button"
+        className={css.verifyBadge}
+        data-tone={PHASE_TONE[phase]}
+        aria-expanded={expanded}
+        aria-controls={panelId}
+        onClick={() => { setExpanded(!expanded) }}
+      >
+        {t('verify.title')}
+        <span className={css.verifyVerdict}>{t(PHASE_STATUS_KEY[phase])}</span>
+        <span className={css.disclosureChevron} data-open={expanded} aria-hidden="true" />
+      </button>
+      {presence.mounted && (
+        <div className={css.verifyPanel} id={panelId} data-state={presence.phase}>
+          <span className={css.executionTimes}>
+            {t('verify.invalidCounts', {
+              quality: String(qualityAttempts(verification).length),
+              max: String(MAX_QUALITY_ATTEMPTS),
+              invalid: String(invalidAttempts(verification).length),
+              maxInvalid: String(MAX_INVALID_ATTEMPTS),
+              exceptions: String(exceptionAttempts(verification).length),
+            })}
+          </span>
+          {route !== undefined && (
+            <span className={css.executionTimes}>
+              {verification.contract.modelSource === 'inherit'
+                ? t('verify.judgeInherited', { model: route.provider + '/' + route.model })
+                : t(route.reasoningEffort === undefined || route.reasoningEffort === '' ? 'verify.judgeNoEffort' : 'verify.judge', {
+                  model: route.provider + '/' + route.model,
+                  ...(route.reasoningEffort === undefined ? {} : { effort: route.reasoningEffort }),
+                })}
+            </span>
+          )}
+          {verification.contract.effortFallback !== undefined && (
+            <span className={css.executionTimes}>
+              {t('verify.effortFallback', {
+                requested: verification.contract.effortFallback.requested,
+                resolved: verification.contract.effortFallback.resolved ?? t('settings.goalVerificationResolvedNoEffort'),
+              })}
+            </span>
+          )}
+          {applicabilityKey !== undefined && <span className={css.executionTimes}>{t(applicabilityKey)}</span>}
+          {verification.failedReason !== undefined && (
+            <span className={css.executionTimes}>{t('verify.finalFailure', { reason: verification.failedReason })}</span>
+          )}
+          {totals.calls > 0 && (
+            <span className={css.executionTimes}>
+              {t('verify.usage', {
+                calls: String(totals.calls),
+                input: String(totals.inputTokens),
+                output: String(totals.outputTokens),
+                reasoning: String(totals.reasoningTokens),
+              })}
+              {totals.usageIncomplete ? t('verify.usageIncomplete') : ''}
+            </span>
+          )}
+          {verification.attempts.length > 0 && (
+            <ul className={css.executionList}>
+              {[...verification.attempts].reverse().map(attempt => (
+                <AttemptRow
+                  key={attempt.at.toString(36) + '-' + attempt.stage + '-' + String(attempt.index)}
+                  attempt={attempt}
+                  detailRemoved={verification.cleanup?.state === 'cleaned'}
+                />
+              ))}
+            </ul>
+          )}
+          {verification.cleanup !== undefined && <CleanupNotice cleanup={verification.cleanup} />}
+        </div>
+      )}
+    </div>
   )
 }

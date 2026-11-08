@@ -4,6 +4,7 @@ window.__ModuleLoader__.load({
 		var module = { exports: {} };
 		var exports = module.exports;
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
+		let _deepseek_ai_dsh_client_store = require("@deepseek-ai/dsh-client-store");
 		let react = require("react");
 		let react_jsx_runtime = require("react/jsx-runtime");
 		//#region src/core/cascade.ts
@@ -96,15 +97,47 @@ window.__ModuleLoader__.load({
 			};
 		}
 		/**
-		* Protected-reason map for preview surfaces. `running` and `current` are the
-		* two facts the browser half knows; the host adds `in-flight` and re-checks
-		* everything authoritatively.
+		* Precedence among the protection facts that can cover one session, ordered
+		* exactly like the host's authoritative map: a live-store attachment outranks
+		* the feed's `running` flag, the session being viewed outranks an attachment,
+		* and an in-flight operation outranks everything else. {@link planDelete}
+		* reports one reason per id, so the browser half must resolve a conflict the
+		* same way or its skip list would disagree with the host's.
+		*/
+		const PROTECTION_RANK = {
+			running: 1,
+			attached: 2,
+			current: 3,
+			"in-flight": 4
+		};
+		/**
+		* Protected-reason map for preview surfaces. `running` and `current` are facts
+		* the browser half observes itself; `attached` and `in-flight` come from the
+		* row's {@link ArchiveSessionRow.hostProtectedReason}, which an older host does
+		* not send — those rows simply stay unprotected here, and the host still
+		* refuses them authoritatively.
 		*/
 		function clientProtectedReason(rows, currentSessionId) {
 			const map = /* @__PURE__ */ new Map();
-			for (const row of rows) if (row.running) map.set(row.id, "running");
-			if (currentSessionId !== void 0 && currentSessionId !== "") map.set(currentSessionId, "current");
+			const mark = (id, reason) => {
+				const held = map.get(id);
+				if (held !== void 0 && (PROTECTION_RANK[held] ?? 0) >= (PROTECTION_RANK[reason] ?? 0)) return;
+				map.set(id, reason);
+			};
+			for (const row of rows) {
+				if (row.running) mark(row.id, "running");
+				if (row.hostProtectedReason !== void 0) mark(row.id, row.hostProtectedReason);
+			}
+			if (currentSessionId !== void 0 && currentSessionId !== "") mark(currentSessionId, "current");
 			return map;
+		}
+		/**
+		* True when the host protects every selected session. The batch delete
+		* affordance is disabled in exactly that case: a selection the host would skip
+		* whole has nothing left to act on.
+		*/
+		function selectionFullyProtected(ids, protectedReason) {
+			return ids.length > 0 && ids.every((id) => protectedReason.has(id));
 		}
 		//#endregion
 		//#region src/client/api.ts
@@ -166,19 +199,6 @@ window.__ModuleLoader__.load({
 				}, BATCH_TIMEOUT_MS)
 			};
 		}
-		//#endregion
-		//#region \0dsh-store-engine
-		const platform = ["@deepseek-ai/dsh-client", "-store"].join("");
-		const legacy = ["@deepseek-ai/dsh-client-runtime", "/client"].join("");
-		let engine;
-		try {
-			engine = require(platform);
-		} catch {
-			engine = require(legacy);
-		}
-		engine.createSnapshotStore;
-		const defineStore = engine.defineStore;
-		engine.shallowEqual;
 		//#endregion
 		//#region src/core/selection.ts
 		/**
@@ -263,7 +283,7 @@ window.__ModuleLoader__.load({
 		* @module @fish-under-sea/dsh-session-archive-fish/client/archive-store
 		*/
 		function createArchiveStore() {
-			return defineStore({
+			return (0, _deepseek_ai_dsh_client_store.defineStore)({
 				init: () => ({
 					inventory: null,
 					status: "loading",
@@ -438,6 +458,15 @@ window.__ModuleLoader__.load({
 				} catch (error) {
 					actions.setStatus("error", error instanceof Error ? error.message : String(error));
 				}
+			}
+			/**
+			* Protection map over the current inventory snapshot: the same input the
+			* confirm-dialog plan is computed from, and what the list reads to disable the
+			* affordances the host would refuse. Rows carrying no host fact degrade to
+			* what the browser half observes itself.
+			*/
+			protectedReason() {
+				return clientProtectedReason(this.store.getSnapshot().inventory?.rows ?? [], this.currentSessionId());
 			}
 			/** The delete plan the confirm dialog shows, from the current snapshot. */
 			planDeleteFor(directIds) {
@@ -616,6 +645,7 @@ window.__ModuleLoader__.load({
 			"arch.row.lastActivity.unknown": "最后活动：未知",
 			"arch.row.archivedAt": "归档时间：{time}",
 			"arch.row.archivedAt.unknown": "归档时间：未知",
+			"arch.row.archivedAt.backfilled": "（补记）",
 			"arch.row.size": "大小：{size}",
 			"arch.row.children": "{n} 个子会话",
 			"arch.row.created": "创建于 {time}",
@@ -639,6 +669,7 @@ window.__ModuleLoader__.load({
 			"arch.batch.archive": "批量归档",
 			"arch.batch.unarchive": "批量取消归档",
 			"arch.batch.delete": "批量删除",
+			"arch.batch.deleteBlocked": "所选会话均受宿主保护，无法删除",
 			"arch.confirm.deleteTitle": "删除会话",
 			"arch.confirm.direct": "直接选中：{n} 个会话",
 			"arch.confirm.descendants": "因父子关系一并删除：{n} 个会话",
@@ -687,6 +718,8 @@ window.__ModuleLoader__.load({
 			"arch.auto.archiveDays": "未活动天数阈值",
 			"arch.auto.deleteToggle": "自动物理删除超过保留期的归档会话",
 			"arch.auto.deleteDays": "归档保留天数",
+			"arch.auto.recordManualToggle": "为外部归档的会话补记归档时间",
+			"arch.auto.recordManualNote": "默认关闭。开启后，在这些会话被本插件首次观测到的时刻补记一条归档时间，它们会从此开始进入保留期倒计时，到期后可能被自动删除；列表中的归档时间会标注（补记）。关闭时不会写入任何台账。",
 			"arch.auto.days.unit": "天",
 			"arch.auto.invalidDays": "天数必须是 {min} 到 {max} 之间的整数",
 			"arch.auto.preview": "按当前配置预览",
@@ -743,6 +776,7 @@ window.__ModuleLoader__.load({
 			"arch.row.lastActivity.unknown": "Last activity: unknown",
 			"arch.row.archivedAt": "Archived: {time}",
 			"arch.row.archivedAt.unknown": "Archived: unknown",
+			"arch.row.archivedAt.backfilled": " (backfilled)",
 			"arch.row.size": "Size: {size}",
 			"arch.row.children": "{n} sub-sessions",
 			"arch.row.created": "Created {time}",
@@ -766,6 +800,7 @@ window.__ModuleLoader__.load({
 			"arch.batch.archive": "Archive selected",
 			"arch.batch.unarchive": "Unarchive selected",
 			"arch.batch.delete": "Delete selected",
+			"arch.batch.deleteBlocked": "Every selected session is protected by the host and cannot be deleted",
 			"arch.confirm.deleteTitle": "Delete sessions",
 			"arch.confirm.direct": "Directly selected: {n} sessions",
 			"arch.confirm.descendants": "Also deleted via parent-child relation: {n} sessions",
@@ -814,6 +849,8 @@ window.__ModuleLoader__.load({
 			"arch.auto.archiveDays": "Inactivity threshold (days)",
 			"arch.auto.deleteToggle": "Auto-delete archived sessions past their retention",
 			"arch.auto.deleteDays": "Archive retention (days)",
+			"arch.auto.recordManualToggle": "Record an archive time for sessions archived elsewhere",
+			"arch.auto.recordManualNote": "Off by default. When enabled, the moment this plugin first observes such a session is recorded as its archive time, so its retention countdown starts from there and it may later be auto-deleted; the list marks that time as (backfilled). While it is off, nothing is written to the ledger.",
 			"arch.auto.days.unit": "days",
 			"arch.auto.invalidDays": "Days must be an integer between {min} and {max}",
 			"arch.auto.preview": "Preview with current settings",
@@ -1400,6 +1437,23 @@ window.__ModuleLoader__.load({
 							}
 						})]
 					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: archive_module_css_default.autoRow,
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: archive_module_css_default.checkLabel,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								type: "checkbox",
+								checked: value.recordManualArchive === true,
+								onChange: (event) => {
+									write("recordManualArchive", event.target.checked);
+								}
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("arch.auto.recordManualToggle") })]
+						})
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: archive_module_css_default.muted,
+						children: t("arch.auto.recordManualNote")
+					}),
 					saveFailed && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: archive_module_css_default.failText,
 						role: "status",
@@ -1706,6 +1760,8 @@ window.__ModuleLoader__.load({
 			const page = Math.min(ui.page, totalPages - 1);
 			const shown = filtered.slice(page * 20, page * 20 + 20);
 			const busy = ui.batch !== null && ui.batch.running;
+			const protection = (0, react.useMemo)(() => controller.protectedReason(), [controller, rows]);
+			const deleteBlocked = selectionFullyProtected(ui.selection, protection);
 			const workspaceTitle = (id) => workspaces.find((workspace) => workspace.id === id)?.title ?? id;
 			const onSelectAll = () => {
 				controller.store.actions.selectMany(filtered.map((row) => row.id), true);
@@ -1894,7 +1950,8 @@ window.__ModuleLoader__.load({
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 										type: "button",
 										className: archive_module_css_default.dangerButton,
-										disabled: selection.size === 0 || busy,
+										disabled: selection.size === 0 || busy || deleteBlocked,
+										title: deleteBlocked ? t("arch.batch.deleteBlocked") : void 0,
 										onClick: () => {
 											requestDelete(ui.selection);
 										},
@@ -1916,6 +1973,7 @@ window.__ModuleLoader__.load({
 								const chips = statusChips(row, currentId);
 								const issues = issueLabels(row);
 								const selected = selection.has(row.id);
+								const protectedReason = protection.get(row.id);
 								return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									className: `${archive_module_css_default.row} ${selected ? archive_module_css_default.rowSelected : ""}`,
 									"data-dsh-part": "row",
@@ -1958,7 +2016,7 @@ window.__ModuleLoader__.load({
 														children: t("arch.filter.workspace.none")
 													}),
 													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: row.lastActivityAt === void 0 ? t("arch.row.lastActivity.unknown") : t("arch.row.lastActivity", { time: formatTime(row.lastActivityAt) }) }),
-													row.archived && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: row.archivedAt === void 0 ? t("arch.row.archivedAt.unknown") : t("arch.row.archivedAt", { time: formatTime(row.archivedAt) }) }),
+													row.archived && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: row.archivedAt === void 0 ? t("arch.row.archivedAt.unknown") : `${t("arch.row.archivedAt", { time: formatTime(row.archivedAt) })}${row.archivedAtSource === "observed" ? t("arch.row.archivedAt.backfilled") : ""}` }),
 													row.sizeBytes !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("arch.row.size", { size: formatBytes(row.sizeBytes) }) }),
 													issues.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 														className: archive_module_css_default.issueText,
@@ -1999,7 +2057,8 @@ window.__ModuleLoader__.load({
 												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 													type: "button",
 													className: `${archive_module_css_default.linkButton} ${archive_module_css_default.linkDanger}`,
-													disabled: busy,
+													disabled: busy || protectedReason !== void 0,
+													title: protectedReason === void 0 ? void 0 : t(`arch.reason.${protectedReason}`),
 													onClick: () => {
 														requestDelete([row.id]);
 													},
@@ -2089,8 +2148,7 @@ window.__ModuleLoader__.load({
 				base: void 0,
 				user: void 0,
 				revision: void 0,
-				writable: false,
-				mode: "host"
+				writable: false
 			};
 		}
 		/**
@@ -2182,12 +2240,16 @@ window.__ModuleLoader__.load({
 		/** Profile entry ids this package's patch rows carry, most likely first. */
 		const ARCHIVE_ENTRY_IDS = ["web-ui-session-archive", ARCHIVE_SETTINGS_NS];
 		/**
-		* Nav position (and id) of the official archived-sessions entry this plugin
-		* supersedes: the native page seats `settings.section` id
-		* `archived-sessions` at order 25, so taking over the id and the order keeps
-		* the single entry exactly where users already look for it.
+		* Section id and nav position this plugin seats. The id is the plugin's own
+		* namespace, never the official `archived-sessions` id: the settings shell
+		* refuses a second registration of the same `id` at the same `priority`
+		* (default 0), and `order` only sorts the rows, so an official or third-party
+		* archive plugin claiming the same id breaks both surfaces whatever order it
+		* picks (one registration throws, or one entry silently vanishes). Order 25
+		* seats this entry beside the official archived-sessions row, where users look
+		* for archive management.
 		*/
-		const SECTION_ID = "archived-sessions";
+		const SECTION_ID = "dsh-session-archive";
 		const SECTION_ORDER = 25;
 		/** Required services. */
 		const inject = [

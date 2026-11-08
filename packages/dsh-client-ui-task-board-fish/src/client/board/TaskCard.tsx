@@ -168,6 +168,36 @@ function TaskCardInner({
     outcome.declared ? t('card.declaredHint') : '',
   ].filter(Boolean).join('\n')
 
+  // The status rail is one reserved row in every state: a label while a run is
+  // in flight, the settled result badge beside the run count, and the spinner
+  // box that is the same size whether or not it holds a spinner. Nothing here
+  // can add or remove a row, so a state change cannot resize the card.
+  const runningLabel = !archived && latest !== undefined && executionLabel(latest) === 'running'
+    ? (runningKey !== undefined
+      ? t(runningKey)
+      : latest.ownResult === undefined ? t('detail.result.running') : t('detail.subtasks.waiting'))
+    : ''
+  // Archived cards settle outside the board's judgement, so they keep the plain
+  // text result instead of a badge that would paint a tone they do not own.
+  const settledResult = archived ? undefined : latest?.result
+  const resultPrefix = settledResult === undefined && !busy && resultText !== '' ? `${resultText} · ` : ''
+  const runLine = latest === undefined ? undefined : (
+    <span
+      className={css.cardRun}
+      data-dsh-part="card-run"
+      data-result={settledResult}
+      data-declared={outcome.declared || undefined}
+      title={outcome.declared ? t('card.declaredHint') : undefined}
+    >
+      {settledResult !== undefined && (
+        <span className={css.cardResult} data-result={settledResult}>{resultText}</span>
+      )}
+      <span className={css.cardRuns}>
+        {resultPrefix}{runs} {t('board.runs')}
+        {outcome.declared ? ` · ${t('card.declared')}` : ''}
+      </span>
+    </span>
+  )
   const sessionMark = sessionId !== undefined && (onOpenSession !== undefined ? (
     <button
       type="button"
@@ -220,7 +250,9 @@ function TaskCardInner({
         <span className={css.cardMeta}>
           {decoration}
           {timeLabel}
-          {!archived && (busy || pending) && <span className={css.cardSpinner} aria-hidden="true" />}
+          <span className={css.cardSpinnerSlot} aria-hidden="true">
+            {!archived && (busy || pending) && <span className={css.cardSpinner} />}
+          </span>
         </span>
       ) : (
         <>
@@ -281,30 +313,20 @@ function TaskCardInner({
                 {t(task.schedule.mode === 'once' ? 'card.scheduledOnce' : 'card.scheduled')}
               </span>
             )}
-            {latest !== undefined && (
-              <span
-                className={css.cardRun}
-                data-dsh-part="card-run"
-                data-result={archived || latest.result === undefined ? undefined : latest.result}
-                data-declared={outcome.declared || undefined}
-                title={outcome.declared ? t('card.declaredHint') : undefined}
-              >
-                {!busy && resultText !== '' ? `${resultText} · ` : ''}
-                {runs} {t('board.runs')}
-                {outcome.declared ? ` · ${t('card.declared')}` : ''}
-              </span>
-            )}
-            {sessionMark}
-            {!archived && (busy || pending) && <span className={css.cardSpinner} aria-hidden="true" />}
           </span>
-          {!archived && pending && <span className={css.cardRunningLabel}>{t('board.pending')}…</span>}
-          {!archived && latest !== undefined && executionLabel(latest) === 'running' && (
-            <span className={css.cardRunningLabel}>
-              {runningKey !== undefined
-                ? t(runningKey)
-                : latest.ownResult === undefined ? t('detail.result.running') : t('detail.subtasks.waiting')}…
+          <span className={css.cardStatus}>
+            <span className={css.cardStatusText}>
+              {!archived && pending && <span className={css.cardRunningLabel}>{t('board.pending')}…</span>}
+              {runningLabel !== '' && <span className={css.cardRunningLabel}>{runningLabel}…</span>}
+              {runLine}
             </span>
-          )}
+            <span className={css.cardStatusTrail}>
+              <span className={css.cardSpinnerSlot} aria-hidden="true">
+                {!archived && (busy || pending) && <span className={css.cardSpinner} />}
+              </span>
+              {sessionMark}
+            </span>
+          </span>
         </>
       )}
     </article>

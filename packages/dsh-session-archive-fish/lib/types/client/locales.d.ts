@@ -43,6 +43,7 @@ export declare const zh: {
     'arch.row.lastActivity.unknown': string;
     'arch.row.archivedAt': string;
     'arch.row.archivedAt.unknown': string;
+    'arch.row.archivedAt.backfilled': string;
     'arch.row.size': string;
     'arch.row.children': string;
     'arch.row.created': string;
@@ -66,6 +67,7 @@ export declare const zh: {
     'arch.batch.archive': string;
     'arch.batch.unarchive': string;
     'arch.batch.delete': string;
+    'arch.batch.deleteBlocked': string;
     'arch.confirm.deleteTitle': string;
     'arch.confirm.direct': string;
     'arch.confirm.descendants': string;
@@ -114,6 +116,8 @@ export declare const zh: {
     'arch.auto.archiveDays': string;
     'arch.auto.deleteToggle': string;
     'arch.auto.deleteDays': string;
+    'arch.auto.recordManualToggle': string;
+    'arch.auto.recordManualNote': string;
     'arch.auto.days.unit': string;
     'arch.auto.invalidDays': string;
     'arch.auto.preview': string;

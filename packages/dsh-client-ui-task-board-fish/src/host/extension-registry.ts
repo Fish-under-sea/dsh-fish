@@ -15,6 +15,7 @@ import type { TaskBoardAction, TaskBoardSnapshot } from '../protocol.ts'
 import { canEditTaskContent } from '../core/use-cases/task-update.ts'
 import {
   TASK_BOARD_API_VERSION,
+  TASK_BOARD_MESSAGE_MAX_LENGTH,
   isTaskBoardExtensionPayload,
   taskBoardPayloadBytes,
   type TaskBoardCreateOptions,
@@ -26,7 +27,9 @@ import {
   type TaskBoardExtensionPayload,
   type TaskBoardIntegrationFace,
   type TaskBoardLinkedTask,
+  type TaskBoardSessionsFace,
   type TaskBoardStatusChangedEvent,
+  type TaskBoardTaskDraft,
   type TaskBoardTaskDeletedEvent,
   type TaskBoardTasksFace,
 } from '../core/extension.ts'
@@ -56,11 +59,27 @@ export interface TaskBoardExtensionToolRegistry {
 /** Applies one board action with every board gate intact (never an extension action). */
 export type TaskBoardActionApplier = (action: Exclude<TaskBoardAction, { kind: 'extension-action' }>, initiator?: string) => TaskBoardSnapshot
 
+/** Delivers one follow-up message into an existing execution session. */
+export type TaskBoardFollowUpDelivery = (sessionId: string, text: string) => Promise<void>
+
+/** Applies one rework request through the board's own run path. */
+export type TaskBoardReworkApplier = (taskId: string, instructions: string, initiator?: string) => void
+
 /** Registry dependencies. */
 export interface TaskBoardExtensionRegistryOptions {
   ledger: HostTaskLedger
   /** Apply an action through the board service (gates, run dispatch, schedule). */
   apply?: TaskBoardActionApplier
+  /**
+   * Queue one follow-up message into a session. Absent means this deployment
+   * serves no session delivery, which the capability face refuses visibly.
+   */
+  followUp?: TaskBoardFollowUpDelivery
+  /**
+   * Apply one rework run request (through the same gates a run takes). Absent
+   * means this deployment serves no rework, which the face refuses visibly.
+   */
+  rework?: TaskBoardReworkApplier
   /** Resolve the deployment's tool registry; absent loses the tool surface only. */
   toolRegistry?: () => TaskBoardExtensionToolRegistry | undefined
   now?: () => number
@@ -137,10 +156,54 @@ function readPayload(value: unknown): TaskBoardExtensionPayload | undefined {
   return isTaskBoardExtensionPayload(value) ? value : undefined
 }
 
+/** One-line text of a delivery failure, for a diagnosable refusal. */
+function failureText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * Validate one free text a provider pushes into an execution. Blank text would
+ * queue an empty turn, and an unbounded one would let a single provider call
+ * inject an arbitrarily large instruction, so both are refused here rather
+ * than at the gateway.
+ */
+function extensionText(value: string, what: string): string {
+  const text = typeof value === 'string' ? value.trim() : ''
+  if (text === '') throw new TaskBoardExtensionError('invalid-text', `a ${what} must be a non-blank string`)
+  if (text.length > TASK_BOARD_MESSAGE_MAX_LENGTH) {
+    throw new TaskBoardExtensionError('invalid-text', `a ${what} is limited to ${TASK_BOARD_MESSAGE_MAX_LENGTH} characters`)
+  }
+  return text
+}
+
+/**
+ * The session a follow-up message goes to, or the refusal that says why there
+ * is none. The open execution owns the answer while one is running: delivering
+ * into the previous conversation instead would answer a question the current
+ * run never asked.
+ */
+function followUpTarget(task: TaskRecord): { sessionId: string } | { refusal: string; message: string } {
+  if (task.executions.length === 0) {
+    return { refusal: 'not-executed', message: `task ${task.id} has never executed, so it has no session to deliver to` }
+  }
+  const open = [...task.executions].reverse().find(record => record.endedAt === undefined)
+  if (open !== undefined) {
+    return open.sessionId === undefined
+      ? { refusal: 'session-unreachable', message: `the current execution of task ${task.id} has not attached a session yet` }
+      : { sessionId: open.sessionId }
+  }
+  const settled = [...task.executions].reverse().find(record => record.sessionId !== undefined)
+  return settled?.sessionId === undefined
+    ? { refusal: 'session-unreachable', message: `task ${task.id} records no execution session to deliver to` }
+    : { sessionId: settled.sessionId }
+}
+
 export class TaskBoardExtensionRegistry {
   private readonly entries = new Map<string, RegistryEntry>()
   private readonly ledger: HostTaskLedger
   private readonly applyAction: TaskBoardActionApplier | undefined
+  private readonly followUpDelivery: TaskBoardFollowUpDelivery | undefined
+  private readonly reworkApply: TaskBoardReworkApplier | undefined
   private readonly now: () => number
   private readonly uuid: () => string
   private readonly logger: TaskBoardExtensionLogger
@@ -152,6 +215,8 @@ export class TaskBoardExtensionRegistry {
   constructor(options: TaskBoardExtensionRegistryOptions) {
     this.ledger = options.ledger
     this.applyAction = options.apply
+    this.followUpDelivery = options.followUp
+    this.reworkApply = options.rework
     this.now = options.now ?? Date.now
     this.uuid = options.uuid ?? (() => crypto.randomUUID())
     this.logger = options.logger ?? DEFAULT_LOGGER
@@ -381,6 +446,10 @@ export class TaskBoardExtensionRegistry {
       patchContent: (taskId, patch) => this.patchContent(entry, taskId, patch),
       setStatus: (taskId, status, initiator) => this.setStatus(entry, taskId, status, initiator),
       linked: () => this.linkedTasks(entry),
+      rework: (taskId, instructions, initiator) => { this.rework(entry, taskId, instructions, initiator) },
+    }
+    const sessions: TaskBoardSessionsFace = {
+      followUp: async (taskId, text) => { await this.followUp(entry, taskId, text) },
     }
     const integration: TaskBoardIntegrationFace = {
       read: (taskId) => {
@@ -396,6 +465,7 @@ export class TaskBoardExtensionRegistry {
     }
     return {
       tasks,
+      sessions,
       integration,
       events,
       publish: (summary) => { this.publish(entry, summary) },
@@ -403,7 +473,7 @@ export class TaskBoardExtensionRegistry {
     }
   }
 
-  private createTask(entry: RegistryEntry, draft: { title: string; description: string; prompt: string; status?: TaskStatus; parentId?: string; workspaceId?: string }, options?: TaskBoardCreateOptions): TaskRecord {
+  private createTask(entry: RegistryEntry, draft: TaskBoardTaskDraft, options?: TaskBoardCreateOptions): TaskRecord {
     this.assertActive(entry, 'create a task')
     if (this.applyAction === undefined) throw new TaskBoardExtensionError('unavailable', 'this deployment serves no action applier')
     if (draft.status !== undefined && !isTaskStatus(draft.status)) throw new TaskBoardExtensionError('invalid-status', 'unknown task status')
@@ -422,6 +492,14 @@ export class TaskBoardExtensionRegistry {
         ...(draft.status === undefined ? {} : { status: draft.status }),
         ...(draft.parentId === undefined ? {} : { parentId: draft.parentId }),
         ...(draft.workspaceId === undefined ? {} : { workspaceId: draft.workspaceId }),
+        // Execution targets travel to the board's own creation path verbatim:
+        // what the caller sent wins there, the parent's pins fill the rest, and
+        // the board's new-card defaults stay out of it (this face never opts
+        // into them). Validating preset or route existence is the RUN's job, so
+        // an unknown value fails closed at launch instead of being judged here.
+        ...(draft.mode === undefined ? {} : { mode: draft.mode }),
+        ...(draft.model === undefined ? {} : { model: draft.model }),
+        ...(draft.reasoningEffort === undefined ? {} : { reasoningEffort: draft.reasoningEffort }),
         ...(payload === undefined ? {} : { integrations: { [entry.extension.id]: payload } }),
         ...(options?.hidden === true ? { hidden: true } : {}),
       },
@@ -434,8 +512,7 @@ export class TaskBoardExtensionRegistry {
   private patchContent(entry: RegistryEntry, taskId: string, patch: { title?: string; description?: string; prompt?: string }): void {
     this.assertActive(entry, 'patch content')
     if (this.applyAction === undefined) throw new TaskBoardExtensionError('unavailable', 'this deployment serves no action applier')
-    const task = this.ledger.getTask(taskId)
-    if (task === undefined) throw new TaskBoardExtensionError('task-not-found', `no task with id ${taskId}`)
+    const task = this.requireTask(taskId)
     // The board's own content authority: an executed (or archived) card keeps
     // the title/description/prompt that were actually planned and run.
     if (!canEditTaskContent(task)) throw new TaskBoardExtensionError('content-frozen', `task ${taskId} has started executing; its content is read-only`)
@@ -451,6 +528,75 @@ export class TaskBoardExtensionRegistry {
     // The board's existing move gates (running lock, archived lock, manual
     // column set) decide; a refusal surfaces unchanged.
     this.applyAction({ kind: 'move', taskId, status }, initiator)
+  }
+
+  /**
+   * Queue one follow-up message into the session of a card's current or most
+   * recent execution.
+   *
+   * A running card is the point of the capability, so an open execution is not
+   * a refusal: the message is queued behind the turn that is already going. What
+   * IS refused is a card with no conversation to deliver into, and a session
+   * this Host no longer reaches — the delivery refuses, and that refusal must
+   * reach the provider as such instead of looking like a silent success.
+   */
+  private async followUp(entry: RegistryEntry, taskId: string, text: string): Promise<void> {
+    this.assertActive(entry, 'deliver a follow-up message')
+    const task = this.requireTask(taskId)
+    const message = extensionText(text, 'follow-up message')
+    if (task.archivedAt !== undefined) {
+      throw new TaskBoardExtensionError('task-archived', `task ${taskId} is archived; an archived card's execution is closed`)
+    }
+    const target = followUpTarget(task)
+    if ('refusal' in target) throw new TaskBoardExtensionError(target.refusal, target.message)
+    if (this.followUpDelivery === undefined) {
+      throw new TaskBoardExtensionError('unavailable', 'this deployment serves no session delivery')
+    }
+    try {
+      await this.followUpDelivery(target.sessionId, message)
+    } catch (error) {
+      throw new TaskBoardExtensionError(
+        'session-unreachable',
+        `session ${target.sessionId} of task ${taskId} did not accept the message: ${failureText(error)}`,
+      )
+    }
+  }
+
+  /**
+   * Re-run an executed card in its own session with rework instructions.
+   *
+   * The registry decides only what it can read from the ledger — the card
+   * exists, is not archived, is not running, and has a conversation to continue
+   * — and then hands the request to the board's own run path, so the running
+   * lock, the permission confirmation, the acceptance contract and the spend cap
+   * keep judging it. A board refusal surfaces unchanged, exactly as it does for
+   * {@link setStatus}, because those are the board's own words.
+   */
+  private rework(entry: RegistryEntry, taskId: string, instructions: string, initiator?: string): void {
+    this.assertActive(entry, 'rework a task')
+    if (this.reworkApply === undefined) throw new TaskBoardExtensionError('unavailable', 'this deployment serves no rework applier')
+    const task = this.requireTask(taskId)
+    const text = extensionText(instructions, 'rework instructions')
+    if (task.archivedAt !== undefined) {
+      throw new TaskBoardExtensionError('task-archived', `task ${taskId} is archived; an archived card is read-only`)
+    }
+    if (task.executions.some(record => record.endedAt === undefined)) {
+      throw new TaskBoardExtensionError('running', `task ${taskId} is still running; a card is reworked once its run settles`)
+    }
+    if (task.executions.length === 0) {
+      throw new TaskBoardExtensionError('not-executed', `task ${taskId} has never executed, so there is no run to rework`)
+    }
+    if (!task.executions.some(record => record.sessionId !== undefined)) {
+      throw new TaskBoardExtensionError('session-unreachable', `task ${taskId} records no execution session to continue`)
+    }
+    this.reworkApply(taskId, text, initiator)
+  }
+
+  /** One task by id, or the refusal that names the unknown id. */
+  private requireTask(taskId: string): TaskRecord {
+    const task = this.ledger.getTask(taskId)
+    if (task === undefined) throw new TaskBoardExtensionError('task-not-found', `no task with id ${taskId}`)
+    return task
   }
 
   private linkedTasks(entry: RegistryEntry): readonly TaskBoardLinkedTask[] {
@@ -469,8 +615,7 @@ export class TaskBoardExtensionRegistry {
     if (!isTaskBoardExtensionPayload(payload)) {
       throw new TaskBoardExtensionError('invalid-payload', 'integration payload must be a pure JSON object within the size limit')
     }
-    const task = this.ledger.getTask(taskId)
-    if (task === undefined) throw new TaskBoardExtensionError('task-not-found', `no task with id ${taskId}`)
+    const task = this.requireTask(taskId)
     const id = entry.extension.id
     const next = mergePayload(readPayload(task.integrations?.[id]), payload)
     if (!isTaskBoardExtensionPayload(next)) {

@@ -8,10 +8,45 @@ import type { FreezeSnapshot } from './freeze-snapshot.ts';
 import type { ExecutionVerification } from './verification.ts';
 import type { TaskHandover, TaskHandoverInput } from './handover.ts';
 import { type TaskBoardExtensionPayload } from './extension.ts';
+import { type TaskAttachment } from './attachment.ts';
 /** Task lifecycle status, one per kanban column. */
 export type TaskStatus = 'backlog' | 'todo' | 'running' | 'done' | 'failed';
 /** Settled outcome of one execution attempt. */
 export type ExecutionOutcome = 'succeeded' | 'failed' | 'cancelled';
+/**
+ * What one execution left behind: the text of the run's last assistant message
+ * and the session event it was read from.
+ *
+ * The board records a verdict per execution but no output, so a parent card
+ * could see that a subtask succeeded without seeing what it produced. Card
+ * content cannot answer that (it is the plan and freezes at the first
+ * execution), so the closing text rides the execution record instead.
+ */
+export interface ExecutionSummary {
+    /** Last assistant message text of the run, bounded by {@link EXECUTION_SUMMARY_LIMIT}. */
+    text: string;
+    /** Seq of the session event that text came from; absent text has no seq either. */
+    seq: number;
+}
+/**
+ * Upper bound of one recorded summary, in characters. The ledger stores a
+ * conclusion, not a transcript: a reader that needs the whole message follows
+ * {@link ExecutionSummary.seq} into the session history.
+ */
+export declare const EXECUTION_SUMMARY_LIMIT = 4000;
+/**
+ * Rework input recorded on the execution it opened: the reviewer's instructions
+ * for redoing work in the card's own session.
+ */
+export interface ExecutionRework {
+    /** The rework instructions this run was given, as the reviewer wrote them. */
+    instructions: string;
+}
+/**
+ * Repair a persisted rework block: only a non-blank instruction string
+ * survives, so a hand-edited ledger loses the block instead of the execution.
+ */
+export declare function normalizeExecutionRework(value: unknown): ExecutionRework | undefined;
 /**
  * One real execution attempt: the run's own id, the dsh session that ran it
  * (filled once the session is created), and the settled outcome once the
@@ -51,6 +86,13 @@ export interface ExecutionRecord {
      * `sessionId` and never claims a verdict the Host observed.
      */
     external?: boolean;
+    /**
+     * Rework instructions this execution carries as extra input: a reviewer sent
+     * the previous run back, so the card re-ran in the same session with these
+     * instructions instead of having its frozen content rewritten. Absent on
+     * every ordinary run.
+     */
+    rework?: ExecutionRework;
     /** Freeze instant captured from the card snapshot when the run opened. */
     frozenAt?: number;
     /** Freeze source session captured from the card snapshot when the run opened. */
@@ -69,6 +111,16 @@ export interface ExecutionRecord {
     ownResult?: ExecutionOutcome;
     /** Human failure text that arrived with {@link ownResult}. */
     ownError?: string;
+    /**
+     * What this run left behind: the text of its last assistant message, taken
+     * when the settlement read the session and recorded with the verdict.
+     *
+     * Absent — never an empty string — when the session could not be read or
+     * carried no assistant prose, so "recorded nothing" stays distinguishable
+     * from "produced nothing". Settling never fails over it: a summary is
+     * informational, and every field above is what the board decides with.
+     */
+    summary?: ExecutionSummary;
     /**
      * Goal acceptance state of this execution (task-board goal verification).
      * Fixed when the execution starts and never rewritten from later settings:
@@ -326,6 +378,15 @@ export interface TaskRecord {
      */
     model?: string;
     /**
+     * Reasoning effort pinned for that execution route (an adapter-owned id such
+     * as "high"). Absent (or blank) means INHERIT: the session runs at the
+     * model's own default level, exactly as a card written before the field
+     * existed does. The launch sends the value only when the target model's
+     * adapter declares that exact id, so switching a card to a model without
+     * that level never pushes an invalid selection (see core/reasoning-effort.ts).
+     */
+    reasoningEffort?: string;
+    /**
      * Whether later executions continue in the previous execution's session
      * (issue #1419) instead of minting a fresh conversation per run. Absent or
      * false keeps the historical one-session-per-execution behavior; the reuse
@@ -334,12 +395,11 @@ export interface TaskRecord {
      */
     reuseSession?: boolean;
     /**
-     * Run this task's subtree as an Agent Team instead of one Host-launched
-     * session per participant: the root becomes the Team Lead session and the
-     * Host spawns one teammate for each direct subtask inside it. Absent or false
-     * keeps the plain concurrent cascade. A deployment that does not serve the
-     * Agent Teams service refuses a team run instead of silently falling back,
-     * and a subtask's own permission pin cannot be honored in this mode.
+     * Historical Agent Team opt-in. New runs never write it and the Host never
+     * reads it to decide how to run: a run with unfinished subtasks opens one
+     * session whose own agent dispatches subagents. The field is kept so cards
+     * already on disk keep their record, and so the ledger can still fold a team
+     * run group it opened before this behavior changed.
      */
     teamRun?: boolean;
     /**
@@ -413,6 +473,14 @@ export interface TaskRecord {
      * absent means on-board.
      */
     hidden?: boolean;
+    /**
+     * Files and images the card carries (issue #1979). Metadata only: the bytes
+     * live in the official attachment storage, and this record names the stored
+     * object, its size and the digest of the exact bytes the Host verified
+     * there. Additive and absent on every card written before the field
+     * existed, so an old card keeps running exactly as it did.
+     */
+    attachments?: TaskAttachment[];
 }
 /**
  * Statuses a task may be archived from: every status but `running`, whose
@@ -446,10 +514,18 @@ export interface NewTaskInput {
     permission?: TaskPermission;
     /** Optional pinned model for the execution session; absent = host default. */
     model?: string;
+    /** Optional reasoning effort for that model route; empty/absent = the model's own default. */
+    reasoningEffort?: string;
+    /**
+     * Opt in to the deployment's new-card defaults: a target this input leaves
+     * out is filled from the configured default (agent preset, permission, model
+     * and the level bound to that model). Absent means the create stores exactly
+     * what it was given, which is what the extension provider's own create path
+     * and the legacy import rely on.
+     */
+    applyCardDefaults?: boolean;
     /** Reuse the previous execution's session for later runs (issue #1419). */
     reuseSession?: boolean;
-    /** Run the subtree as an Agent Team (Team Lead session plus one teammate per direct subtask). */
-    teamRun?: boolean;
     /**
      * Start the execution with dsh's built-in `/goal`. Absent means the default
      * (one plain turn); only an explicit true joins the goal run.
@@ -501,6 +577,12 @@ export interface NewTaskInput {
     status?: TaskStatus;
     /** Create the card off-board (held in the ledger, never rendered). */
     hidden?: boolean;
+    /**
+     * Files and images the new card carries (issue #1979). The metadata is
+     * host-verified against the official attachment storage before it reaches
+     * the ledger, so a create never records a claim the storage cannot prove.
+     */
+    attachments?: TaskAttachment[];
 }
 /** The five kanban columns, in display order. */
 export declare const COLUMNS: readonly {
@@ -576,8 +658,10 @@ export declare function withSchedule(task: TaskRecord, patch: Partial<ScheduleRu
  * running execution record. Returns the new task and the new execution.
  * @param runGroupId - cascade run group, when this run also opened executions
  *   for the task's subtasks (see `core/subtask.ts`).
+ * @param rework - the reviewer's instructions, when this run is a rework of the
+ *   card's previous work; recorded on the execution it opens.
  */
-export declare function startExecution(task: TaskRecord, now: number, executionId: string, initiatedBy?: string, runGroupId?: string): {
+export declare function startExecution(task: TaskRecord, now: number, executionId: string, initiatedBy?: string, runGroupId?: string, rework?: ExecutionRework): {
     task: TaskRecord;
     execution: ExecutionRecord;
 };
@@ -596,6 +680,6 @@ export declare function settledStatus(task: TaskRecord, outcome: ExecutionOutcom
  * matching column. No-op (returns the input task) when the execution is not
  * the task's latest or is already settled.
  */
-export declare function settleExecution(task: TaskRecord, executionId: string, outcome: ExecutionOutcome, now: number, error: string | undefined): TaskRecord;
+export declare function settleExecution(task: TaskRecord, executionId: string, outcome: ExecutionOutcome, now: number, error: string | undefined, summary?: ExecutionSummary): TaskRecord;
 /** A settled-execution summary string for the detail view. */
 export declare function executionLabel(execution: ExecutionRecord): string;

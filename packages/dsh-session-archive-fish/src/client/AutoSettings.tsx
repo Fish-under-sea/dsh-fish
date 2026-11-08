@@ -143,6 +143,18 @@ export function AutoSettingsPanel(props: {
         />
       </div>
 
+      <div className={styles.autoRow}>
+        <label className={styles.checkLabel}>
+          <input
+            type="checkbox"
+            checked={value.recordManualArchive === true}
+            onChange={(event) => { write('recordManualArchive', event.target.checked) }}
+          />
+          <span>{t('arch.auto.recordManualToggle')}</span>
+        </label>
+      </div>
+      <div className={styles.muted}>{t('arch.auto.recordManualNote')}</div>
+
       {saveFailed && (
         <div className={styles.failText} role="status" data-dsh-part="settings-save-failed">{t('arch.auto.saveFailed')}</div>
       )}

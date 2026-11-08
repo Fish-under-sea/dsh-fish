@@ -31,11 +31,25 @@ export interface TaskBoardExtensionToolRegistry {
 export type TaskBoardActionApplier = (action: Exclude<TaskBoardAction, {
     kind: 'extension-action';
 }>, initiator?: string) => TaskBoardSnapshot;
+/** Delivers one follow-up message into an existing execution session. */
+export type TaskBoardFollowUpDelivery = (sessionId: string, text: string) => Promise<void>;
+/** Applies one rework request through the board's own run path. */
+export type TaskBoardReworkApplier = (taskId: string, instructions: string, initiator?: string) => void;
 /** Registry dependencies. */
 export interface TaskBoardExtensionRegistryOptions {
     ledger: HostTaskLedger;
     /** Apply an action through the board service (gates, run dispatch, schedule). */
     apply?: TaskBoardActionApplier;
+    /**
+     * Queue one follow-up message into a session. Absent means this deployment
+     * serves no session delivery, which the capability face refuses visibly.
+     */
+    followUp?: TaskBoardFollowUpDelivery;
+    /**
+     * Apply one rework run request (through the same gates a run takes). Absent
+     * means this deployment serves no rework, which the face refuses visibly.
+     */
+    rework?: TaskBoardReworkApplier;
     /** Resolve the deployment's tool registry; absent loses the tool surface only. */
     toolRegistry?: () => TaskBoardExtensionToolRegistry | undefined;
     now?: () => number;
@@ -46,6 +60,8 @@ export declare class TaskBoardExtensionRegistry {
     private readonly entries;
     private readonly ledger;
     private readonly applyAction;
+    private readonly followUpDelivery;
+    private readonly reworkApply;
     private readonly now;
     private readonly uuid;
     private readonly logger;
@@ -104,6 +120,30 @@ export declare class TaskBoardExtensionRegistry {
     private createTask;
     private patchContent;
     private setStatus;
+    /**
+     * Queue one follow-up message into the session of a card's current or most
+     * recent execution.
+     *
+     * A running card is the point of the capability, so an open execution is not
+     * a refusal: the message is queued behind the turn that is already going. What
+     * IS refused is a card with no conversation to deliver into, and a session
+     * this Host no longer reaches — the delivery refuses, and that refusal must
+     * reach the provider as such instead of looking like a silent success.
+     */
+    private followUp;
+    /**
+     * Re-run an executed card in its own session with rework instructions.
+     *
+     * The registry decides only what it can read from the ledger — the card
+     * exists, is not archived, is not running, and has a conversation to continue
+     * — and then hands the request to the board's own run path, so the running
+     * lock, the permission confirmation, the acceptance contract and the spend cap
+     * keep judging it. A board refusal surfaces unchanged, exactly as it does for
+     * {@link setStatus}, because those are the board's own words.
+     */
+    private rework;
+    /** One task by id, or the refusal that names the unknown id. */
+    private requireTask;
     private linkedTasks;
     private writeIntegration;
     private publish;

@@ -71,7 +71,6 @@ export type { SshKey } from './locales.ts'
  * @param ctx - client root context (locale service).
  */
 export function apply(ctx: ClientContext): void {
-
   ctx.effect(() => {
     try {
       return ctx.locale.register(NS, { zh, en })

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "SSH 终端",
+    "description": "连远程主机执行命令并传文件"
+  }
+}

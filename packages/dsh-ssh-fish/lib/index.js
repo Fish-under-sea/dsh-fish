@@ -216,6 +216,7 @@ function validateHostPayload(payload) {
 	const proxyJump = Array.isArray(p.proxyJump) ? p.proxyJump : [];
 	if (proxyCommand !== void 0 && proxyJump.length > 0) return "proxyCommand and proxyJump cannot be combined — pick one transport per host";
 	if (p.tags !== void 0 && (!Array.isArray(p.tags) || p.tags.some((x) => typeof x !== "string"))) return "tags must be an array of strings";
+	if (p.forwardAgent !== void 0 && typeof p.forwardAgent !== "boolean") return "forwardAgent must be a boolean";
 }
 /** Alias grammar: letters/digits plus dots, hyphens, underscores (IP/domain aliases included). */
 const ALIAS_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
@@ -265,6 +266,7 @@ var HostStore = class {
 			...entry.environment !== void 0 ? { environment: entry.environment } : {},
 			tags: [...entry.tags],
 			...entry.location !== void 0 ? { location: entry.location } : {},
+			forwardAgent: entry.forwardAgent === true,
 			createdAt: entry.createdAt,
 			updatedAt: entry.updatedAt
 		};
@@ -299,6 +301,7 @@ var HostStore = class {
 			environment: payload.environment?.trim() || void 0,
 			tags: [...payload.tags ?? []].map((tag) => tag.trim()).filter((tag) => tag !== ""),
 			location: payload.location?.trim() || void 0,
+			forwardAgent: payload.forwardAgent === true ? true : void 0,
 			createdAt: now,
 			updatedAt: now
 		};
@@ -316,6 +319,7 @@ var HostStore = class {
 		if (patch.port !== void 0 && (typeof patch.port !== "number" || !Number.isInteger(patch.port) || patch.port < 1 || patch.port > 65535)) throw new Error("port must be an integer in 1..65535");
 		if (patch.proxyJump !== void 0 && (!Array.isArray(patch.proxyJump) || patch.proxyJump.some((x) => typeof x !== "string" || x === ""))) throw new Error("proxyJump must be an array of alias strings");
 		if (patch.proxyCommand !== void 0 && typeof patch.proxyCommand !== "string") throw new Error("proxyCommand must be a string when provided");
+		if (patch.forwardAgent !== void 0 && typeof patch.forwardAgent !== "boolean") throw new Error("forwardAgent must be a boolean");
 		const mergedProxyCommand = patch.proxyCommand !== void 0 ? normalizeProxyCommand(patch.proxyCommand) : entry.proxyCommand;
 		if (mergedProxyCommand !== void 0 && (patch.proxyJump ?? entry.proxyJump).length > 0) throw new Error("proxyCommand and proxyJump cannot be combined — pick one transport per host");
 		if (patch.tags !== void 0 && (!Array.isArray(patch.tags) || patch.tags.some((x) => typeof x !== "string"))) throw new Error("tags must be an array of strings");
@@ -343,6 +347,7 @@ var HostStore = class {
 		if (patch.environment !== void 0) entry.environment = patch.environment.trim() || void 0;
 		if (patch.tags !== void 0) entry.tags = [...patch.tags].map((tag) => tag.trim()).filter((tag) => tag !== "");
 		if (patch.location !== void 0) entry.location = patch.location.trim() || void 0;
+		if (patch.forwardAgent !== void 0) entry.forwardAgent = patch.forwardAgent === true ? true : void 0;
 		entry.updatedAt = Date.now();
 		this.save(file);
 		return entry;
@@ -410,7 +415,8 @@ var HostStore = class {
 				description: block.props.description,
 				environment: block.props.environment,
 				tags: (block.props.tags ?? "").split(",").map((tag) => tag.trim()).filter((tag) => tag !== ""),
-				location: block.props.location
+				location: block.props.location,
+				forwardAgent: parseForwardAgentValue(block.props.forwardagent)
 			};
 			try {
 				this.create(payload);
@@ -499,6 +505,16 @@ function normalizeProxyCommand(raw) {
 	if (trimmed === void 0 || trimmed === "") return void 0;
 	if (trimmed.toLowerCase() === "none") return void 0;
 	return trimmed;
+}
+/**
+* Read an ssh_config `ForwardAgent` value into the stored boolean flag. Only
+* an explicit yes/true/on enables forwarding; an absent value, no/false/off,
+* and anything unrecognized leave it off instead of failing the import — an
+* unknown keyword must never cost the user the whole Host block.
+*/
+function parseForwardAgentValue(raw) {
+	const value = raw?.trim().toLowerCase();
+	return value === "yes" || value === "true" || value === "on";
 }
 /** Expand a leading `~` in a filesystem path. */
 function expandHome(path) {
@@ -713,10 +729,16 @@ function startProxyCommand(rawCommand, target) {
 * Connection pool: per-alias persistent ssh2 connections with multi-hop jump
 * support, the acquire / dispose / sweep lifecycle, and the pooled exec path.
 */
+/**
+* Default ceiling for TCP connect, SSH key exchange and user authentication
+* together (ms). Password authentication behind PAM / LDAP can outlast the
+* previous 15 s ceiling while the server still eventually accepts it.
+*/
+const DEFAULT_CONNECT_TIMEOUT_MS = 3e4;
 /** Default engine knobs (applied when an option is omitted). */
 const DEFAULTS = {
 	idleTimeoutMs: 30 * 6e4,
-	connectTimeoutMs: 15e3,
+	connectTimeoutMs: DEFAULT_CONNECT_TIMEOUT_MS,
 	keepaliveIntervalMs: 15e3,
 	maxOutputBytes: 2 * 1024 * 1024,
 	defaultExecTimeoutMs: 6e4,
@@ -746,21 +768,71 @@ function buildConnectConfig(entry, sock, opts) {
 		config.privateKey = readFileSync(keyPath, "utf8");
 		if (entry.auth.passphrase !== void 0 && entry.auth.passphrase !== "") config.passphrase = entry.auth.passphrase;
 	}
+	if (entry.forwardAgent === true) {
+		const agentPath = typeof config.agent === "string" ? config.agent : resolveForwardAgentPath(entry.auth.agentPath);
+		if (agentPath === void 0) throw new Error("agent forwarding is enabled for this host but no ssh-agent endpoint is available: set SSH_AUTH_SOCK, start Pageant on Windows, or configure an agent path");
+		config.agent = agentPath;
+		config.agentForward = true;
+	}
 	return config;
 }
+/**
+* The default ssh-agent endpoint on Windows: the named pipe the native
+* OpenSSH ssh-agent service listens on. ssh2 connects to a named pipe for any
+* path matching its Windows pipe form, so the default is a real endpoint
+* rather than a protocol name (#1910). PuTTY Pageant is still reachable — it
+* is what the literal `pageant` agent path selects — but it is no longer the
+* assumption.
+*/
+const WINDOWS_AGENT_PIPE = "\\\\.\\pipe\\openssh-ssh-agent";
 /** Resolve the ssh2 agent path for 'agent' auth. */
 function resolveAgentPath(agentPath) {
 	const explicit = normalizeAgentPath(agentPath);
 	if (explicit !== void 0) return explicit;
 	const sock = process.env.SSH_AUTH_SOCK;
 	if (sock !== void 0 && sock !== "") return sock;
-	if (process.platform === "win32") return "pageant";
+	if (process.platform === "win32") return WINDOWS_AGENT_PIPE;
+}
+/**
+* Resolve the ssh-agent endpoint that forwarding brokers signatures through:
+* an explicitly configured agent path wins, then SSH_AUTH_SOCK, then the
+* native OpenSSH named pipe on Windows. Undefined means no endpoint exists on
+* this machine.
+*
+* Forwarding shares the auth resolution on purpose — the endpoint a host
+* signs through is the same one it authenticates with — but it is a separate
+* name so the forwarding path can evolve without touching auth.
+*/
+function resolveForwardAgentPath(agentPath) {
+	return resolveAgentPath(agentPath);
+}
+/**
+* Name the phase that actually stalled. ssh2 reports every pre-ready timeout
+* as "Timed out while waiting for handshake", including one that expires
+* during user authentication after a completed key exchange.
+*
+* @param timeoutMs - the configured `readyTimeout` (0 disables it).
+* @param handshakeComplete - whether ssh2 completed the key exchange.
+* @returns the operator-facing timeout message.
+*/
+function readyTimeoutMessage(timeoutMs, handshakeComplete) {
+	const budget = typeof timeoutMs === "number" && timeoutMs > 0 ? " after " + timeoutMs + " ms" : "";
+	return handshakeComplete ? "SSH authentication timed out" + budget + ": TCP connect and key exchange completed, but the server did not finish authenticating the user - raise the dsh-ssh connectTimeoutMs setting if this host is slow" : "SSH connection timed out" + budget + " before key exchange completed: TCP connect or the SSH key exchange did not finish - raise the dsh-ssh connectTimeoutMs setting if this host is slow";
+}
+/**
+* Whether ssh2 ended the attempt with its pre-ready timeout. The level is the
+* stable discriminator; the message is reused for connect, key exchange and
+* authentication alike.
+*/
+function isReadyTimeout(error) {
+	return error.level === "client-timeout";
 }
 /** Connect one ssh2 client (resolve on ready, reject on error/close). */
 function connectClient(config, onKeyboardInteractive) {
 	return new Promise((resolve, reject) => {
 		const client = new Client();
 		let settled = false;
+		let handshakeComplete = false;
 		const fail = (error) => {
 			if (settled) return;
 			settled = true;
@@ -771,8 +843,12 @@ function connectClient(config, onKeyboardInteractive) {
 			try {
 				client.destroy();
 			} catch {}
-			reject(error instanceof Error ? error : new Error(String(error)));
+			const cause = error instanceof Error ? error : new Error(String(error));
+			reject(isReadyTimeout(cause) ? new Error(readyTimeoutMessage(config.readyTimeout, handshakeComplete)) : cause);
 		};
+		client.once("handshake", () => {
+			handshakeComplete = true;
+		});
 		client.once("ready", () => {
 			if (settled) return;
 			settled = true;
@@ -865,6 +941,12 @@ function parseJumpSpec(spec) {
 * Resolve one ProxyJump spec: an alias configured in this plugin wins, and any
 * other value is read as an OpenSSH address whose credentials come from the
 * target entry (an ad-hoc hop has no stored auth of its own).
+*
+* An address hop deliberately carries no forwardAgent flag: OpenSSH's
+* ForwardAgent is a per-Host setting and an ad-hoc address was never
+* configured, so it must never inherit the target's opt-in. A hop written as
+* an alias uses that alias's own entry, which is how a user forwards on a
+* bastion on purpose.
 */
 function resolveHop(engine, entry, spec) {
 	const configured = engine.store.find(spec);
@@ -1663,6 +1745,15 @@ var SshEngine = class {
 		this.sweepTimer = setInterval(() => sweepPool(this), Math.max(1e4, this.opts.idleTimeoutMs / 4));
 		this.sweepTimer.unref?.();
 	}
+	/**
+	* Change the pre-ready ceiling (TCP connect + key exchange + user
+	* authentication) for connections opened from now on. A pooled connection
+	* keeps serving until it reconnects, because the ceiling governs the
+	* connect path only.
+	*/
+	setConnectTimeout(timeoutMs) {
+		this.opts.connectTimeoutMs = timeoutMs;
+	}
 	/** Secret-free host list (filtered by the optional query). */
 	list(query) {
 		const needle = query?.trim().toLowerCase();
@@ -2088,12 +2179,26 @@ function isLoopbackHostname(hostname) {
 	return isIPv4Loopback(hostname);
 }
 /**
+* Whether a reverse proxy stood between the client and this host: the request
+* carries CF-Connecting-IP or X-Forwarded-For. Either header is stamped by a
+* hop that forwards traffic, so the request did not originate on this machine.
+* @param request - node HTTP request.
+* @returns true when a forwarding header is present.
+*/
+function isProxiedRequest(request) {
+	return request.headers["cf-connecting-ip"] !== void 0 || request.headers["x-forwarded-for"] !== void 0;
+}
+/**
 * Request-level trust fence: a loopback socket address AND a loopback Host
 * header, plus browser same-origin markers. The socket address is
-* authoritative; X-Forwarded-For is never trusted.
+* authoritative for a direct connection; a request that carries a forwarding
+* header is refused outright, because a proxy in front of the host makes both
+* the socket address and the Host header describe the proxy rather than the
+* client. X-Forwarded-For is therefore never evidence *for* loopback.
 */
 function isLoopbackRequest(request) {
 	if (!isLoopbackAddress(request.socket.remoteAddress)) return false;
+	if (isProxiedRequest(request)) return false;
 	const host = request.headers.host;
 	if (typeof host !== "string") return false;
 	let hostUrl;
@@ -2227,7 +2332,8 @@ function makeRoutes(deps) {
 							"user",
 							"auth",
 							"proxyJump",
-							"proxyCommand"
+							"proxyCommand",
+							"forwardAgent"
 						].some((key) => patch[key] !== void 0)) engine.dropAlias(alias);
 						writeJson(res, 200, { host: store.summarize(entry) });
 					} catch (error) {
@@ -2632,8 +2738,8 @@ function toAgentHostRow(host) {
 function renderHosts(hosts) {
 	if (hosts.length === 0) return "no hosts configured";
 	return [
-		"alias | host | port | user | auth | proxy | environment | tags | description",
-		"--- | --- | --- | --- | --- | --- | --- | --- | ---",
+		"alias | host | port | user | auth | proxy | forward | environment | tags | description",
+		"--- | --- | --- | --- | --- | --- | --- | --- | --- | ---",
 		...hosts.map((host) => [
 			host.alias,
 			host.host,
@@ -2641,6 +2747,7 @@ function renderHosts(hosts) {
 			host.user,
 			host.auth,
 			host.proxyJump.length > 0 ? "jump:" + host.proxyJump.join(",") : host.proxyCommandConfigured ? "proxy-command" : "-",
+			host.forwardAgent ? "yes" : "-",
 			host.environment ?? "-",
 			host.tags.length > 0 ? host.tags.join(",") : "-",
 			host.description ?? ""
@@ -2673,7 +2780,7 @@ function renderTunnel(tunnel) {
 function sshListTool(engine) {
 	return defineTool({
 		name: "ssh_list",
-		description: "List configured SSH hosts (alias, host, user, auth, environment, tags, description). Use ssh_exec etc. with the alias.",
+		description: "List configured SSH hosts (alias, host, user, auth, agent forwarding, environment, tags, description). Use ssh_exec etc. with the alias.",
 		parameters: { query: {
 			type: "string",
 			description: "Optional fuzzy match against alias, description, host, and tags."
@@ -2727,6 +2834,10 @@ function sshListTool(engine) {
 								type: "boolean",
 								required: true
 							},
+							forwardAgent: {
+								type: "boolean",
+								required: true
+							},
 							description: { type: "string" },
 							environment: { type: "string" },
 							tags: {
@@ -2773,7 +2884,7 @@ function sshExecTool(engine) {
 			},
 			timeoutMs: {
 				type: "integer",
-				description: "Timeout in milliseconds (default 60000)."
+				description: "Remote command execution timeout in milliseconds (default 60000); it starts after the connection is ready. The connection and authentication ceiling is the dsh-ssh connectTimeoutMs setting, not this argument."
 			}
 		},
 		output: {
@@ -3156,7 +3267,7 @@ function sshClusterTool(engine) {
 			},
 			timeoutMs: {
 				type: "integer",
-				description: "Per-host timeout in milliseconds."
+				description: "Per-host command execution timeout in milliseconds (default 60000); it does not extend the connection and authentication ceiling (the dsh-ssh connectTimeoutMs setting)."
 			},
 			maxWorkers: {
 				type: "integer",
@@ -3350,7 +3461,8 @@ function mountOnce(packageName, fn) {
 */
 const PLUGIN_TOOL_SECTION_ORDERS = {
 	ssh: 150,
-	"task-board": 200
+	"task-board": 200,
+	agents: 220
 };
 /**
 * Build a section provider that renders \`text\` only while at least one of
@@ -3398,7 +3510,8 @@ const inject = [
 const Config = z.object({
 	announceToAgent: z.boolean().default(false).volatile(),
 	enabled: z.boolean().default(true).volatile(),
-	terminalFontFamily: z.string().default("").volatile()
+	terminalFontFamily: z.string().default("").volatile(),
+	connectTimeoutMs: z.number().step(1).min(1e3).max(6e5).default(DEFAULT_CONNECT_TIMEOUT_MS).volatile().description("TCP connect, SSH key exchange and user authentication timeout in milliseconds; raise it for hosts whose authentication is slow.")
 });
 /** Schema defaults, re-read for hand-built test contexts (the loader applies them normally). */
 const DEFAULT_ANNOUNCE = false;
@@ -3439,7 +3552,7 @@ const SSH_GUIDANCE = "本机已安装 dsh-ssh 插件（DSH 远程 SSH 运维）�
 const apply = mountOnce("@fish-under-sea/dsh-ssh-fish", applyImpl);
 function applyImpl(ctx, config) {
 	const store = new HostStore();
-	const engine = new SshEngine(store);
+	const engine = new SshEngine(store, { connectTimeoutMs: readConfigField(config?.connectTimeoutMs, DEFAULT_CONNECT_TIMEOUT_MS) });
 	ctx.effect(() => () => {
 		engine.dispose();
 	}, "dsh-ssh: engine");
@@ -3467,6 +3580,7 @@ function applyImpl(ctx, config) {
 	let disposeTools;
 	let disposeSection;
 	const sync = () => {
+		engine.setConnectTimeout(readConfigField(config?.connectTimeoutMs, DEFAULT_CONNECT_TIMEOUT_MS));
 		const value = resolve();
 		if (disposeSection !== void 0) {
 			disposeSection();

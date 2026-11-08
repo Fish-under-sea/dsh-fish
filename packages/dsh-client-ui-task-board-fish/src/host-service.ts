@@ -1,48 +1,30 @@
 import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway'
-import type { PeerScope } from '@deepseek-ai/dsh-client-connection'
+import { DEFAULT_RUN_LAUNCH_WIDTH, normalizeRunLaunchWidth } from './core/launch-width.ts'
+import { DEFAULT_SPEND_BUDGET_TOKENS, spendCapMessage, spendCapReached } from './core/spend-budget.ts'
+import { usedTokensToday } from './host-spend.ts'
 import { DEFAULT_SESSION_POLL_SECONDS, normalizeSessionPollSeconds, sessionPollMs } from './core/poll-cadence.ts'
 import { reusableSessionId } from './core/session-reuse.ts'
+import { LaunchAdmissionQueue, type QueuedLaunch } from './host/launch-admission.ts'
 import { HostTaskLedger, type OpenedRun, type OpenExecutionReference } from './host-ledger.ts'
-import { HostExecutionRunner, SessionLaunchError, promptText, type SessionCommandDispatcher, type SessionSummary, type TaskBoardWorkspaceRegistry } from './host-runner.ts'
-import { teammateName } from './core/subtask.ts'
+import { HostExecutionRunner, SessionLaunchError, type GatewayPeer, type SessionCommandDispatcher, type SessionSummary, type TaskBoardWorkspaceRegistry } from './host-runner.ts'
+import { LIANGSHEN_PRESET_ID } from './core/subtask.ts'
 import { workspaceOwningSession } from './core/workspace-target.ts'
 import { PowerInhibitor } from './power-inhibitor.ts'
 import { TASK_BOARD_SCHEMA_VERSION, type TaskBoardAction, type TaskBoardEventPayload, type TaskBoardSnapshot } from './protocol.ts'
+import { projectSnapshotForWire } from './core/wire-projection.ts'
+import type { CardDefaults } from './core/card-defaults.ts'
 import { TaskBoardExtensionRegistry } from './host/extension-registry.ts'
 import type { TaskBoardExtension } from './core/extension.ts'
-import type { ExecutionOutcome, ScheduleMode, TaskRecord, TaskStatus } from './core/tasks.ts'
+import { isTaskPermission, normalizeTargetId, type ExecutionOutcome, type ExecutionSummary, type ScheduleMode, type TaskRecord, type TaskStatus } from './core/tasks.ts'
 import { passedAttempt, resolveContract, verificationNeverInvoked, verificationOnlyInvalid, verificationRequired, withAcceptanceDetailCleared, type ExecutionVerification, type ModelCatalogView, type VerificationContract, type VerificationSettings } from './core/verification.ts'
 import type { TaskPermission } from './core/handover.ts'
-
-/** One teammate the Host asks the Agent Teams service to spawn for a team run. */
-export interface TeamSpawnInput {
-  /** Session id of the run's Team Lead (the root task's execution session). */
-  leadSessionId: string
-  /** Immutable lower-kebab-case teammate name, unique inside the Team. */
-  name: string
-  /** Short description of the delegated responsibility. */
-  description: string
-  /** The subtask's execution prompt. */
-  prompt: string
-}
-
-/** Result of one teammate spawn attempt. */
-export interface TeamSpawnResult {
-  /** The teammate's session id when it reached the active edge. */
-  sessionId?: string
-  /** Why the spawn failed: a thrown call, or a member that settled as failed. */
-  error?: string
-}
-
-/**
- * The Agent Teams capability the Host needs for team-mode runs. The plugin
- * builds it from the optional `agentTeams` service; it is absent when this
- * deployment does not serve that service, in which case a team run is refused
- * instead of silently degrading into a plain cascade.
- */
-export interface TaskBoardTeamDispatcher {
-  spawn(input: TeamSpawnInput): Promise<TeamSpawnResult>
-}
+import type { TaskAttachment } from './core/attachment.ts'
+import {
+  publishedAttachmentLimits,
+  verifyAttachments,
+  type ModelInfoResolver,
+  type TaskBoardAttachmentStore,
+} from './host/attachments.ts'
 
 /** Ceiling for the roster-poll failure backoff: a broken session tree is retried at most once a minute. */
 const POLL_FAILURE_MAX_BACKOFF_MS = 60_000
@@ -65,6 +47,43 @@ const MAX_TIMER_DELAY_MS = 2_147_483_647
  * out of the running column, which nothing else can rescue.
  */
 const UNREADABLE_SETTLE_POLLS = 24
+
+/**
+ * Why a member of a run never started: the Host stopped while its launch was
+ * still waiting for an admission slot. Recorded rather than left open, so the
+ * card leaves the running column instead of waiting for the next Host start's
+ * interrupted-start recovery.
+ */
+const ABANDONED_LAUNCH_REASON = 'host stopped before this execution started'
+
+/**
+ * Why a rework could not launch: it redoes work in the card's own
+ * conversation, so a session the Host cannot continue means there is nothing to
+ * send the reviewer's instructions into. Starting a fresh conversation instead
+ * would hand those instructions to an agent that never saw the work.
+ */
+const REWORK_SESSION_REASON = 'rework: the card\'s previous execution session is not present and idle in the host session roster, so there is no conversation to send the rework instructions into'
+
+/**
+ * The acceptance contract one run group freezes, read once for the whole group.
+ *
+ * The board freezes an execution's acceptance contract BEFORE its session is
+ * prompted. Admission delays the launch, so reading these per execution would
+ * let a settings edit made while later members wait reach some members of one
+ * run and not others. Reading them once per run group — at the group's first
+ * admission, which is its root's — keeps the whole group on one contract and
+ * still freezes it before any member's session is prompted.
+ */
+interface FrozenRunContract {
+  settings: VerificationSettings
+  /** The GLOBAL native-/goal switch, resolved exactly once for the run group. */
+  globalGoalEnabled: boolean
+  /** The host model catalog the group's contracts resolve their route from. */
+  catalog: ModelCatalogView | undefined
+}
+
+/** Reads (or returns the already-read) contract of one run group. */
+type RunContractFreezer = () => Promise<FrozenRunContract>
 
 /**
  * Why an enforced goal execution settled failed while its acceptance DID run:
@@ -92,7 +111,7 @@ export const NEVER_INVOKED_VERIFICATION_REASON = 'goal 验收未触发：本次�
 export const INVALID_ONLY_VERIFICATION_REASON = 'goal 验收无效：本次执行只记录了无效验收（裁判未能给出与任务要求对应、且可定位到本次证据的否决依据），看板已停止调用裁判。这**不是**有证据的质量判负：验收本身不可用，本次运行因没有匹配的通过记录而结束。请检查验收环境与证据可见性，或用 task_board_manage(action=reset-verification) 清除记录的无效验收后重新完成目标。'
 
 /**
- * Provenance of one cron-triggered cascade: when the rule fired and the zone
+ * Provenance of one cron-triggered run: when the rule fired and the zone
  * its wall clock was read in. Passed into every launched prompt of that run so
  * a scheduled job knows its own clock rather than inferring one.
  */
@@ -143,10 +162,80 @@ const PROCESS_TIMERS: HostTimerFace = {
   },
 }
 
+/**
+ * The new-card defaults a snapshot publishes, or undefined when this
+ * deployment configures none. A target the board configures nothing for is
+ * omitted instead of published blank, so the browser can tell "no default
+ * model" from "a blank one" (only a hand-edited settings document can express
+ * the latter).
+ */
+function cardDefaultsOf(defaults: CardDefaults): TaskBoardSnapshot['cardDefaults'] {
+  const mode = normalizeTargetId(defaults.mode)
+  const permission = normalizeTargetId(defaults.permission)
+  const model = normalizeTargetId(defaults.model)
+  const reasoningEffort = normalizeTargetId(defaults.reasoningEffort)
+  const published: NonNullable<TaskBoardSnapshot['cardDefaults']> = {
+    ...(mode === undefined ? {} : { mode }),
+    // The snapshot publishes a permission the board's own vocabulary knows; an
+    // out-of-domain value is ignored here exactly as the create path ignores it.
+    ...(isTaskPermission(permission) ? { permission } : {}),
+    ...(model === undefined ? {} : { model }),
+    ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
+  }
+  return Object.keys(published).length === 0 ? undefined : published
+}
+
+/**
+ * Every action kind this board accepts, keyed by the kind itself.
+ *
+ * Written as a total record of `TaskBoardAction['kind']` on purpose: a new member
+ * of that union does not compile until it is listed here, so the table cannot
+ * drift behind the protocol. `apply()` validates against it because a caller
+ * reaching the board through the in-process capability face forwards its action
+ * object verbatim, with no envelope parser in front of it — the HTTP route was the
+ * only entrance before that face existed, and its parser is what used to turn an
+ * unknown kind into a refusal.
+ */
+const ACTION_KINDS: Readonly<Record<TaskBoardAction['kind'], true>> = {
+  import: true,
+  create: true,
+  update: true,
+  delete: true,
+  move: true,
+  archive: true,
+  restore: true,
+  settle: true,
+  'reset-verification': true,
+  'record-external-outcome': true,
+  'set-schedule': true,
+  run: true,
+  rerun: true,
+  rework: true,
+  'confirm-permission': true,
+  'set-parent': true,
+  'rename-tag': true,
+  'delete-tag': true,
+  'extension-action': true,
+}
+
+/**
+ * The attachments an action carries, or undefined when it carries none.
+ *
+ * Only a create and an update can carry attachments: an import refuses them
+ * outright, and every other action kind has no attachment surface at all.
+ */
+function attachmentsOfAction(action: Exclude<TaskBoardAction, { kind: 'extension-action' }>): TaskAttachment[] | undefined {
+  if (action.kind === 'create') return action.input.attachments
+  if (action.kind === 'update') return action.patch.attachments ?? undefined
+  return undefined
+}
+
 export class TaskBoardHostService {
   readonly ledger: HostTaskLedger
   readonly runner: HostExecutionRunner
   readonly power: PowerInhibitor
+  /** The official attachment storage, read live so a late mount is honoured. */
+  private readonly attachmentStore: () => TaskBoardAttachmentStore | undefined
   private readonly listeners = new Set<() => void>()
   /** The one recurring timer: the session-roster poll. */
   private pollTimer: (() => void) | undefined
@@ -164,6 +253,12 @@ export class TaskBoardHostService {
   private pollInFlight = false
   private active = true
   /**
+   * Admission control for the session-creating half of a run: one board action
+   * opens a whole subtree, and this is what keeps the Host from asking DSH for
+   * every member's session at once (see {@link LaunchAdmissionQueue}).
+   */
+  private readonly launches: LaunchAdmissionQueue
+  /**
    * Consecutive unreadable-history polls per open execution (see
    * {@link noteUnreadableInspection}). Cleared as soon as an inspection
    * resolves, so a transient reader failure never fails a card.
@@ -172,10 +267,24 @@ export class TaskBoardHostService {
   private preventIdleSleep = false
   private readonly verificationSettings: () => VerificationSettings
   private readonly verificationCatalog: () => Promise<ModelCatalogView | undefined>
-  private readonly team: TaskBoardTeamDispatcher | undefined
   private readonly timers: HostTimerFace
   /** Live reader of the global native-/goal switch; frozen per execution. */
   private readonly goalRunEnabled: () => boolean
+  /** Live reader of the deployment's new-card defaults (published and applied per create). */
+  private readonly cardDefaults: () => CardDefaults
+  /**
+   * Live reader of the run-launch admission width: how many launches may be in
+   * flight at once. Read at every admission, so a settings edit bounds the next
+   * launch without remounting the row. Absent means the default.
+   */
+  private readonly runLaunchWidth: () => number
+  /**
+   * Live reader of the daily token cap; 0 means no gate. Read at each run
+   * action, so closing or raising the cap binds the next action.
+   */
+  private readonly spendBudgetTokens: () => number
+  /** Today's measured spend: absent measurement reads as "cannot see", never as zero. */
+  private readonly spendUsedToday: (now: number) => number | undefined
   private lastPowerJson = ''
   private readonly now: () => number
   /** The deployment's workspaces, consulted to resolve a card that pins none. */
@@ -194,12 +303,25 @@ export class TaskBoardHostService {
     commandDispatcher?: SessionCommandDispatcher
     workspaceRegistry?: TaskBoardWorkspaceRegistry
     /**
+     * The owner peer every gateway request the runner makes speaks for.
+     * Production passes the peer bound to the plugin fiber (see
+     * {@link createOwnerPeer}); absent is fine for tests and bare mounts,
+     * where the runner binds one to a fresh root context.
+     */
+    ownerPeer?: GatewayPeer
+    /**
      * Permission baseline of the confirmation gate: a fixed value, or a live
      * resolver the board re-reads so a Host Settings change needs no remount.
      */
     sessionDefaultPermission?: TaskPermission | (() => TaskPermission)
     maxSubtaskDepth?: number
-    team?: TaskBoardTeamDispatcher
+    /**
+     * Live reader of the deployment's new-card defaults (volatile config reads).
+     * The board publishes them for the create dialog and re-reads them for every
+     * create that opts in, so a settings edit reaches the next created card
+     * without remounting the row. Absent means the deployment configures none.
+     */
+    cardDefaults?: () => CardDefaults
     timers?: HostTimerFace
     /**
      * Live GLOBAL native /goal switch (a volatile config read). Read ONCE per
@@ -217,19 +339,69 @@ export class TaskBoardHostService {
     verificationSettings?: () => VerificationSettings
     /** The host model catalog the acceptance contract resolves its route from. */
     verificationCatalog?: () => Promise<ModelCatalogView | undefined>
-    operatorPeer?: () => PeerScope | undefined
+    /**
+     * Live admission width for run launches: the number of launches (one
+     * session creation and its prompt each) that may be in flight at once. Read
+     * per admission, so editing the setting bounds the next launch of a run that
+     * is still queueing. Absent means the default width.
+     */
+    runLaunchWidth?: () => number
+    /**
+     * Live daily token cap (a volatile config read). 0 — the default, and what
+     * every deployment that never configured one keeps — ends the gate before
+     * anything is measured. A positive cap refuses a run whose day already spent
+     * it, on both the action path and the cron path.
+     */
+    spendBudgetTokens?: () => number
+    /**
+     * Today's measured spend in tokens, or undefined when this deployment keeps
+     * no readable usage ledger. Defaults to the family usage ledger reader.
+     */
+    spendUsedToday?: (now: number) => number | undefined
+    /**
+     * The official attachment storage, read at request time. Absent means the
+     * deployment stores no attachments: every attachment action is then
+     * refused and the board publishes no attachment limits.
+     */
+    attachments?: () => TaskBoardAttachmentStore | undefined
+    /**
+     * The model-info reader the image preflight uses. Absent means the
+     * deployment serves no model information, and a route whose modalities are
+     * unknown is allowed.
+     */
+    modelInfo?: () => ModelInfoResolver | undefined
+    /**
+     * Whether this deployment runs the legacy Agent Teams runtime. Read at
+     * launch, only for a run the board is about to force under the dispatcher
+     * preset: such a deployment cannot orchestrate, so the run fails closed on
+     * the card instead of deadlocking in a session nobody answers (issue #2031).
+     * Absent means "not proven legacy", which keeps the force exactly as it is.
+     */
+    legacyAgentTeams?: () => boolean
   } = {}) {
     this.ledger = options.ledger ?? new HostTaskLedger(undefined, undefined, {
       sessionDefaultPermission: options.sessionDefaultPermission,
       maxSubtaskDepth: options.maxSubtaskDepth,
+      cardDefaults: options.cardDefaults,
+      spendBudgetTokens: options.spendBudgetTokens,
+      spendUsedToday: options.spendUsedToday,
     })
-    this.runner = new HostExecutionRunner(gateway, options.commandDispatcher, options.workspaceRegistry, undefined, options.operatorPeer)
+    this.attachmentStore = options.attachments ?? (() => undefined)
+    this.runner = new HostExecutionRunner(gateway, options.commandDispatcher, options.workspaceRegistry, undefined, options.ownerPeer, {
+      attachments: this.attachmentStore,
+      llm: options.modelInfo,
+      ...(options.legacyAgentTeams === undefined ? {} : { legacyAgentTeams: options.legacyAgentTeams }),
+    })
     this.workspaceRegistry = options.workspaceRegistry
-    this.team = options.team
     this.timers = options.timers ?? PROCESS_TIMERS
     this.power = options.power ?? new PowerInhibitor()
     this.now = options.now ?? Date.now
     this.goalRunEnabled = options.goalRunEnabled ?? (() => false)
+    this.cardDefaults = options.cardDefaults ?? (() => ({}))
+    this.runLaunchWidth = options.runLaunchWidth ?? (() => DEFAULT_RUN_LAUNCH_WIDTH)
+    this.spendBudgetTokens = options.spendBudgetTokens ?? (() => DEFAULT_SPEND_BUDGET_TOKENS)
+    this.spendUsedToday = options.spendUsedToday ?? (now => usedTokensToday(now))
+    this.launches = new LaunchAdmissionQueue(() => normalizeRunLaunchWidth(this.runLaunchWidth()))
     this.verificationSettings = options.verificationSettings ?? (() => ({ enabled: false, model: '', reasoningEffort: '' }))
     this.verificationCatalog = options.verificationCatalog ?? (async () => undefined)
     this.extensions = new TaskBoardExtensionRegistry({
@@ -237,6 +409,15 @@ export class TaskBoardHostService {
       // Capability writes go through the board's own action path, so every
       // board gate (content freeze, running lock, permission gate) still holds.
       apply: (action, initiator) => this.applyBoardAction(crypto.randomUUID(), action, initiator),
+      // Delivery into a run the board already owns is the runner's session wire
+      // call, never a second execution path.
+      followUp: (sessionId, text) => this.runner.followUp(sessionId, text),
+      // A rework is a run request like any other: it opens its execution through
+      // the same action path, so the running lock, the permission confirmation,
+      // the acceptance contract and the spend cap all apply to it.
+      rework: (taskId, instructions, initiator) => {
+        this.applyBoardAction(crypto.randomUUID(), { kind: 'rework', taskId, instructions }, initiator)
+      },
       now: this.now,
     })
     installStreamErrorGuards()
@@ -317,10 +498,20 @@ export class TaskBoardHostService {
     this.emit()
   }
 
+  /**
+   * The board's published snapshot.
+   *
+   * Every read path serializes this object — the HTTP `state` answer, the
+   * `action` answer through {@link apply}, and the remote bridge's
+   * `board.snapshot` — so a provider's integration credentials are stripped
+   * once, here, instead of at each exit. The ledger keeps them verbatim for the
+   * provider's own in-process read.
+   */
   snapshot(): TaskBoardSnapshot {
     const state = this.ledger.state()
     const published = this.extensions.published()
-    return {
+    const cardDefaults = cardDefaultsOf(this.cardDefaults())
+    return projectSnapshotForWire({
       schemaVersion: TASK_BOARD_SCHEMA_VERSION,
       revision: state.revision,
       tasks: state.tasks,
@@ -328,13 +519,19 @@ export class TaskBoardHostService {
       power: this.power.snapshot(),
       sessionDefaultPermission: this.ledger.sessionDefaultPermission,
       maxSubtaskDepth: this.ledger.maxSubtaskDepth,
-      teamRunAvailable: this.team !== undefined,
       // The GLOBAL native-/goal switch is published live for the UI, but the
       // service freezes its own read at launch: this mirror is for the FORM
       // (enable/disable + explanation), never for a run already in flight.
       goalRunEnabled: this.goalRunEnabled(),
+      // The new-card defaults are published live for the same reason the switch
+      // is: the create dialog prefills from them, and each creating session
+      // re-reads them for the create it submits.
+      ...(cardDefaults === undefined ? {} : { cardDefaults }),
+      // The attachment limits travel with the snapshot so the browser can
+      // refuse an oversized selection before it uploads anything.
+      ...(this.attachmentStore() === undefined ? {} : { attachmentLimits: publishedAttachmentLimits(this.attachmentStore()) }),
       ...(Object.keys(published).length === 0 ? {} : { extensions: published }),
-    }
+    })
   }
 
   /**
@@ -407,18 +604,67 @@ export class TaskBoardHostService {
     return { ...action, input: { ...input, workspaceId } }
   }
 
+  /**
+   * Apply an action whose attachments the Host proved against the official
+   * storage first.
+   *
+   * This is the board's trust boundary for attachment metadata: the browser
+   * asserts the size, the type and the digest of every object it uploaded, and
+   * the Host reads the stored objects back (an image is compared, a file is
+   * streamed and its digest recomputed) before the ledger commits the claim.
+   * An attachment the storage cannot prove is refused, so a spoofed client
+   * claim never becomes a stored fact.
+   */
+  async applyVerified(requestId: string, action: TaskBoardAction, initiator?: string): Promise<TaskBoardSnapshot> {
+    if (!this.active) throw new Error('task board is disabled')
+    // A provider action never carries attachments: it is routed through the
+    // registry exactly like every other extension call.
+    if (action.kind === 'extension-action') return await this.apply(requestId, action, initiator)
+    await this.verifyActionAttachments(action)
+    return projectSnapshotForWire(this.applyBoardAction(requestId, action, initiator, true))
+  }
+
+  /**
+   * Prove every attachment of an action against the official storage.
+   *
+   * An action without attachments is untouched: the board keeps working in a
+   * deployment that serves no attachment storage at all.
+   */
+  private async verifyActionAttachments(action: Exclude<TaskBoardAction, { kind: 'extension-action' }>): Promise<void> {
+    const attachments = attachmentsOfAction(action)
+    if (attachments === undefined || attachments.length === 0) return
+    const store = this.attachmentStore()
+    if (store === undefined) throw new Error('this deployment serves no attachment storage')
+    // The failure keeps its CLASS: a storage that is unavailable must reach
+    // the caller as "the storage is unavailable" (503), not as a generic
+    // rejected action (400).
+    await verifyAttachments(store, attachments)
+  }
+
   apply(requestId: string, action: Extract<TaskBoardAction, { kind: 'extension-action' }>, initiator?: string): Promise<TaskBoardSnapshot>
   apply(requestId: string, action: Exclude<TaskBoardAction, { kind: 'extension-action' }>, initiator?: string): TaskBoardSnapshot
   apply(requestId: string, action: TaskBoardAction, initiator?: string): TaskBoardSnapshot | Promise<TaskBoardSnapshot>
   apply(requestId: string, action: TaskBoardAction, initiator?: string): TaskBoardSnapshot | Promise<TaskBoardSnapshot> {
     if (!this.active) throw new Error('task board is disabled')
+    // A caller that never met the HTTP envelope parser can name a kind this build
+    // does not implement. It is refused here, in the board's own vocabulary: the
+    // ledger has no case for it, and letting it through committed an unchanged
+    // document under a fresh revision — which every connected client then reloads
+    // a whole snapshot for.
+    const kind = (action as { kind?: unknown } | null | undefined)?.kind
+    if (typeof kind !== 'string' || !Object.hasOwn(ACTION_KINDS, kind)) {
+      throw new Error(`unknown task board action kind: ${String(kind)}`)
+    }
     // Provider actions never touch the ledger directly: the registry routes the
     // action to the owning extension, whose own capability calls come back
     // through applyBoardAction and every board gate below.
     if (action.kind === 'extension-action') {
       return this.handleExtensionAction(action)
     }
-    return this.applyBoardAction(requestId, action, initiator)
+    // The answer to a write is a read like any other — it crosses the same wire
+    // (the HTTP action route and the remote bridge's board.apply) — so it leaves
+    // through the same projection as snapshot().
+    return projectSnapshotForWire(this.applyBoardAction(requestId, action, initiator))
   }
 
   /**
@@ -426,15 +672,16 @@ export class TaskBoardHostService {
    * calls and the same-origin wire both land here, so the two surfaces can
    * never disagree about a card.
    */
-  private applyBoardAction(requestId: string, action: Exclude<TaskBoardAction, { kind: 'extension-action' }>, initiator?: string): TaskBoardSnapshot {
-    const before = this.statusMap()
-    // Fail closed before the ledger opens anything: a card opted into team
-    // execution cannot run in a deployment that serves no Agent Teams service,
-    // and silently degrading it to a plain cascade would misreport the work.
-    if (this.team === undefined && (action.kind === 'run' || action.kind === 'rerun')) {
-      const task = this.ledger.state().tasks.find(item => item.id === action.taskId)
-      if (task?.teamRun === true) throw new Error('Agent Teams is unavailable in this deployment')
+  private applyBoardAction(requestId: string, action: Exclude<TaskBoardAction, { kind: 'extension-action' }>, initiator?: string, attachmentVerified = false): TaskBoardSnapshot {
+    // Attachments reach the ledger only through the VERIFIED action path: the
+    // in-process capability face, the agent tools and the legacy import never
+    // carry them, and an action that does is refused here rather than
+    // committed without the storage proof.
+    if (!attachmentVerified && attachmentsOfAction(action) !== undefined) {
+      throw new Error('attachments must be applied through the verified attachment action route')
     }
+    const before = this.statusMap()
+    if (action.kind === 'run' || action.kind === 'rerun' || action.kind === 'rework') this.assertSpendCap()
     const result = this.ledger.applyRequest(requestId, this.withInheritedWorkspace(action, initiator), initiator)
     if (result.runs !== undefined) this.dispatchRuns(result.runs)
     // A committed write that can move a rule moves the nearest trigger;
@@ -452,6 +699,25 @@ export class TaskBoardHostService {
       scheduler: result.state.scheduler,
       power: this.power.snapshot(),
     }
+  }
+
+  /**
+   * Refuse a run whose day already spent the cap.
+   *
+   * A cap of 0 — the shipped default — answers before the measurement is read:
+   * no ledger file is opened and nothing is summed, which is what keeps a board
+   * that never configured a cap identical to the one before it existed.
+   *
+   * The refusal is a thrown message rather than a code: the wire hands its text
+   * to the caller as board-refused, exactly like every other refusal this board
+   * makes.
+   */
+  private assertSpendCap(): void {
+    const cap = this.spendBudgetTokens()
+    if (!(cap > 0)) return
+    const used = this.spendUsedToday(this.now())
+    if (used === undefined || !spendCapReached(used, cap)) return
+    throw new Error(spendCapMessage(used, cap))
   }
 
   /** Route one provider action and answer the resulting board snapshot. */
@@ -486,6 +752,14 @@ export class TaskBoardHostService {
 
   dispose(): void {
     this.disposed = true
+    // Launches still waiting for a slot can never start now: settle them so
+    // their cards leave the running column here, instead of waiting for the
+    // next Host start's interrupted-start recovery. Launches already in flight
+    // are left to finish — their session may already exist.
+    const abandoned = this.launches.drain()
+    if (abandoned.length > 0) {
+      safeConsoleError(`[dsh-task-board] ${abandoned.length} run member(s) were still waiting for a launch slot when the Host stopped; each is settled as cancelled`)
+    }
     this.extensions.dispose()
     this.clearScheduleTimer()
     this.clearPollBackoff()
@@ -496,39 +770,61 @@ export class TaskBoardHostService {
     this.listeners.clear()
   }
 
-  private async launch(opened: OpenedRun, others: readonly OpenedRun[] = [], schedule?: ScheduledRunContext): Promise<void> {
+  private async launch(opened: OpenedRun, schedule?: ScheduledRunContext, freezeContract?: RunContractFreezer): Promise<void> {
     /** The session this launch attached to the execution, once it exists. */
     let attached: string | undefined
     try {
-      // A team run always mints a fresh Lead session: teammates are immutable
-      // children of that session, so reusing an older one would collide on
-      // their names and orphan the previous team.
-      const team = opened.task.teamRun === true
-      const reuseSessionId = team ? undefined : await this.reuseSessionFor(opened.task)
-      // Both modes tell the launched agent what else this run opens; only a team
-      // run names teammates, because only then does this session own them.
-      const peers = others.length === 0 ? undefined : others.map(other => ({
-        id: other.task.id,
-        title: other.task.title,
-        ...(team ? { name: teammateName(other.task.title, other.execution.runGroupId ?? other.task.id, other.task.id) } : {}),
-      }))
+      // One run opens ONE session: the card's own. Its unfinished subtasks are
+      // dispatched from inside that session, so a card that carries them is
+      // forced under the dispatcher preset and told which cards to pick up. The
+      // force is applied here, per execution; the card's stored `mode` is
+      // never rewritten by it.
+      const forcedPreset = this.ledger.hasOutstandingDescendants(opened.task.id) ? LIANGSHEN_PRESET_ID : undefined
+      const descendants = forcedPreset === undefined ? [] : this.ledger.outstandingDescendants(opened.task.id)
+      // The rework this execution carries, when it carries one: it decides both
+      // the session this run continues in and the section the prompt states.
+      const rework = opened.execution.rework
+      // A forced preset is not the card's own composition, so continuing a
+      // session composed from another preset would be refused anyway: mint a
+      // fresh one and run the tree the way this execution requires. A rework
+      // has no such freedom — its whole point is the conversation the reviewer
+      // read — so it fails instead of quietly opening a new one.
+      let reuseSessionId: string | undefined
+      if (rework === undefined) {
+        reuseSessionId = forcedPreset === undefined ? await this.reuseSessionFor(opened.task) : undefined
+      } else {
+        if (forcedPreset !== undefined) throw new Error(REWORK_SESSION_REASON)
+        reuseSessionId = await this.reworkSessionFor(opened.task)
+      }
       // A cron-triggered run additionally states its own firing instant and
       // rule zone, so a scheduled job can resolve "today" without guessing.
-      const promptContext = peers === undefined && schedule === undefined ? undefined : {
-        ...(peers === undefined ? {} : { peers }),
-        ...(team ? { team: true } : {}),
+      const contextParts = {
+        ...(descendants.length === 0 ? {} : {
+          descendants: descendants.map(descendant => ({
+            id: descendant.id,
+            title: descendant.title,
+            status: descendant.status,
+          })),
+        }),
         ...(schedule === undefined ? {} : { schedule }),
+        ...(rework === undefined ? {} : { rework }),
       }
+      const promptContext = Object.keys(contextParts).length === 0 ? undefined : contextParts
       // Freeze this execution's acceptance contract BEFORE the session is
       // prompted: a settings change made while the run is in flight must not
       // retrofit the rule that will judge it. A card that opted out resolves the
       // same contract from an OFF switch: the board-wide switch decides the
       // default, the card decides this execution, and both are read here.
-      const settings = this.verificationSettings()
-      // The GLOBAL native-/goal switch is read ONCE here and carried by value
-      // for the whole execution: a settings edit after this point can only
+      //
+      // The read is the run GROUP's when the queue handed one down: admission
+      // delays a member's launch, so a per-execution read would let a settings
+      // edit made while later members wait reach some members of one run and not
+      // others. One group, one contract — and still frozen before the group's
+      // first session is prompted.
+      const { settings, globalGoalEnabled, catalog } = await (freezeContract ?? (() => this.freezeRunContract()))()
+      // The GLOBAL native-/goal switch is read ONCE per run group and carried by
+      // value for the whole execution: a settings edit after this point can only
       // affect executions that start later.
-      const globalGoalEnabled = this.goalRunEnabled() === true
       // The card must ASK for the goal run: the option is off by default, so an
       // absent value is a plain turn exactly like an explicit false.
       const goalEnabled = globalGoalEnabled && opened.task.goalRun === true
@@ -537,7 +833,7 @@ export class TaskBoardHostService {
       const skippedBy: ExecutionVerification['applicability'] = opened.task.skipVerification === true ? 'skipped' : 'disabled'
       const contract = resolveContract(
         { ...settings, enabled: settings.enabled && opened.task.skipVerification !== true },
-        await this.verificationCatalog(),
+        catalog,
       )
       // An execution that will not become a goal run can never fire the
       // completion gate, so it is marked with the reason that actually applied:
@@ -552,15 +848,18 @@ export class TaskBoardHostService {
       const initial: ExecutionVerification = {
         contract,
         attempts: [],
-        applicability: team ? 'team-member' : !contract.enabled ? skippedBy : notArmed,
+        applicability: !contract.enabled ? skippedBy : notArmed,
       }
       this.ledger.setVerification(opened.task.id, opened.execution.id, initial)
       const sessionId = await this.runner.launch(opened.task, {
         ...(reuseSessionId === undefined ? {} : { reuseSessionId }),
+        ...(forcedPreset === undefined ? {} : { agentPreset: forcedPreset }),
         ...(promptContext === undefined ? {} : { promptContext }),
         // The frozen global switch travels with the launch, so the runner's
         // arming decision is exactly the one made above.
         goalEnabled,
+        // The same catalog snapshot the acceptance contract was frozen from.
+        catalog,
         // Bind the session to the execution before the prompt is queued, so the
         // completion gate can never observe the agent without its binding.
         onSession: (id) => {
@@ -568,13 +867,10 @@ export class TaskBoardHostService {
           this.ledger.attachSession(opened.task.id, opened.execution.id, id)
         },
         onGoalArmed: (armed) => {
-          this.setApplicability(opened.task.id, opened.execution.id, team
-            ? 'team-member'
-            : !contract.enabled ? skippedBy : armed ? 'enforced' : notArmed)
+          this.setApplicability(opened.task.id, opened.execution.id, !contract.enabled ? skippedBy : armed ? 'enforced' : notArmed)
         },
       })
       if (attached === undefined) this.ledger.attachSession(opened.task.id, opened.execution.id, sessionId)
-      if (team) for (const teammate of others) this.scheduleTeammate(teammate, sessionId)
     } catch (error) {
       const launchedSession = error instanceof SessionLaunchError ? error.sessionId : undefined
       if (launchedSession !== undefined) {
@@ -585,51 +881,54 @@ export class TaskBoardHostService {
       // failed launch can never silently spend the user's run budget. A manual
       // run, and a launch that DID reach a session, are never refunded.
       if (schedule !== undefined && attached === undefined && launchedSession === undefined) {
-        this.ledger.refundScheduledOccurrence(opened.task.id, this.now())
-        // The refund runs after the fire already armed the next target, and a
-        // refunded occurrence can restore one the fire had just cleared (a rule
-        // that spent its last run). Re-arm so the restored occurrence is served
-        // at its own instant rather than lost until some unrelated write.
-        this.refreshSchedule()
+        this.refundUnstartedSchedule(opened.task.id)
       }
       this.settleAndNotify(opened.task.id, opened.execution.id, 'failed', error instanceof Error ? error.message : String(error))
     }
-  }
-
-  private scheduleTeammate(opened: OpenedRun, leadSessionId: string): void {
-    void this.spawnTeammate(opened, leadSessionId).catch(error => {
-      safeConsoleError('[dsh-task-board] teammate spawn settlement failed', error)
-    })
   }
 
   /**
-   * Spawn one teammate inside the Lead session and attach the teammate's
-   * session to the subtask execution, so the existing session monitor settles
-   * it from the teammate's own turn like any other execution. A spawn that
-   * fails settles the subtask as failed immediately, which then folds into the
-   * Lead's cascade verdict.
+   * Read the acceptance contract one run group freezes, in the order the board
+   * has always read it: the acceptance settings, then the global native-/goal
+   * switch, then the model catalog that both resolves the contract's route and
+   * decides the reasoning effort the session may be given.
    */
-  private async spawnTeammate(opened: OpenedRun, leadSessionId: string): Promise<void> {
-    const team = this.team
-    if (team === undefined) {
-      this.settleAndNotify(opened.task.id, opened.execution.id, 'failed', 'Agent Teams is unavailable in this deployment')
-      return
-    }
-    try {
-      const member = await team.spawn({
-        leadSessionId,
-        name: teammateName(opened.task.title, opened.execution.runGroupId ?? opened.task.id, opened.task.id),
-        description: opened.task.title,
-        prompt: promptText(opened.task),
+  private async freezeRunContract(): Promise<FrozenRunContract> {
+    const settings = this.verificationSettings()
+    const globalGoalEnabled = this.goalRunEnabled() === true
+    const catalog = await this.verificationCatalog()
+    return { settings, globalGoalEnabled, catalog }
+  }
+
+  /**
+   * A {@link RunContractFreezer} that reads once and hands the SAME value to
+   * every later caller of one run group. A read that fails is not cached: the
+   * next member reads again, exactly as a per-execution read would have.
+   */
+  private contractFreezerForRunGroup(): RunContractFreezer {
+    let pending: Promise<FrozenRunContract> | undefined
+    return () => {
+      pending ??= this.freezeRunContract().catch((error: unknown) => {
+        pending = undefined
+        throw error
       })
-      if (member.sessionId === undefined || member.sessionId === '') {
-        this.settleAndNotify(opened.task.id, opened.execution.id, 'failed', member.error ?? 'teammate provisioning failed')
-        return
-      }
-      this.ledger.attachSession(opened.task.id, opened.execution.id, member.sessionId)
-    } catch (error) {
-      this.settleAndNotify(opened.task.id, opened.execution.id, 'failed', error instanceof Error ? error.message : String(error))
+      return pending
     }
+  }
+
+  /**
+   * Give back the occurrence a launch consumed, for a launch that never reached
+   * a session: a failed launch, or one the Host abandoned while it was still
+   * waiting for an admission slot. A manual run, and a launch that DID reach a
+   * session, are never refunded.
+   */
+  private refundUnstartedSchedule(taskId: string): void {
+    this.ledger.refundScheduledOccurrence(taskId, this.now())
+    // The refund runs after the fire already armed the next target, and a
+    // refunded occurrence can restore one the fire had just cleared (a rule
+    // that spent its last run). Re-arm so the restored occurrence is served
+    // at its own instant rather than lost until some unrelated write.
+    this.refreshSchedule()
   }
 
   /**
@@ -698,10 +997,13 @@ export class TaskBoardHostService {
    * reads no roster at all, and a read that fails mints a fresh conversation
    * exactly as an unknown roster always did.
    * @param task - the task about to run.
+   * @param force - continue the settled session regardless of the card's own
+   *   opt-in (a rework), which the reuse rule accepts without waiving any of its
+   *   evidence conditions.
    * @returns the session id to continue in, or undefined for a fresh session.
    */
-  private async reuseSessionFor(task: TaskRecord): Promise<string | undefined> {
-    if (task.reuseSession !== true) return undefined
+  private async reuseSessionFor(task: TaskRecord, force?: boolean): Promise<string | undefined> {
+    if (task.reuseSession !== true && force !== true) return undefined
     let running: Awaited<ReturnType<HostExecutionRunner['listRunning']>>
     try {
       running = await this.runner.listRunning()
@@ -713,7 +1015,29 @@ export class TaskBoardHostService {
       return undefined
     }
     if (!running.known) return undefined
-    return reusableSessionId(task, new Set(running.items.filter(item => !item.running).map(item => item.sessionId)))
+    return reusableSessionId(
+      task,
+      new Set(running.items.filter(item => !item.running).map(item => item.sessionId)),
+      force === true ? { force: true } : {},
+    )
+  }
+
+  /**
+   * The session a rework continues, or the refusal that says why it cannot.
+   *
+   * A rework exists for one conversation — the one the reviewer read before
+   * sending the work back — so the evidence that this Host still reaches it is
+   * required, exactly as it is for a card that opted into reuse. What a rework
+   * does NOT get is the fresh-conversation fallback: launching there would hand
+   * the reviewer's instructions to an agent that never saw the work, so the run
+   * fails with a readable reason instead.
+   * @param task - the card being reworked.
+   * @returns the session id this rework continues in.
+   */
+  private async reworkSessionFor(task: TaskRecord): Promise<string> {
+    const sessionId = await this.reuseSessionFor(task, true)
+    if (sessionId === undefined) throw new Error(REWORK_SESSION_REASON)
+    return sessionId
   }
 
   /** Reuse the session list this poll already fetched: one list RPC per tick, not 1 + E. */
@@ -764,10 +1088,13 @@ export class TaskBoardHostService {
               : verificationOnlyInvalid(verification)
                 ? INVALID_ONLY_VERIFICATION_REASON
                 : NO_MATCHING_PASS_VERIFICATION_REASON,
+            result.summary,
           )
           continue
         }
-        this.settleAndNotify(execution.taskId, execution.executionId, result.outcome, 'error' in result ? result.error : undefined)
+        // The run's closing text rides whichever verdict it earned: a failed
+        // execution still leaves what it managed to say.
+        this.settleAndNotify(execution.taskId, execution.executionId, result.outcome, 'error' in result ? result.error : undefined, result.summary)
       } catch {
         // A transient inspection failure never settles a running execution.
       }
@@ -787,20 +1114,20 @@ export class TaskBoardHostService {
    * ancestor of it — in the running column with no way out. The first poll of
    * each streak is logged, so the Host log names the session.
    */
-  private settleAndNotify(taskId: string, executionId: string, outcome: ExecutionOutcome, error?: string): void {
+  private settleAndNotify(taskId: string, executionId: string, outcome: ExecutionOutcome, error?: string, summary?: ExecutionSummary): void {
     const before = this.ledger.getTask(taskId)
     if (before?.executions.find(entry => entry.id === executionId)?.endedAt !== undefined) {
       // Already settled: the ledger would no-op, and re-emitting would report
       // the same settlement twice.
-      this.ledger.settle(taskId, executionId, outcome, error)
+      this.ledger.settle(taskId, executionId, outcome, error, summary)
       return
     }
-    const previousStatus = before?.status
-    this.ledger.settle(taskId, executionId, outcome, error)
-    const task = this.ledger.getTask(taskId)
-    if (task !== undefined && previousStatus !== undefined && previousStatus !== task.status) {
-      this.extensions.emitStatusChanged({ taskId, status: task.status, previous: previousStatus })
-    }
+    // One settlement can move more than the settled card: a run whose own card
+    // is terminal also writes the inherited verdict onto the subtasks it never
+    // dispatched. Compare the whole board so the provider events cover those too.
+    const statuses = this.statusMap()
+    this.ledger.settle(taskId, executionId, outcome, error, summary)
+    this.emitStatusChanges(statuses)
     this.extensions.emitExecutionSettled({
       taskId,
       executionId,
@@ -978,20 +1305,18 @@ export class TaskBoardHostService {
   }
 
   /**
-   * Launch one run set. The root goes first and receives the run shape in its
-   * prompt (which members this run opens, and how they run); every plain-cascade
-   * member then launches on its own so one refused participant cannot hold the
-   * others back. A team run's members are spawned inside the root's Lead
-   * session instead, once that session exists.
+   * Launch the one run a run request opened. A run request names one card and
+   * opens one execution for it; the card's own session dispatches its subtasks
+   * as subagents, so nothing else is enqueued here.
+   *
+   * The launch still goes through the admission queue, which admits at most
+   * `runLaunchWidth` launches at a time — that bound now applies across
+   * concurrent runs rather than across the members of one run.
    */
   private dispatchRuns(runs: readonly OpenedRun[], schedule?: ScheduledRunContext): void {
-    if (runs.length === 0) return
-    const root = runs.find(run => run.dispatch !== 'teammate') ?? runs[0]
-    const others = runs.filter(run => run !== root)
-    this.scheduleLaunch(root, others, schedule)
-    for (const run of others) {
-      if (run.dispatch !== 'teammate') this.scheduleLaunch(run, [], schedule)
-    }
+    const root = runs[0]
+    if (root === undefined) return
+    this.scheduleLaunch(root, schedule, this.contractFreezerForRunGroup())
   }
 
   /**
@@ -1004,10 +1329,58 @@ export class TaskBoardHostService {
     this.ledger.setVerification(taskId, executionId, { ...verification, applicability })
   }
 
-  private scheduleLaunch(opened: OpenedRun, others: readonly OpenedRun[] = [], schedule?: ScheduledRunContext): void {
-    void this.launch(opened, others, schedule).catch(error => {
+  private scheduleLaunch(opened: OpenedRun, schedule?: ScheduledRunContext, freezeContract?: RunContractFreezer): void {
+    this.enqueueLaunch(opened, () => this.launch(opened, schedule, freezeContract).catch(error => {
       safeConsoleError('[dsh-task-board] execution launch settlement failed', error)
-    })
+    }), schedule)
+  }
+
+  /**
+   * Hand one launch to the admission queue, or abandon it on the spot when the
+   * Host is already stopping: a queue entry created after {@link dispose} would
+   * otherwise never be drained, and its card would sit in the running column
+   * until the next Host start recovered it.
+   */
+  private enqueueLaunch(opened: OpenedRun, start: () => Promise<void>, schedule?: ScheduledRunContext): void {
+    const launch: QueuedLaunch = {
+      groupId: opened.execution.runGroupId ?? opened.task.id,
+      start: async () => {
+        // Waiting for a slot is time the execution can be settled in: a manual
+        // settle, or a team run folded onto its Lead's verdict, can close a
+        // member's execution before it ever started. Starting it then would
+        // create a session no execution is watching, so a launch whose
+        // execution is already closed is dropped instead.
+        if (!this.isExecutionOpen(opened)) return
+        await start()
+      },
+      abandon: () => this.abandonQueuedRun(opened, schedule),
+    }
+    if (this.disposed) {
+      launch.abandon()
+      return
+    }
+    this.launches.enqueue(launch)
+  }
+
+  /** Whether one opened execution is still open in the ledger. */
+  private isExecutionOpen(opened: OpenedRun): boolean {
+    const execution = this.ledger.getTask(opened.task.id)?.executions.find(entry => entry.id === opened.execution.id)
+    return execution !== undefined && execution.endedAt === undefined
+  }
+
+  /**
+   * Take one launch that never started out of the running column.
+   *
+   * Settled as CANCELLED, not failed: nothing about the run's work went wrong —
+   * the Host stopped before the launch got a slot, which is exactly what the
+   * next start's interrupted-start recovery records for an execution that never
+   * reached a session. A scheduled occurrence that never reached a session is
+   * refunded on the same terms as any other pre-session failure, so a run the
+   * Host never started cannot silently spend the user's run budget.
+   */
+  private abandonQueuedRun(opened: OpenedRun, schedule?: ScheduledRunContext): void {
+    if (schedule !== undefined) this.refundUnstartedSchedule(opened.task.id)
+    this.settleAndNotify(opened.task.id, opened.execution.id, 'cancelled', ABANDONED_LAUNCH_REASON)
   }
 
   private schedulePoll(): void {

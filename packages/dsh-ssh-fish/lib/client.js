@@ -63,6 +63,8 @@ window.__ModuleLoader__.load({
 			"hosts.deleteConfirm": "确定删除主机「{alias}」？将同时停止其隧道。",
 			"hosts.imported": "解析 {parsed} 个配置块，新增 {added} 台主机，跳过 {skipped} 个。",
 			"hosts.proxyBadge": "代理",
+			"hosts.forwardAgentBadge": "Agent 转发",
+			"hosts.forwardAgentHint": "仅对可信主机开启：远端可用本机私钥签名（等价 ssh -A）。",
 			"import.reason.wildcard": "通配符 pattern，需手动配置",
 			"import.reason.existing": "别名已存在",
 			"import.reason.match": "Match 条件块，不支持",
@@ -85,8 +87,8 @@ window.__ModuleLoader__.load({
 			"form.auth.password": "密码",
 			"form.auth.agent": "SSH Agent",
 			"form.agentPath": "Agent 路径",
-			"form.agentPathHint": "留空自动检测（SSH_AUTH_SOCK / Windows Pageant）；也可填 socket 路径或 pageant",
-			"form.authKeepHint": "编辑时密钥/密码/Agent 留空将保留原认证方式与已存凭据；如需更换认证方式请填写新凭据。",
+			"form.agentPathHint": "留空自动检测（SSH_AUTH_SOCK；Windows 上为原生 ssh-agent 命名管道）；也可填 socket 路径或 pageant",
+			"form.authKeepHint": "编辑时密码 / 私钥留空将保留已存凭据；Agent 路径留空是合法的自动检测，选「SSH Agent」即切换到 agent 认证。",
 			"form.keyPath": "私钥路径",
 			"form.keyPathHint": "如 ~/.ssh/id_ed25519",
 			"form.passphrase": "密钥口令",
@@ -97,6 +99,8 @@ window.__ModuleLoader__.load({
 			"form.proxyJumpHint": "逗号分隔的本地主机别名，或 [user@]host[:port] 地址，按顺序连接",
 			"form.proxyCommand": "ProxyCommand",
 			"form.proxyCommandHint": "OpenSSH ProxyCommand：%h 主机、%p 端口、%r 用户、%n 别名；留空或填 none 表示不使用。与跳板机别名互斥。",
+			"form.forwardAgent": "启用 Agent 转发",
+			"form.forwardAgentHint": "把本机 SSH Agent 转发到该主机（等价 ssh -A）：远端可用本机私钥签名。仅对可信主机开启。",
 			"form.description": "备注",
 			"form.environment": "环境",
 			"form.environmentHint": "如 development / production",
@@ -121,6 +125,13 @@ window.__ModuleLoader__.load({
 			"terminal.auth.cancel": "取消",
 			"terminal.auth.placeholder": "请输入验证码或口令",
 			"terminal.auth.hint": "服务器请求进行交互式二次验证（输入仅本次生效，不落盘）：",
+			"terminal.tabs": "终端标签",
+			"terminal.newTab": "按当前主机新开标签",
+			"terminal.closeTab": "关闭标签",
+			"terminal.authPending": "待验证",
+			"terminal.tabExited": "已退出",
+			"terminal.tabError": "出错",
+			"terminal.closeFailed": "无法确认该标签已关闭：关闭帧未送达宿主。标签已保留——可重试，或切到该标签前台，用它自己的连接关闭。",
 			"transfer.selectHost": "选择主机",
 			"transfer.remotePath": "远程路径",
 			"transfer.remotePathHint": "如 /tmp/ 或 /home/user/app.tar.gz",
@@ -219,6 +230,8 @@ window.__ModuleLoader__.load({
 			"hosts.deleteConfirm": "Delete host \"{alias}\"? Its tunnels will be stopped.",
 			"hosts.imported": "Parsed {parsed} blocks, added {added} hosts, skipped {skipped}.",
 			"hosts.proxyBadge": "proxy",
+			"hosts.forwardAgentBadge": "agent-fwd",
+			"hosts.forwardAgentHint": "Enable only for hosts you trust: the remote can sign with your local private keys (equivalent to ssh -A).",
 			"import.reason.wildcard": "wildcard pattern — configure it by hand",
 			"import.reason.existing": "alias already configured",
 			"import.reason.match": "Match block — not supported",
@@ -241,8 +254,8 @@ window.__ModuleLoader__.load({
 			"form.auth.password": "Password",
 			"form.auth.agent": "SSH Agent",
 			"form.agentPath": "Agent path",
-			"form.agentPathHint": "Leave empty to auto-detect (SSH_AUTH_SOCK / Pageant on Windows), or set a socket path or \"pageant\"",
-			"form.authKeepHint": "While editing, empty secret fields keep the stored authentication and credentials; enter new values to switch methods.",
+			"form.agentPathHint": "Leave empty to auto-detect (SSH_AUTH_SOCK; the native ssh-agent named pipe on Windows), or set a socket path or \"pageant\"",
+			"form.authKeepHint": "While editing, an empty password or key field keeps the stored credential; an empty agent path is a valid auto-detect, so choosing SSH Agent switches the host to agent auth.",
 			"form.keyPath": "Private key path",
 			"form.keyPathHint": "e.g. ~/.ssh/id_ed25519",
 			"form.passphrase": "Key passphrase",
@@ -253,6 +266,8 @@ window.__ModuleLoader__.load({
 			"form.proxyJumpHint": "Comma-separated local aliases or [user@]host[:port] addresses, chained in order",
 			"form.proxyCommand": "ProxyCommand",
 			"form.proxyCommandHint": "OpenSSH ProxyCommand: %h host, %p port, %r user, %n alias; empty or none disables it. Mutually exclusive with the jump chain.",
+			"form.forwardAgent": "Enable agent forwarding",
+			"form.forwardAgentHint": "Forward your local SSH agent to this host (equivalent to ssh -A): the remote can sign with your private keys. Enable it only for hosts you trust.",
 			"form.description": "Description",
 			"form.environment": "Environment",
 			"form.environmentHint": "e.g. development / production",
@@ -277,6 +292,13 @@ window.__ModuleLoader__.load({
 			"terminal.auth.cancel": "Cancel",
 			"terminal.auth.placeholder": "Enter code or passphrase",
 			"terminal.auth.hint": "The server requested interactive 2FA (session only, never saved):",
+			"terminal.tabs": "Terminal tabs",
+			"terminal.newTab": "New tab on the current host",
+			"terminal.closeTab": "Close tab",
+			"terminal.authPending": "2FA pending",
+			"terminal.tabExited": "exited",
+			"terminal.tabError": "error",
+			"terminal.closeFailed": "Could not confirm the tab closed: the close never reached the host, so the tab was kept. Retry, or bring the tab to the front and close it over its own connection.",
 			"transfer.selectHost": "Select host",
 			"transfer.remotePath": "Remote path",
 			"transfer.remotePathHint": "e.g. /tmp/ or /home/user/app.tar.gz",
@@ -779,6 +801,78 @@ window.__ModuleLoader__.load({
 					rows
 				}));
 			}
+			/**
+			* End a host session this view is not attached to (closing a background
+			* tab). The session has no other handle from the browser: giving it a
+			* dedicated HTTP route would widen the host's surface for one frame, so this
+			* opens one short-lived attach instead and sends the close frame as soon as
+			* the socket is open.
+			*
+			* The answer is "is this session no longer running", which has three
+			* truthful answers and one lie to avoid:
+			*   - the frame went out on an open socket: the host ends the session;
+			*   - the host answered with an exit frame: an unknown id is reported as
+			*     `terminal session expired` and an ended shell also exits, and in both
+			*     cases nothing is running, so the tab really is closed;
+			*   - the socket errored, closed before opening, or never settled inside
+			*     `timeoutMs`: delivery is unproven, so the session may still be alive and
+			*     the caller must keep the tab instead of claiming it closed.
+			* @param sessionId - the session id the host reported on its ready frame.
+			* @param timeoutMs - bounded wait for the delivery signal (default 5000).
+			* @returns true when the session is known to be gone.
+			*/
+			closeTerminalSession(sessionId, timeoutMs = 5e3) {
+				const target = terminalSocketUrl(window.location, query({
+					session: sessionId,
+					cols: 2,
+					rows: 1
+				}), transportStreamBaseUrl());
+				if (target === void 0) return Promise.resolve(false);
+				let socket;
+				try {
+					socket = new WebSocket(target);
+				} catch {
+					return Promise.resolve(false);
+				}
+				return new Promise((resolve) => {
+					let settled = false;
+					let timer;
+					const finish = (gone) => {
+						if (settled) return;
+						settled = true;
+						if (timer !== void 0) clearTimeout(timer);
+						try {
+							socket.close();
+						} catch {}
+						resolve(gone);
+					};
+					timer = setTimeout(() => {
+						finish(false);
+					}, timeoutMs);
+					socket.onopen = () => {
+						const closeFrame = { type: "close" };
+						try {
+							socket.send(JSON.stringify(closeFrame));
+							finish(true);
+						} catch {}
+					};
+					socket.onmessage = (event) => {
+						let frame;
+						try {
+							frame = JSON.parse(event.data);
+						} catch {
+							return;
+						}
+						if (frame.type === "exit") finish(true);
+					};
+					socket.onerror = () => {
+						finish(false);
+					};
+					socket.onclose = () => {
+						finish(false);
+					};
+				});
+			}
 			/** One terminal socket over either an alias (open) or a session id (attach). */
 			terminalSocket(search) {
 				const target = terminalSocketUrl(window.location, search, transportStreamBaseUrl());
@@ -853,20 +947,51 @@ window.__ModuleLoader__.load({
 				return connection;
 			}
 		};
+		/** Byte cap for the retained screen of one tab (the host buffers 256 KiB too). */
+		const MAX_RETAINED_BYTES = 256 * 1024;
+		/**
+		* UTF-8 byte length of one chunk, without node's Buffer (this half is bundled
+		* for the browser). Surrogate pairs count as the four bytes they encode to.
+		* @param text - the output chunk.
+		* @returns its UTF-8 byte length.
+		*/
+		function utf8Bytes(text) {
+			let bytes = 0;
+			for (const char of text) {
+				const code = char.codePointAt(0) ?? 0;
+				bytes += code < 128 ? 1 : code < 2048 ? 2 : code < 65536 ? 3 : 4;
+			}
+			return bytes;
+		}
 		/** The panel state owner the sidebar row and the view both read. */
 		var PanelController = class {
 			deps;
 			panelOpen = false;
 			activeTab = "hosts";
-			connectRequest = null;
-			terminalSessionId;
+			terminalTabs = [];
+			activeTerminalTabId;
+			draftAlias = "";
+			nextTerminalTabSeq = 0;
 			listeners = /* @__PURE__ */ new Set();
+			/**
+			* Last screen of each tab, kept outside the snapshot: terminal output must
+			* not re-render the panel on every chunk, and only the terminal view reads
+			* this (when a tab has no session left to replay from).
+			*/
+			retainedScreens = /* @__PURE__ */ new Map();
+			/**
+			* Sockets that outlived their view while still connecting. Their session id
+			* is unknown, so they cannot be detached yet; keeping them here is what
+			* prevents a host PTY with no owner.
+			*/
+			adoptedLinks = /* @__PURE__ */ new Map();
 			/** Cached so getSnapshot is referentially stable between changes. */
 			snapshot = {
 				panelOpen: false,
 				activeTab: "hosts",
-				connectRequest: null,
-				terminalSessionId: void 0
+				terminalTabs: [],
+				activeTerminalTabId: void 0,
+				draftAlias: ""
 			};
 			constructor(deps = {}) {
 				this.deps = deps;
@@ -920,33 +1045,274 @@ window.__ModuleLoader__.load({
 				this.activeTab = tab;
 				this.commit();
 			}
-			/** Hand the terminal tab a host to connect to (hosts-tab "connect" action). */
+			/**
+			* Hand the terminal tab a host to connect to (the hosts-tab "connect"
+			* action): the tab exists before the view does, so a panel switch during the
+			* handshake still shows the connecting tab and adopts its socket.
+			* @param alias - the configured host alias.
+			*/
 			requestConnect(alias) {
-				this.connectRequest = {
-					alias,
-					nonce: Date.now()
-				};
 				this.activeTab = "terminal";
+				this.openTerminalTab(alias);
+			}
+			/**
+			* Add a terminal tab on the alias and make it the shown one. Several tabs
+			* may target one alias on purpose: each owns its own host PTY.
+			* @param alias - the configured host alias.
+			* @returns the new tab id.
+			*/
+			openTerminalTab(alias) {
+				this.nextTerminalTabSeq += 1;
+				const id = "tab-" + String(this.nextTerminalTabSeq);
+				this.terminalTabs = [...this.terminalTabs, {
+					id,
+					alias,
+					status: "connecting"
+				}];
+				this.activeTerminalTabId = id;
+				this.draftAlias = alias;
+				this.retainedScreens.delete(id);
+				this.commit();
+				return id;
+			}
+			/**
+			* Show an existing tab and make the toolbar follow its host, so a new tab
+			* opens on the host the user is looking at.
+			* @param id - the tab id.
+			*/
+			setActiveTerminalTab(id) {
+				if (this.activeTerminalTabId === id) return;
+				const tab = this.terminalTab(id);
+				if (tab === void 0) return;
+				this.activeTerminalTabId = id;
+				this.draftAlias = tab.alias;
 				this.commit();
 			}
-			/** Record the host-side session so a later page mount can reattach. */
-			setTerminalSession(sessionId) {
-				if (this.terminalSessionId === sessionId) return;
-				this.terminalSessionId = sessionId;
+			/**
+			* Remove one tab and forget its screen. When the shown tab closes, the
+			* neighbours decide what the xterm shows next: the tab that took its place,
+			* else the one before it, else nothing.
+			* @param id - the tab id.
+			*/
+			closeTerminalTab(id) {
+				const index = this.terminalTabs.findIndex((tab) => tab.id === id);
+				this.retainedScreens.delete(id);
+				const adopted = this.adoptedLinks.get(id);
+				if (adopted !== void 0) adopted.intent = "close";
+				if (index < 0) return;
+				const wasActive = this.activeTerminalTabId === id;
+				this.terminalTabs = this.terminalTabs.filter((tab) => tab.id !== id);
+				if (wasActive) {
+					const neighbour = this.terminalTabs[index] ?? this.terminalTabs[index - 1];
+					this.activeTerminalTabId = neighbour?.id;
+					if (neighbour !== void 0) this.draftAlias = neighbour.alias;
+				}
 				this.commit();
 			}
-			/** Forget the session (it exited, or the user disconnected). */
-			clearTerminalSession() {
-				if (this.terminalSessionId === void 0) return;
-				this.terminalSessionId = void 0;
+			/** The tab record with this id, or undefined when it no longer exists. */
+			terminalTab(id) {
+				return this.terminalTabs.find((tab) => tab.id === id);
+			}
+			/**
+			* Apply a partial update to one tab; a tab that was closed in the meantime
+			* is left alone rather than resurrected.
+			* @param id - the tab id.
+			* @param patch - the fields to change.
+			*/
+			patchTerminalTab(id, patch) {
+				let found = false;
+				const next = this.terminalTabs.map((tab) => {
+					if (tab.id !== id) return tab;
+					found = true;
+					return {
+						...tab,
+						...patch
+					};
+				});
+				if (!found) return;
+				this.terminalTabs = next;
 				this.commit();
+			}
+			/**
+			* Record the host session of a ready tab and clear the challenge it carried.
+			* @param id - the tab id.
+			* @param sessionId - the id the host reported on its ready frame.
+			*/
+			readyTerminalTab(id, sessionId) {
+				this.patchTerminalTab(id, {
+					status: "connected",
+					sessionId,
+					detail: void 0,
+					closeError: void 0,
+					authPrompt: void 0,
+					authAnswers: void 0
+				});
+			}
+			/**
+			* The remote shell ended: the tab keeps its screen and its place, and the
+			* dead session id is dropped so nothing tries to reattach to it.
+			* @param id - the tab id.
+			* @param detail - why it ended, when the transport said.
+			*/
+			exitTerminalTab(id, detail) {
+				this.patchTerminalTab(id, {
+					status: "exited",
+					sessionId: void 0,
+					detail,
+					authPrompt: void 0,
+					authAnswers: void 0,
+					closeError: void 0
+				});
+			}
+			/**
+			* The connection failed. The tab stays with the reason so the user can read
+			* it and close the tab themselves.
+			* @param id - the tab id.
+			* @param detail - the failure text.
+			*/
+			failTerminalTab(id, detail) {
+				this.patchTerminalTab(id, {
+					status: "error",
+					sessionId: void 0,
+					detail,
+					authPrompt: void 0,
+					authAnswers: void 0,
+					closeError: void 0
+				});
+			}
+			/**
+			* A background close never reached the host. The tab keeps its live session
+			* id (so a retry can still end it) and says so instead of vanishing.
+			* @param id - the tab id.
+			* @param reason - the reason code shown by the view.
+			*/
+			markTerminalCloseFailed(id, reason) {
+				this.patchTerminalTab(id, { closeError: reason });
+			}
+			/**
+			* Store the keyboard-interactive challenge this tab has to answer, with a
+			* blank answer of this challenge's own length. A prompt on another tab never
+			* touches this record, which is what keeps two challenges from sharing input.
+			* @param id - the tab id.
+			* @param prompt - the challenge the host asked for.
+			*/
+			setTerminalAuthPrompt(id, prompt) {
+				this.patchTerminalTab(id, {
+					authPrompt: prompt,
+					authAnswers: prompt.prompts.map(() => "")
+				});
+			}
+			/**
+			* Record one character typed for this tab's challenge.
+			* @param id - the tab id.
+			* @param index - which prompt of the challenge.
+			* @param value - the field's current text.
+			*/
+			setTerminalAuthAnswer(id, index, value) {
+				const tab = this.terminalTab(id);
+				if (tab === void 0 || tab.authPrompt === void 0) return;
+				const answers = [...tab.authAnswers ?? tab.authPrompt.prompts.map(() => "")];
+				answers[index] = value;
+				this.patchTerminalTab(id, { authAnswers: answers });
+			}
+			/** Drop the challenge once it was answered, cancelled, or could not apply. */
+			clearTerminalAuthPrompt(id) {
+				if (this.terminalTab(id)?.authPrompt === void 0) return;
+				this.patchTerminalTab(id, {
+					authPrompt: void 0,
+					authAnswers: void 0
+				});
+			}
+			/** Choose the alias the next terminal tab opens on. */
+			setDraftAlias(alias) {
+				if (this.draftAlias === alias) return;
+				this.draftAlias = alias;
+				this.commit();
+			}
+			/** Append one output chunk to the retained screen of a tab. */
+			appendTerminalOutput(id, chunk) {
+				const screen = this.retainedScreens.get(id) ?? {
+					chunks: [],
+					bytes: 0
+				};
+				screen.chunks.push(chunk);
+				screen.bytes += utf8Bytes(chunk);
+				while (screen.bytes > MAX_RETAINED_BYTES && screen.chunks.length > 1) {
+					const dropped = screen.chunks.shift() ?? "";
+					screen.bytes -= utf8Bytes(dropped);
+				}
+				this.retainedScreens.set(id, screen);
+			}
+			/** The retained screen of a tab, concatenated for a redraw. */
+			readTerminalOutput(id) {
+				return (this.retainedScreens.get(id)?.chunks ?? []).join("");
+			}
+			/** Forget the retained screen (a fresh replay from the host replaces it). */
+			clearTerminalOutput(id) {
+				this.retainedScreens.delete(id);
+			}
+			/**
+			* Keep a still-connecting socket alive after its view went away. The socket
+			* cannot be detached yet (no session id), so the intent is applied when the
+			* host reports it: `detach` leaves the shell for a later reattach, `close`
+			* ends the session of a tab the user closed.
+			* @param tabId - the tab the socket belongs to.
+			* @param connection - the live connection.
+			* @param intent - what to do once the session id arrives.
+			*/
+			adoptTerminalLink(tabId, connection, intent) {
+				const entry = {
+					connection,
+					intent
+				};
+				this.adoptedLinks.set(tabId, entry);
+				connection.onOutput = (data) => {
+					if (this.terminalTab(tabId) === void 0) return;
+					this.appendTerminalOutput(tabId, data);
+				};
+				connection.onAuthPrompt = (name, instructions, prompts) => {
+					if (this.terminalTab(tabId) === void 0) return;
+					this.setTerminalAuthPrompt(tabId, {
+						name,
+						instructions,
+						prompts
+					});
+				};
+				connection.onReady = (sessionId) => {
+					const decided = this.adoptedLinks.get(tabId)?.intent ?? entry.intent;
+					this.adoptedLinks.delete(tabId);
+					this.readyTerminalTab(tabId, sessionId);
+					if (decided === "close") connection.close();
+					else connection.detach();
+				};
+				connection.onExit = (_code, error) => {
+					this.adoptedLinks.delete(tabId);
+					this.failTerminalTab(tabId, error ?? "connection closed");
+				};
+			}
+			/**
+			* Take an adopted socket back when its tab is shown again, so the host never
+			* opens a second PTY for the same tab.
+			* @param tabId - the tab id.
+			* @returns the connection, or undefined when nothing was adopted.
+			*/
+			reclaimTerminalLink(tabId) {
+				const adopted = this.adoptedLinks.get(tabId);
+				if (adopted === void 0) return void 0;
+				if (adopted.intent === "close") return void 0;
+				this.adoptedLinks.delete(tabId);
+				adopted.connection.onReady = void 0;
+				adopted.connection.onExit = void 0;
+				adopted.connection.onAuthPrompt = void 0;
+				return adopted.connection;
 			}
 			commit() {
 				this.snapshot = {
 					panelOpen: this.panelOpen,
 					activeTab: this.activeTab,
-					connectRequest: this.connectRequest,
-					terminalSessionId: this.terminalSessionId
+					terminalTabs: this.terminalTabs,
+					activeTerminalTabId: this.activeTerminalTabId,
+					draftAlias: this.draftAlias
 				};
 				for (const fn of [...this.listeners]) fn();
 			}
@@ -959,7 +1325,7 @@ window.__ModuleLoader__.load({
 		};
 		//#endregion
 		//#region \0dsh-css:packages/dsh-ssh-fish/src/client/panel/panel.module.css.mjs
-		const css = ".kVI_yq_view{height:100%;min-height:0;overflow:hidden}.kVI_yq_panel{background:var(--dsw-alias-bg-base);min-width:0;height:100%;min-height:0;color:var(--dsw-alias-label-primary);font-family:var(--dsw-font-family);flex-direction:column;gap:10px;padding:14px 16px 16px;display:flex}.kVI_yq_panelHeader{flex:none;align-items:center;gap:10px;display:flex}.kVI_yq_panelTitle{color:var(--dsw-alias-label-primary);white-space:nowrap;flex:1;margin:0;font-size:16px;font-weight:700}.kVI_yq_backButton{align-items:center;gap:4px;display:inline-flex}.kVI_yq_tabBar{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;gap:2px;display:flex}.kVI_yq_tab{color:var(--dsw-alias-label-secondary);cursor:pointer;white-space:nowrap;background:0 0;border:none;border-bottom:2px solid #0000;border-radius:6px 6px 0 0;padding:7px 14px;font-size:13px}.kVI_yq_tab:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}.kVI_yq_tab[data-active]{color:var(--dsw-alias-label-primary);border-bottom-color:var(--dsw-alias-state-business-primary);font-weight:600}.kVI_yq_panelContent{flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden}.kVI_yq_tabBody{flex-direction:column;flex:1;gap:10px;min-height:0;display:flex;overflow-y:auto}.kVI_yq_fillBody{flex-direction:column;flex:1;gap:10px;min-height:0;display:flex;overflow:hidden}.kVI_yq_toolbar,.kVI_yq_controls{flex-wrap:wrap;flex:none;align-items:center;gap:8px;display:flex}.kVI_yq_controls .kVI_yq_input{flex:0 260px;min-width:150px}.kVI_yq_toolbarSpacer{flex:1}.kVI_yq_search{min-width:120px;color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;outline:none;flex:0 260px;padding:6px 10px;font-size:13px}.kVI_yq_search::placeholder{color:var(--dsw-alias-label-tertiary)}.kVI_yq_groupBySelect{color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;outline:none;padding:6px 8px;font-size:13px}.kVI_yq_groupSection+.kVI_yq_groupSection{border-top:1px solid var(--dsw-alias-border-l1)}.kVI_yq_groupHeader{background:var(--dsw-alias-bg-base,var(--dsw-specific-input-major));align-items:center;gap:8px;padding:4px 8px;display:flex;position:sticky;top:0}.kVI_yq_groupToggle{min-width:0;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;background:0 0;border:none;border-radius:6px;flex:1;align-items:center;gap:6px;padding:4px 6px;font-size:12.5px;font-weight:500;display:flex}.kVI_yq_groupToggle:hover{background:var(--dsw-alias-interactive-bg-hover)}.kVI_yq_groupChevron{border-right:1.5px solid var(--dsw-alias-label-tertiary);border-bottom:1.5px solid var(--dsw-alias-label-tertiary);flex:none;width:7px;height:7px;margin-bottom:2px;transition:transform .12s;transform:rotate(45deg)}.kVI_yq_groupChevron[data-collapsed]{margin-bottom:0;transform:rotate(-45deg)}.kVI_yq_groupName{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.kVI_yq_groupCount{color:var(--dsw-alias-label-tertiary);flex:none;font-weight:400}.kVI_yq_tableWrap{border:1px solid var(--dsw-alias-border-l1);border-radius:10px;flex:1;min-height:0;overflow:auto}.kVI_yq_table{border-collapse:collapse;width:100%;font-size:12.5px}.kVI_yq_table th{z-index:1;text-align:left;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);border-bottom:1px solid var(--dsw-alias-border-l1);white-space:nowrap;padding:8px 10px;font-weight:600;position:sticky;top:0}.kVI_yq_table td{border-bottom:1px solid var(--dsw-alias-separator-primary);vertical-align:top;padding:7px 10px}.kVI_yq_table tbody tr:last-child td{border-bottom:none}.kVI_yq_table tbody tr:hover td{background:var(--dsw-alias-interactive-bg-hover)}.kVI_yq_mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.kVI_yq_cellMuted{color:var(--dsw-alias-label-tertiary)}.kVI_yq_actions{white-space:nowrap;align-items:center;gap:8px;display:flex}.kVI_yq_inlineTest{color:var(--dsw-alias-label-secondary);align-items:center;gap:6px;font-size:11.5px;display:inline-flex}.kVI_yq_inlineTest[data-status=ok]{color:var(--dsw-alias-state-success-primary)}.kVI_yq_inlineTest[data-status=fail]{color:var(--dsw-alias-state-error-primary)}.kVI_yq_badge{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);white-space:nowrap;border-radius:999px;padding:1px 8px;font-size:11px;line-height:1.6;display:inline-block}.kVI_yq_badge[data-kind=key]{color:var(--dsw-alias-state-business-primary);border-color:var(--dsw-alias-state-business-primary)}.kVI_yq_badge[data-kind=password]{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}.kVI_yq_badge[data-kind=agent]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}.kVI_yq_badge[data-kind=proxy]{color:var(--dsw-alias-state-business-primary);border-color:var(--dsw-alias-state-business-primary);margin-left:6px}.kVI_yq_badge[data-status=ok]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}.kVI_yq_badge[data-status=fail]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}.kVI_yq_badge[data-status=timeout]{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}.kVI_yq_primaryButton{color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-button-info-fill);cursor:pointer;white-space:nowrap;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600}.kVI_yq_primaryButton:hover:not(:disabled){background:var(--dsw-alias-button-info-hover)}.kVI_yq_primaryButton:disabled{opacity:.5;cursor:default}.kVI_yq_ghostButton{color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);cursor:pointer;white-space:nowrap;background:0 0;border-radius:8px;padding:5px 12px;font-size:12px}.kVI_yq_ghostButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.kVI_yq_ghostButton:disabled{opacity:.45;cursor:default}.kVI_yq_iconButton{width:26px;height:26px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:6px;justify-content:center;align-items:center;padding:0;font-size:13px;display:inline-flex}.kVI_yq_iconButton:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.kVI_yq_linkButton{color:var(--dsw-alias-state-business-primary);cursor:pointer;white-space:nowrap;background:0 0;border:none;padding:0;font-size:12px}.kVI_yq_linkButton:hover:not(:disabled){text-decoration:underline}.kVI_yq_linkButton:disabled{opacity:.45;cursor:default}.kVI_yq_linkButton[data-danger]{color:var(--dsw-alias-state-error-primary)}.kVI_yq_spinner{border:2px solid var(--dsw-alias-state-business-primary);vertical-align:-1px;border-top-color:#0000;border-radius:50%;flex:none;width:11px;height:11px;animation:.8s linear infinite kVI_yq_dshSshSpin;display:inline-block}@keyframes kVI_yq_dshSshSpin{to{transform:rotate(360deg)}}.kVI_yq_banner{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere;border-radius:8px;padding:8px 12px;font-size:12.5px;line-height:1.5}.kVI_yq_importSkips{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);border-radius:8px;flex-direction:column;gap:4px;margin:6px 0 0;padding:8px 12px;list-style:none;display:flex}.kVI_yq_importSkipRow{justify-content:space-between;align-items:baseline;gap:12px;font-size:12px;display:flex}.kVI_yq_banner[data-kind=ok]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}.kVI_yq_banner[data-kind=error]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}.kVI_yq_banner[data-kind=info]{color:var(--dsw-alias-state-business-primary);border-color:var(--dsw-alias-state-business-primary)}.kVI_yq_empty,.kVI_yq_loading{text-align:center;color:var(--dsw-alias-label-tertiary);padding:28px 12px;font-size:12.5px}.kVI_yq_modalBackdrop{z-index:40;background:var(--dsw-alias-bg-mask-1);justify-content:center;align-items:center;display:flex;position:fixed;inset:0}.kVI_yq_modal{background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);width:min(560px,100vw - 48px);max-height:calc(100vh - 96px);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);border-radius:14px;flex-direction:column;gap:12px;padding:18px;display:flex;overflow-y:auto}.kVI_yq_modalTitle{margin:0;font-size:15px;font-weight:700}.kVI_yq_modalFooter{justify-content:flex-end;gap:10px;margin-top:4px;display:flex}.kVI_yq_formError{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px}.kVI_yq_hint{color:var(--dsw-alias-label-tertiary);font-size:11.5px}.kVI_yq_field{flex-direction:column;gap:5px;display:flex}.kVI_yq_fieldLabel{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600}.kVI_yq_input{color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);resize:vertical;border-radius:8px;outline:none;padding:7px 10px;font-family:inherit;font-size:13px}.kVI_yq_input:focus{border-color:var(--dsw-alias-state-business-primary)}.kVI_yq_input::placeholder{color:var(--dsw-alias-label-tertiary)}.kVI_yq_input:disabled{opacity:.55}.kVI_yq_formRow{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 12px;display:grid}.kVI_yq_radioRow{align-items:center;gap:16px;display:flex}.kVI_yq_radioLabel{color:var(--dsw-alias-label-primary);cursor:pointer;align-items:center;gap:6px;font-size:13px;display:inline-flex}.kVI_yq_termBody{flex-direction:column;flex:1;gap:8px;min-height:0;display:flex;overflow:hidden}.kVI_yq_termWrap{border:1px solid var(--dsw-alias-border-l1);background:#0b0e14;border-radius:10px;flex:1;min-height:0;position:relative;overflow:hidden}.kVI_yq_termContainer{position:absolute;inset:8px 10px}.kVI_yq_termPlaceholder{z-index:2;text-align:center;color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-bg-base);justify-content:center;align-items:center;padding:0 24px;font-size:12.5px;display:flex;position:absolute;inset:0}.kVI_yq_hiddenFile{display:none}.kVI_yq_browsePanel{border:1px solid var(--dsw-alias-border-l1);border-radius:10px;flex-direction:column;flex:none;display:flex;overflow:hidden}.kVI_yq_browseHeader{background:var(--dsw-alias-bg-layer-2);border-bottom:1px solid var(--dsw-alias-border-l1);align-items:center;gap:8px;padding:8px 10px;display:flex}.kVI_yq_browsePath{text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--dsw-alias-label-secondary);flex:1;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;overflow:hidden}.kVI_yq_browseList{max-height:240px;overflow-y:auto}.kVI_yq_dirRow{text-align:left;width:100%;font:inherit;color:var(--dsw-alias-label-primary);border:none;border-bottom:1px solid var(--dsw-alias-separator-primary);cursor:pointer;background:0 0;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;padding:5px 10px;font-size:12.5px;display:grid}.kVI_yq_dirRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.kVI_yq_dirRow[data-type=dir] .kVI_yq_dirName{color:var(--dsw-alias-state-business-primary)}.kVI_yq_dirRow[data-up]{color:var(--dsw-alias-label-secondary)}.kVI_yq_dirName{text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow:hidden}.kVI_yq_dirType{color:var(--dsw-alias-label-tertiary);white-space:nowrap}.kVI_yq_dirSize{color:var(--dsw-alias-label-tertiary);white-space:nowrap;text-align:right}.kVI_yq_transferBlock{flex-direction:column;flex:none;gap:6px;display:flex}.kVI_yq_progressMeta{color:var(--dsw-alias-label-secondary);flex-wrap:wrap;gap:12px;font-size:12px;display:flex}.kVI_yq_progressTrack{background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;height:8px;overflow:hidden}.kVI_yq_progressBar{background:var(--dsw-alias-state-business-primary);border-radius:999px;height:100%;transition:width .12s linear}.kVI_yq_tunnelList{flex-direction:column;flex:none;gap:8px;display:flex}.kVI_yq_tunnelRow{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;align-items:center;gap:10px;padding:8px 12px;display:flex}.kVI_yq_tunnelRow[data-state=forwarding]{border-color:var(--dsw-alias-state-success-primary)}.kVI_yq_tunnelRow[data-state=connecting]{border-color:var(--dsw-alias-state-warn-primary)}.kVI_yq_tunnelRow[data-state=failed]{border-color:var(--dsw-alias-state-error-primary)}.kVI_yq_tunnelLabel{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;overflow:hidden}.kVI_yq_formCard{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;flex-direction:column;flex:none;gap:10px;padding:12px;display:flex}.kVI_yq_clusterForm{flex-direction:column;flex:none;gap:8px;display:flex}.kVI_yq_clusterFilters{grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;display:grid}.kVI_yq_commandInput{min-height:96px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.kVI_yq_cellDetails summary{cursor:pointer;color:var(--dsw-alias-label-secondary);font-size:12px}.kVI_yq_cellPre{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);white-space:pre-wrap;word-break:break-all;border-radius:6px;max-height:180px;margin:4px 0 0;padding:6px 8px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;overflow:auto}";
+		const css = ".kVI_yq_view{height:100%;min-height:0;overflow:hidden}.kVI_yq_panel{background:var(--dsw-alias-bg-base);min-width:0;height:100%;min-height:0;color:var(--dsw-alias-label-primary);font-family:var(--dsw-font-family);flex-direction:column;gap:10px;padding:14px 16px 16px;display:flex}.kVI_yq_panelHeader{flex:none;align-items:center;gap:10px;display:flex}.kVI_yq_panelTitle{color:var(--dsw-alias-label-primary);white-space:nowrap;flex:1;margin:0;font-size:16px;font-weight:700}.kVI_yq_backButton{align-items:center;gap:4px;display:inline-flex}.kVI_yq_tabBar{border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;gap:2px;display:flex}.kVI_yq_tab{color:var(--dsw-alias-label-secondary);cursor:pointer;white-space:nowrap;background:0 0;border:none;border-bottom:2px solid #0000;border-radius:6px 6px 0 0;padding:7px 14px;font-size:13px}.kVI_yq_tab:hover{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}.kVI_yq_tab[data-active]{color:var(--dsw-alias-label-primary);border-bottom-color:var(--dsw-alias-state-business-primary);font-weight:600}.kVI_yq_panelContent{flex-direction:column;flex:1;min-height:0;display:flex;overflow:hidden}.kVI_yq_tabBody{flex-direction:column;flex:1;gap:10px;min-height:0;display:flex;overflow-y:auto}.kVI_yq_fillBody{flex-direction:column;flex:1;gap:10px;min-height:0;display:flex;overflow:hidden}.kVI_yq_toolbar,.kVI_yq_controls{flex-wrap:wrap;flex:none;align-items:center;gap:8px;display:flex}.kVI_yq_controls .kVI_yq_input{flex:0 260px;min-width:150px}.kVI_yq_toolbarSpacer{flex:1}.kVI_yq_search{min-width:120px;color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;outline:none;flex:0 260px;padding:6px 10px;font-size:13px}.kVI_yq_search::placeholder{color:var(--dsw-alias-label-tertiary)}.kVI_yq_groupBySelect{color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;outline:none;padding:6px 8px;font-size:13px}.kVI_yq_groupSection+.kVI_yq_groupSection{border-top:1px solid var(--dsw-alias-border-l1)}.kVI_yq_groupHeader{background:var(--dsw-alias-bg-base,var(--dsw-specific-input-major));align-items:center;gap:8px;padding:4px 8px;display:flex;position:sticky;top:0}.kVI_yq_groupToggle{min-width:0;color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;background:0 0;border:none;border-radius:6px;flex:1;align-items:center;gap:6px;padding:4px 6px;font-size:12.5px;font-weight:500;display:flex}.kVI_yq_groupToggle:hover{background:var(--dsw-alias-interactive-bg-hover)}.kVI_yq_groupChevron{border-right:1.5px solid var(--dsw-alias-label-tertiary);border-bottom:1.5px solid var(--dsw-alias-label-tertiary);flex:none;width:7px;height:7px;margin-bottom:2px;transition:transform .12s;transform:rotate(45deg)}.kVI_yq_groupChevron[data-collapsed]{margin-bottom:0;transform:rotate(-45deg)}.kVI_yq_groupName{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.kVI_yq_groupCount{color:var(--dsw-alias-label-tertiary);flex:none;font-weight:400}.kVI_yq_tableWrap{border:1px solid var(--dsw-alias-border-l1);border-radius:10px;flex:1;min-height:0;overflow:auto}.kVI_yq_table{border-collapse:collapse;width:100%;font-size:12.5px}.kVI_yq_table th{z-index:1;text-align:left;background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-secondary);border-bottom:1px solid var(--dsw-alias-border-l1);white-space:nowrap;padding:8px 10px;font-weight:600;position:sticky;top:0}.kVI_yq_table td{border-bottom:1px solid var(--dsw-alias-separator-primary);vertical-align:top;padding:7px 10px}.kVI_yq_table tbody tr:last-child td{border-bottom:none}.kVI_yq_table tbody tr:hover td{background:var(--dsw-alias-interactive-bg-hover)}.kVI_yq_mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.kVI_yq_cellMuted{color:var(--dsw-alias-label-tertiary)}.kVI_yq_actions{white-space:nowrap;align-items:center;gap:8px;display:flex}.kVI_yq_inlineTest{color:var(--dsw-alias-label-secondary);align-items:center;gap:6px;font-size:11.5px;display:inline-flex}.kVI_yq_inlineTest[data-status=ok]{color:var(--dsw-alias-state-success-primary)}.kVI_yq_inlineTest[data-status=fail]{color:var(--dsw-alias-state-error-primary)}.kVI_yq_badge{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);white-space:nowrap;border-radius:999px;padding:1px 8px;font-size:11px;line-height:1.6;display:inline-block}.kVI_yq_badge[data-kind=key]{color:var(--dsw-alias-state-business-primary);border-color:var(--dsw-alias-state-business-primary)}.kVI_yq_badge[data-kind=password]{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}.kVI_yq_badge[data-kind=agent]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}.kVI_yq_badge[data-kind=proxy]{color:var(--dsw-alias-state-business-primary);border-color:var(--dsw-alias-state-business-primary);margin-left:6px}.kVI_yq_badge[data-kind=forward-agent]{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary);margin-left:6px}.kVI_yq_badge[data-status=ok]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}.kVI_yq_badge[data-status=fail]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}.kVI_yq_badge[data-status=timeout]{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}.kVI_yq_primaryButton{color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-button-info-fill);cursor:pointer;white-space:nowrap;border:none;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:600}.kVI_yq_primaryButton:hover:not(:disabled){background:var(--dsw-alias-button-info-hover)}.kVI_yq_primaryButton:disabled{opacity:.5;cursor:default}.kVI_yq_ghostButton{color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);cursor:pointer;white-space:nowrap;background:0 0;border-radius:8px;padding:5px 12px;font-size:12px}.kVI_yq_ghostButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}.kVI_yq_ghostButton:disabled{opacity:.45;cursor:default}.kVI_yq_iconButton{width:26px;height:26px;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;border-radius:6px;justify-content:center;align-items:center;padding:0;font-size:13px;display:inline-flex}.kVI_yq_iconButton:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}.kVI_yq_linkButton{color:var(--dsw-alias-state-business-primary);cursor:pointer;white-space:nowrap;background:0 0;border:none;padding:0;font-size:12px}.kVI_yq_linkButton:hover:not(:disabled){text-decoration:underline}.kVI_yq_linkButton:disabled{opacity:.45;cursor:default}.kVI_yq_linkButton[data-danger]{color:var(--dsw-alias-state-error-primary)}.kVI_yq_spinner{border:2px solid var(--dsw-alias-state-business-primary);vertical-align:-1px;border-top-color:#0000;border-radius:50%;flex:none;width:11px;height:11px;animation:.8s linear infinite kVI_yq_dshSshSpin;display:inline-block}@keyframes kVI_yq_dshSshSpin{to{transform:rotate(360deg)}}.kVI_yq_banner{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere;border-radius:8px;padding:8px 12px;font-size:12.5px;line-height:1.5}.kVI_yq_importSkips{border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-2);border-radius:8px;flex-direction:column;gap:4px;margin:6px 0 0;padding:8px 12px;list-style:none;display:flex}.kVI_yq_importSkipRow{justify-content:space-between;align-items:baseline;gap:12px;font-size:12px;display:flex}.kVI_yq_banner[data-kind=ok]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}.kVI_yq_banner[data-kind=error]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}.kVI_yq_banner[data-kind=info]{color:var(--dsw-alias-state-business-primary);border-color:var(--dsw-alias-state-business-primary)}.kVI_yq_empty,.kVI_yq_loading{text-align:center;color:var(--dsw-alias-label-tertiary);padding:28px 12px;font-size:12.5px}.kVI_yq_modalBackdrop{z-index:40;background:var(--dsw-alias-bg-mask-1);justify-content:center;align-items:center;display:flex;position:fixed;inset:0}.kVI_yq_modal{background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);width:min(560px,100vw - 48px);max-height:calc(100vh - 96px);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);border-radius:14px;flex-direction:column;gap:12px;padding:18px;display:flex;overflow-y:auto}.kVI_yq_modalTitle{margin:0;font-size:15px;font-weight:700}.kVI_yq_modalFooter{justify-content:flex-end;gap:10px;margin-top:4px;display:flex}.kVI_yq_formError{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px}.kVI_yq_hint{color:var(--dsw-alias-label-tertiary);font-size:11.5px}.kVI_yq_field{flex-direction:column;gap:5px;display:flex}.kVI_yq_fieldLabel{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600}.kVI_yq_input{color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);resize:vertical;border-radius:8px;outline:none;padding:7px 10px;font-family:inherit;font-size:13px}.kVI_yq_input:focus{border-color:var(--dsw-alias-state-business-primary)}.kVI_yq_input::placeholder{color:var(--dsw-alias-label-tertiary)}.kVI_yq_input:disabled{opacity:.55}.kVI_yq_formRow{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px 12px;display:grid}.kVI_yq_radioRow{align-items:center;gap:16px;display:flex}.kVI_yq_radioLabel{color:var(--dsw-alias-label-primary);cursor:pointer;align-items:center;gap:6px;font-size:13px;display:inline-flex}.kVI_yq_termBody{flex-direction:column;flex:1;gap:8px;min-height:0;display:flex;overflow:hidden}.kVI_yq_termTabs{scrollbar-width:thin;border-bottom:1px solid var(--dsw-alias-border-l1);flex:none;align-items:stretch;gap:2px;display:flex;overflow-x:auto}.kVI_yq_termTab{border-bottom:2px solid #0000;border-radius:6px 6px 0 0;flex:none;align-items:center;max-width:200px;display:inline-flex}.kVI_yq_termTab[data-active]{background:var(--dsw-alias-bg-layer-2);border-bottom-color:var(--dsw-alias-state-business-primary)}.kVI_yq_termTabLabel{min-width:0;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;align-items:baseline;gap:6px;padding:5px 4px 5px 10px;font-size:12.5px;display:inline-flex}.kVI_yq_termTab[data-active] .kVI_yq_termTabLabel{color:var(--dsw-alias-label-primary);font-weight:600}.kVI_yq_termTabAlias{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}.kVI_yq_termTabState{color:var(--dsw-alias-label-tertiary);flex:none;font-size:11px;font-weight:400}.kVI_yq_termTabState[data-state=error]{color:var(--dsw-alias-state-error-primary)}.kVI_yq_termTabState[data-state=exited]{color:var(--dsw-alias-label-secondary)}.kVI_yq_termTabClose,.kVI_yq_termTabNew{width:20px;height:20px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:none;border-radius:5px;flex:none;justify-content:center;align-items:center;margin-right:4px;padding:0;font-size:13px;line-height:1;display:inline-flex}.kVI_yq_termTabNew{width:24px;margin:2px 0 2px 4px;font-size:15px}.kVI_yq_termTabClose:hover,.kVI_yq_termTabNew:hover:not(:disabled){color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}.kVI_yq_termTabNew:disabled{opacity:.45;cursor:default}.kVI_yq_termWrap{border:1px solid var(--dsw-alias-border-l1);background:#0b0e14;border-radius:10px;flex:1;min-height:0;position:relative;overflow:hidden}.kVI_yq_termContainer{position:absolute;inset:8px 10px}.kVI_yq_termPlaceholder{z-index:2;text-align:center;color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-bg-base);justify-content:center;align-items:center;padding:0 24px;font-size:12.5px;display:flex;position:absolute;inset:0}.kVI_yq_hiddenFile{display:none}.kVI_yq_browsePanel{border:1px solid var(--dsw-alias-border-l1);border-radius:10px;flex-direction:column;flex:none;display:flex;overflow:hidden}.kVI_yq_browseHeader{background:var(--dsw-alias-bg-layer-2);border-bottom:1px solid var(--dsw-alias-border-l1);align-items:center;gap:8px;padding:8px 10px;display:flex}.kVI_yq_browsePath{text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--dsw-alias-label-secondary);flex:1;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;overflow:hidden}.kVI_yq_browseList{max-height:240px;overflow-y:auto}.kVI_yq_dirRow{text-align:left;width:100%;font:inherit;color:var(--dsw-alias-label-primary);border:none;border-bottom:1px solid var(--dsw-alias-separator-primary);cursor:pointer;background:0 0;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;padding:5px 10px;font-size:12.5px;display:grid}.kVI_yq_dirRow:hover{background:var(--dsw-alias-interactive-bg-hover)}.kVI_yq_dirRow[data-type=dir] .kVI_yq_dirName{color:var(--dsw-alias-state-business-primary)}.kVI_yq_dirRow[data-up]{color:var(--dsw-alias-label-secondary)}.kVI_yq_dirName{text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow:hidden}.kVI_yq_dirType{color:var(--dsw-alias-label-tertiary);white-space:nowrap}.kVI_yq_dirSize{color:var(--dsw-alias-label-tertiary);white-space:nowrap;text-align:right}.kVI_yq_transferBlock{flex-direction:column;flex:none;gap:6px;display:flex}.kVI_yq_progressMeta{color:var(--dsw-alias-label-secondary);flex-wrap:wrap;gap:12px;font-size:12px;display:flex}.kVI_yq_progressTrack{background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;height:8px;overflow:hidden}.kVI_yq_progressBar{background:var(--dsw-alias-state-business-primary);border-radius:999px;height:100%;transition:width .12s linear}.kVI_yq_tunnelList{flex-direction:column;flex:none;gap:8px;display:flex}.kVI_yq_tunnelRow{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;align-items:center;gap:10px;padding:8px 12px;display:flex}.kVI_yq_tunnelRow[data-state=forwarding]{border-color:var(--dsw-alias-state-success-primary)}.kVI_yq_tunnelRow[data-state=connecting]{border-color:var(--dsw-alias-state-warn-primary)}.kVI_yq_tunnelRow[data-state=failed]{border-color:var(--dsw-alias-state-error-primary)}.kVI_yq_tunnelLabel{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;overflow:hidden}.kVI_yq_formCard{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:10px;flex-direction:column;flex:none;gap:10px;padding:12px;display:flex}.kVI_yq_clusterForm{flex-direction:column;flex:none;gap:8px;display:flex}.kVI_yq_clusterFilters{grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;display:grid}.kVI_yq_commandInput{min-height:96px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.kVI_yq_cellDetails summary{cursor:pointer;color:var(--dsw-alias-label-secondary);font-size:12px}.kVI_yq_cellPre{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);white-space:pre-wrap;word-break:break-all;border-radius:6px;max-height:180px;margin:4px 0 0;padding:6px 8px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;overflow:auto}";
 		const tagId = "@fish-under-sea/dsh-ssh-fish/packages/dsh-ssh-fish/src/client/panel/panel.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
 			const tag = document.createElement("style");
@@ -1038,6 +1404,13 @@ window.__ModuleLoader__.load({
 			"termBody": "kVI_yq_termBody",
 			"termContainer": "kVI_yq_termContainer",
 			"termPlaceholder": "kVI_yq_termPlaceholder",
+			"termTab": "kVI_yq_termTab",
+			"termTabAlias": "kVI_yq_termTabAlias",
+			"termTabClose": "kVI_yq_termTabClose",
+			"termTabLabel": "kVI_yq_termTabLabel",
+			"termTabNew": "kVI_yq_termTabNew",
+			"termTabState": "kVI_yq_termTabState",
+			"termTabs": "kVI_yq_termTabs",
 			"termWrap": "kVI_yq_termWrap",
 			"toolbar": "kVI_yq_toolbar",
 			"toolbarSpacer": "kVI_yq_toolbarSpacer",
@@ -1244,6 +1617,7 @@ window.__ModuleLoader__.load({
 				agentPath: "",
 				proxyJump: (editing?.proxyJump ?? []).join(", "),
 				proxyCommand: editing?.proxyCommand ?? "",
+				forwardAgent: editing?.forwardAgent === true,
 				description: editing?.description ?? "",
 				environment: editing?.environment ?? "",
 				tags: (editing?.tags ?? []).join(", "),
@@ -1287,7 +1661,7 @@ window.__ModuleLoader__.load({
 					setError(tt("form.passwordRequired"));
 					return;
 				}
-				const secretEmpty = form.authKind === "password" ? form.password === "" : form.authKind === "key" ? form.keyPath.trim() === "" : form.agentPath.trim() === "";
+				const secretEmpty = form.authKind === "password" ? form.password === "" : form.authKind === "key" ? form.keyPath.trim() === "" : false;
 				const payload = {
 					host,
 					port,
@@ -1305,6 +1679,7 @@ window.__ModuleLoader__.load({
 					},
 					proxyJump: splitList(form.proxyJump),
 					proxyCommand: form.proxyCommand.trim(),
+					forwardAgent: form.forwardAgent,
 					description: form.description.trim() === "" ? void 0 : form.description.trim(),
 					environment: form.environment.trim() === "" ? void 0 : form.environment.trim(),
 					tags: splitList(form.tags),
@@ -1571,6 +1946,26 @@ window.__ModuleLoader__.load({
 								})
 							]
 						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: panel_module_css_default.field,
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: panel_module_css_default.fieldLabel,
+									children: tt("form.forwardAgent")
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									type: "checkbox",
+									checked: form.forwardAgent,
+									onChange: (event) => {
+										set("forwardAgent", event.target.checked);
+									}
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: panel_module_css_default.hint,
+									children: tt("form.forwardAgentHint")
+								})
+							]
+						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							className: panel_module_css_default.formRow,
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
@@ -1831,6 +2226,12 @@ window.__ModuleLoader__.load({
 								"data-kind": "proxy",
 								title: host.proxyCommand,
 								children: tt("hosts.proxyBadge")
+							}),
+							host.forwardAgent === true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: panel_module_css_default.badge,
+								"data-kind": "forward-agent",
+								title: tt("hosts.forwardAgentHint"),
+								children: tt("hosts.forwardAgentBadge")
 							})
 						]
 					}),
@@ -2079,7 +2480,7 @@ window.__ModuleLoader__.load({
 			});
 		}
 		//#endregion
-		//#region ../../node_modules/.pnpm/@xterm+xterm@6.0.0/node_modules/@xterm/xterm/lib/xterm.js
+		//#region ../../node_modules/@xterm/xterm/lib/xterm.js
 		var require_xterm = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			(function(e, t) {
 				if ("object" == typeof exports && "object" == typeof module) module.exports = t();
@@ -15077,7 +15478,7 @@ window.__ModuleLoader__.load({
 			})()));
 		}));
 		//#endregion
-		//#region ../../node_modules/.pnpm/@xterm+addon-fit@0.11.0/node_modules/@xterm/addon-fit/lib/addon-fit.js
+		//#region ../../node_modules/@xterm/addon-fit/lib/addon-fit.js
 		var require_addon_fit = /* @__PURE__ */ __commonJSMin(((exports, module) => {
 			(function(e, t) {
 				"object" == typeof exports && "object" == typeof module ? module.exports = t() : "function" == typeof define && define.amd ? define([], t) : "object" == typeof exports ? exports.FitAddon = t() : e.FitAddon = t();
@@ -15121,11 +15522,22 @@ window.__ModuleLoader__.load({
 		//#endregion
 		//#region src/client/panel/TerminalTab.tsx
 		/**
-		* Terminal tab: an xterm.js PTY view over the host's WebSocket terminal route.
-		* A host <select> plus connect/disconnect controls; the terminal container is
-		* sized by FitAddon (default 80x24 before first fit). On remote exit the last
-		* output stays visible and input is disabled. xterm's stylesheet is injected
-		* once per page load (module-level guard).
+		* Terminal tab: ONE xterm.js view over the host's WebSocket terminal route,
+		* with a tab strip over host-side PTY sessions.
+		*
+		* Session ownership stays on the Host (\`src/engine/terminal-sessions.ts\`): a
+		* view that is not showing a session detaches its socket, and the host keeps
+		* the shell alive plus a bounded scrollback that a reattach replays. That is
+		* what lets the panel hold several tabs while this component keeps a single
+		* xterm instance: switching a tab rebinds the one terminal instead of stacking
+		* terminals, and every tab's alias, host session id, status and pending
+		* keyboard-interactive challenge lives in the panel controller because the
+		* layout unmounts this page whenever another panel is selected.
+		*
+		* A tab that has NOT reported its session id yet cannot be detached (there is
+		* no id to reattach with), so switching away or unmounting hands the socket to
+		* the controller, which applies "detach" or "close" the moment the id arrives.
+		* That is the orphan-free rule: no host PTY is ever left without an owner.
 		*/
 		/** Injected-once guard for the xterm stylesheet (one tag per page load). */
 		let xtermCssInjected = false;
@@ -15143,20 +15555,48 @@ window.__ModuleLoader__.load({
 			get: () => void 0,
 			subscribe: () => () => void 0
 		};
-		/** The xterm terminal view. */
-		function TerminalTab({ api, controller, sessionId, presetAlias, requestId, terminalFont }) {
+		/**
+		* The state word a tab shows in the strip, or undefined when it is simply up.
+		* A pending challenge wins over the lifecycle word: it is the one state the
+		* user has to act on.
+		* @param tab - the tab record.
+		* @returns the short label, or undefined for a connected tab.
+		*/
+		function tabStateLabel(tab) {
+			if (tab.authPrompt !== void 0) return tt("terminal.authPending");
+			if (tab.status === "connecting") return tt("terminal.connecting");
+			if (tab.status === "exited") return tt("terminal.tabExited");
+			if (tab.closeError !== void 0) return tt("terminal.tabError");
+			if (tab.status === "error") return tt("terminal.tabError");
+		}
+		/**
+		* Whether the visible challenge form may answer on the bound socket: the form
+		* and the socket must belong to the same tab. Both are read at submit time, and
+		* the window between a tab switch's commit and the effect that rebinds the
+		* socket is exactly when they can disagree.
+		* @param linkTabId - the tab the bound socket belongs to.
+		* @param formTabId - the tab whose challenge form is on screen.
+		*/
+		function challengeBelongsToLink(linkTabId, formTabId) {
+			return linkTabId !== void 0 && linkTabId === formTabId;
+		}
+		/** The terminal view with its tab strip. */
+		function TerminalTab({ api, controller, presetAlias, terminalFont }) {
+			const { terminalTabs, activeTerminalTabId, draftAlias } = (0, react.useSyncExternalStore)((0, react.useCallback)((listener) => controller.subscribe(listener), [controller]), (0, react.useCallback)(() => controller.getSnapshot(), [controller]));
 			const [hosts, setHosts] = (0, react.useState)([]);
-			const [alias, setAlias] = (0, react.useState)(presetAlias ?? "");
-			const [status, setStatus] = (0, react.useState)({ kind: "idle" });
-			const [authPrompt, setAuthPrompt] = (0, react.useState)(void 0);
-			const [authInputs, setAuthInputs] = (0, react.useState)([]);
+			const [listError, setListError] = (0, react.useState)(void 0);
 			const containerRef = (0, react.useRef)(null);
 			const termRef = (0, react.useRef)(null);
 			const fitRef = (0, react.useRef)(null);
-			const connRef = (0, react.useRef)(null);
+			const linkRef = (0, react.useRef)(null);
 			const dataSubRef = (0, react.useRef)(null);
+			/** Tab whose screen the terminal currently holds. */
+			const renderedRef = (0, react.useRef)(void 0);
+			/** Tabs with a background close in flight, so one click cannot open two. */
+			const closingRef = (0, react.useRef)(/* @__PURE__ */ new Set());
 			const fontSource = terminalFont ?? NO_FONT_SOURCE;
 			const fontOverride = (0, react.useSyncExternalStore)(fontSource.subscribe, fontSource.get);
+			const activeTab = terminalTabs.find((tab) => tab.id === activeTerminalTabId);
 			(0, react.useEffect)(() => {
 				ensureXtermCss();
 			}, []);
@@ -15167,7 +15607,8 @@ window.__ModuleLoader__.load({
 				if (term.options.fontFamily === next) return;
 				term.options.fontFamily = next;
 				fitRef.current?.fit();
-				connRef.current?.resize(term.cols, term.rows);
+				const link = linkRef.current;
+				if (link !== null) link.connection.resize(term.cols, term.rows);
 			}, [fontOverride]);
 			(0, react.useEffect)(() => {
 				let disposed = false;
@@ -15176,10 +15617,7 @@ window.__ModuleLoader__.load({
 						const list = await api.listHosts();
 						if (!disposed) setHosts(list);
 					} catch (cause) {
-						if (!disposed) setStatus({
-							kind: "error",
-							detail: errorMessage(cause)
-						});
+						if (!disposed) setListError(errorMessage(cause));
 					}
 				})();
 				return () => {
@@ -15187,35 +15625,9 @@ window.__ModuleLoader__.load({
 				};
 			}, [api]);
 			(0, react.useEffect)(() => {
-				if (presetAlias !== void 0) setAlias(presetAlias);
-			}, [presetAlias, requestId]);
-			/**
-			* Tear the view down.
-			* @param leave - `detach` leaves the host session alive for a reattach
-			*   (panel switch, unmount); `close` ends it (the disconnect control).
-			*/
-			const teardown = (leave) => {
-				setAuthPrompt(void 0);
-				setAuthInputs([]);
-				const connection = connRef.current;
-				connRef.current = null;
-				if (connection !== null) {
-					connection.onReady = void 0;
-					connection.onOutput = void 0;
-					connection.onExit = void 0;
-					connection.onAuthPrompt = void 0;
-					if (leave === "detach") connection.detach();
-					else connection.close();
-				}
-				dataSubRef.current?.dispose();
-				dataSubRef.current = null;
-				termRef.current?.dispose();
-				termRef.current = null;
-				fitRef.current = null;
-			};
-			(0, react.useEffect)(() => () => {
-				teardown("detach");
-			}, []);
+				if (presetAlias === void 0 || presetAlias === "") return;
+				controller.setDraftAlias(presetAlias);
+			}, [presetAlias, controller]);
 			(0, react.useEffect)(() => {
 				let lastCols = -1;
 				let lastRows = -1;
@@ -15224,11 +15636,11 @@ window.__ModuleLoader__.load({
 					const fit = fitRef.current;
 					if (term === null || fit === null) return;
 					fit.fit();
-					const conn = connRef.current;
-					if (conn !== null && (term.cols !== lastCols || term.rows !== lastRows)) {
+					const link = linkRef.current;
+					if (link !== null && (term.cols !== lastCols || term.rows !== lastRows)) {
 						lastCols = term.cols;
 						lastRows = term.rows;
-						conn.resize(term.cols, term.rows);
+						link.connection.resize(term.cols, term.rows);
 					}
 				};
 				window.addEventListener("resize", sync);
@@ -15245,16 +15657,16 @@ window.__ModuleLoader__.load({
 					window.removeEventListener("resize", sync);
 				};
 			}, []);
-			/**
-			* Build the xterm view and bind one connection to it.
-			* @param open - opens the transport once the terminal has a size.
-			*/
-			const startSession = (open) => {
+			/** Build the one xterm instance and its input subscription, once. */
+			const ensureTerm = () => {
+				const openTerm = termRef.current;
+				const openFit = fitRef.current;
+				if (openTerm !== null && openFit !== null) return {
+					term: openTerm,
+					fit: openFit
+				};
 				const container = containerRef.current;
-				if (container === null) return;
-				if (status.kind === "connecting" || status.kind === "connected") return;
-				teardown("detach");
-				setStatus({ kind: "connecting" });
+				if (container === null) return void 0;
 				const term = new import_xterm.Terminal({
 					convertEol: false,
 					cursorBlink: true,
@@ -15270,88 +15682,282 @@ window.__ModuleLoader__.load({
 				term.loadAddon(fit);
 				term.open(container);
 				fit.fit();
-				const connection = open(term.cols, term.rows);
 				termRef.current = term;
 				fitRef.current = fit;
-				connRef.current = connection;
-				let settled = false;
-				let connectedAlias = "";
 				dataSubRef.current = term.onData((data) => {
-					connection.send(data);
+					linkRef.current?.connection.send(data);
 				});
+				return {
+					term,
+					fit
+				};
+			};
+			/** Dispose the xterm and its subscription (no tabs left, or unmount). */
+			const disposeTerm = () => {
+				dataSubRef.current?.dispose();
+				dataSubRef.current = null;
+				termRef.current?.dispose();
+				termRef.current = null;
+				fitRef.current = null;
+				renderedRef.current = void 0;
+			};
+			/** Release the bound socket: detach it, or adopt it while it connects. */
+			const releaseLink = () => {
+				const link = linkRef.current;
+				linkRef.current = null;
+				if (link === null) return;
+				const connection = link.connection;
+				connection.onReady = void 0;
+				connection.onOutput = void 0;
+				connection.onExit = void 0;
+				connection.onAuthPrompt = void 0;
+				const tab = controller.terminalTab(link.tabId);
+				if (tab === void 0) {
+					controller.adoptTerminalLink(link.tabId, connection, "close");
+					return;
+				}
+				if (tab.status === "connecting") {
+					controller.adoptTerminalLink(link.tabId, connection, "detach");
+					return;
+				}
+				connection.detach();
+			};
+			/**
+			* Whether the single terminal still shows another tab. A terminal that was
+			* just created (or disposed) holds nothing, so it needs no clear; every other
+			* rebind must start from a blank screen or the previous tab's output and
+			* cursor stay on it.
+			* @param tabId - the tab about to be bound.
+			*/
+			const needsScreenClear = (tabId) => {
+				const rendered = renderedRef.current;
+				return rendered !== void 0 && rendered !== tabId;
+			};
+			/**
+			* Draw a retained screen the host cannot replay (adopted output, or a tab
+			* whose session is gone) and mark the terminal as this tab's.
+			* @param term - the single terminal.
+			* @param tabId - the tab that owns the text.
+			* @param retained - the text to draw; empty leaves a blank screen.
+			*/
+			const drawRetained = (term, tabId, retained) => {
+				if (needsScreenClear(tabId)) term.reset();
+				if (retained !== "") term.write(retained);
+				renderedRef.current = tabId;
+			};
+			/** Bind one connection's frames onto the single terminal. */
+			const bindConnection = (tab, connection) => {
+				const view = ensureTerm();
+				if (view === void 0) return;
+				linkRef.current = {
+					tabId: tab.id,
+					connection
+				};
+				renderedRef.current = tab.id;
+				view.term.options.disableStdin = false;
+				connection.onReady = (sessionId) => {
+					controller.clearTerminalAuthPrompt(tab.id);
+					controller.readyTerminalTab(tab.id, sessionId);
+				};
+				connection.onOutput = (data) => {
+					view.term.write(data);
+					controller.appendTerminalOutput(tab.id, data);
+				};
 				connection.onAuthPrompt = (name, instructions, prompts) => {
-					setAuthPrompt({
+					controller.setTerminalAuthPrompt(tab.id, {
 						name,
 						instructions,
 						prompts
 					});
-					setAuthInputs(prompts.map(() => ""));
-				};
-				connection.onReady = (id, readyAlias) => {
-					connectedAlias = readyAlias;
-					controller.setTerminalSession(id);
-					setAuthPrompt(void 0);
-					setAuthInputs([]);
-					setStatus({
-						kind: "connected",
-						alias: readyAlias
-					});
-				};
-				connection.onOutput = (data) => {
-					term.write(data);
 				};
 				connection.onExit = (_code, error) => {
-					if (settled) return;
-					settled = true;
-					setAuthPrompt(void 0);
-					setAuthInputs([]);
-					dataSubRef.current?.dispose();
-					dataSubRef.current = null;
-					term.options.disableStdin = true;
-					connRef.current = null;
-					controller.clearTerminalSession();
-					setStatus({
-						kind: "exited",
-						alias: connectedAlias !== "" ? connectedAlias : alias,
-						detail: error
-					});
+					const bound = linkRef.current;
+					const wasBound = bound !== null && bound.connection === connection;
+					if (wasBound) linkRef.current = null;
+					connection.onReady = void 0;
+					connection.onOutput = void 0;
+					connection.onAuthPrompt = void 0;
+					connection.onExit = void 0;
+					view.term.options.disableStdin = true;
+					if (!wasBound) return;
+					controller.exitTerminalTab(tab.id, error);
 				};
 			};
-			const connect = () => {
-				const target = alias;
-				if (target === "") return;
-				startSession((cols, rows) => api.openTerminal(target, cols, rows));
+			/** Bind the tab the controller says is current, without opening a second PTY. */
+			const bindTab = (tab) => {
+				const view = ensureTerm();
+				if (view === void 0) return;
+				if (tab.status === "connecting" || tab.status === "connected" && tab.sessionId !== void 0) {
+					const adopted = controller.reclaimTerminalLink(tab.id);
+					if (adopted !== void 0) {
+						drawRetained(view.term, tab.id, controller.readTerminalOutput(tab.id));
+						bindConnection(tab, adopted);
+						return;
+					}
+				}
+				if (tab.status === "connecting") {
+					drawRetained(view.term, tab.id, "");
+					controller.clearTerminalOutput(tab.id);
+					bindConnection(tab, api.openTerminal(tab.alias, view.term.cols, view.term.rows));
+					return;
+				}
+				if (tab.status === "connected" && tab.sessionId !== void 0) {
+					const sessionId = tab.sessionId;
+					if (needsScreenClear(tab.id)) {
+						view.term.reset();
+						controller.clearTerminalOutput(tab.id);
+						renderedRef.current = tab.id;
+					}
+					bindConnection(tab, api.attachTerminal(sessionId, view.term.cols, view.term.rows));
+					return;
+				}
+				view.term.options.disableStdin = true;
+				if (renderedRef.current === tab.id) return;
+				drawRetained(view.term, tab.id, controller.readTerminalOutput(tab.id));
 			};
-			const reattachedRef = (0, react.useRef)(void 0);
 			(0, react.useEffect)(() => {
-				if (sessionId === void 0 || connRef.current !== null) return;
-				if (reattachedRef.current === sessionId) return;
-				reattachedRef.current = sessionId;
-				startSession((cols, rows) => api.attachTerminal(sessionId, cols, rows));
-			}, [sessionId]);
-			const disconnect = () => {
-				teardown("close");
-				controller.clearTerminalSession();
-				setStatus({ kind: "idle" });
+				const bound = linkRef.current;
+				if (bound !== null && bound.tabId === activeTerminalTabId) return;
+				releaseLink();
+				if (activeTerminalTabId === void 0) {
+					disposeTerm();
+					return;
+				}
+				const tab = controller.terminalTab(activeTerminalTabId);
+				if (tab === void 0) return;
+				bindTab(tab);
+			}, [
+				activeTerminalTabId,
+				activeTab?.status,
+				activeTab?.sessionId
+			]);
+			(0, react.useEffect)(() => () => {
+				releaseLink();
+				disposeTerm();
+			}, []);
+			/** Open a tab on the toolbar's host (the "+"/Connect control). */
+			const connect = () => {
+				const target = draftAlias;
+				if (target === "") return;
+				controller.openTerminalTab(target);
+			};
+			/**
+			* Close one tab. The shown one ends its session over its own socket; a
+			* background tab is ended through one short-lived attach, and a close that
+			* cannot be delivered keeps the tab instead of pretending it is gone.
+			* @param tabId - the tab to close.
+			*/
+			const closeTab = (tabId) => {
+				const tab = controller.terminalTab(tabId);
+				if (tab === void 0) return;
+				const bound = linkRef.current;
+				if (bound !== null && bound.tabId === tabId) {
+					linkRef.current = null;
+					const connection = bound.connection;
+					connection.onReady = void 0;
+					connection.onOutput = void 0;
+					connection.onExit = void 0;
+					connection.onAuthPrompt = void 0;
+					if (tab.status === "connecting") controller.adoptTerminalLink(tabId, connection, "close");
+					else connection.close();
+					controller.closeTerminalTab(tabId);
+					return;
+				}
+				if (tab.status === "connected" && tab.sessionId !== void 0) {
+					if (closingRef.current.has(tabId)) return;
+					closingRef.current.add(tabId);
+					const sessionId = tab.sessionId;
+					(async () => {
+						try {
+							if (await api.closeTerminalSession(sessionId)) {
+								controller.closeTerminalTab(tabId);
+								return;
+							}
+							controller.markTerminalCloseFailed(tabId, "undelivered");
+						} finally {
+							closingRef.current.delete(tabId);
+						}
+					})();
+					return;
+				}
+				controller.closeTerminalTab(tabId);
 			};
 			const submitAuth = (e) => {
 				e?.preventDefault();
-				if (connRef.current === null || authPrompt === void 0) return;
-				connRef.current.sendAuthResponse(authInputs);
-				setAuthPrompt(void 0);
+				const link = linkRef.current;
+				const tab = activeTab;
+				if (link === null || tab === void 0 || tab.authPrompt === void 0) return;
+				if (!challengeBelongsToLink(link.tabId, tab.id)) return;
+				link.connection.sendAuthResponse(tab.authAnswers ?? []);
+				controller.clearTerminalAuthPrompt(tab.id);
 			};
-			const active = status.kind === "connecting" || status.kind === "connected";
+			const stateLabel = activeTab === void 0 ? void 0 : tabStateLabel(activeTab);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: panel_module_css_default.termBody,
 				children: [
+					terminalTabs.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: panel_module_css_default.termTabs,
+						role: "tablist",
+						"aria-label": tt("terminal.tabs"),
+						"data-dsh-part": "tab-bar",
+						children: [terminalTabs.map((tab) => {
+							const label = tabStateLabel(tab);
+							return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: panel_module_css_default.termTab,
+								"data-active": tab.id === activeTab?.id ? "" : void 0,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+									type: "button",
+									role: "tab",
+									className: panel_module_css_default.termTabLabel,
+									"aria-selected": tab.id === activeTab?.id,
+									"data-dsh-part": "tab",
+									title: tab.alias,
+									onClick: () => {
+										controller.setActiveTerminalTab(tab.id);
+									},
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: panel_module_css_default.termTabAlias,
+										children: tab.alias
+									}), label !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: panel_module_css_default.termTabState,
+										"data-state": tab.status,
+										children: label
+									})]
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: panel_module_css_default.termTabClose,
+									"aria-label": tt("terminal.closeTab"),
+									title: tt("terminal.closeTab"),
+									onClick: () => {
+										closeTab(tab.id);
+									},
+									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										"aria-hidden": "true",
+										children: "×"
+									})
+								})]
+							}, tab.id);
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: panel_module_css_default.termTabNew,
+							"aria-label": tt("terminal.newTab"),
+							title: tt("terminal.newTab"),
+							disabled: draftAlias === "",
+							onClick: connect,
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								"aria-hidden": "true",
+								children: "+"
+							})
+						})]
+					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: panel_module_css_default.controls,
 						children: [
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
 								className: panel_module_css_default.input,
-								value: alias,
+								value: draftAlias,
 								onChange: (event) => {
-									setAlias(event.target.value);
+									controller.setDraftAlias(event.target.value);
 								},
 								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
 									value: "",
@@ -15369,38 +15975,50 @@ window.__ModuleLoader__.load({
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
 								className: panel_module_css_default.primaryButton,
-								disabled: alias === "" || active,
+								disabled: draftAlias === "",
 								onClick: connect,
 								children: tt("terminal.connect")
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
 								className: panel_module_css_default.ghostButton,
-								disabled: !active,
-								onClick: disconnect,
+								disabled: activeTab === void 0,
+								onClick: () => {
+									if (activeTab !== void 0) closeTab(activeTab.id);
+								},
 								children: tt("terminal.disconnect")
 							})
 						]
 					}),
-					status.kind === "connecting" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					activeTab?.status === "connecting" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: panel_module_css_default.banner,
 						"data-kind": "info",
 						children: tt("terminal.connecting")
 					}),
-					status.kind === "connected" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					activeTab?.status === "connected" && stateLabel === void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: panel_module_css_default.banner,
 						"data-kind": "ok",
-						children: tt("terminal.ready", { alias: status.alias })
+						children: tt("terminal.ready", { alias: activeTab.alias })
 					}),
-					status.kind === "exited" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					activeTab?.status === "exited" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: panel_module_css_default.banner,
 						"data-kind": "info",
-						children: [tt("terminal.exited", { alias: status.alias }), status.detail !== void 0 ? " (" + status.detail + ")" : ""]
+						children: [tt("terminal.exited", { alias: activeTab.alias }), activeTab.detail !== void 0 ? " (" + activeTab.detail + ")" : ""]
 					}),
-					status.kind === "error" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					activeTab?.status === "error" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: panel_module_css_default.banner,
 						"data-kind": "error",
-						children: tt("terminal.error", { error: status.detail })
+						children: tt("terminal.error", { error: activeTab.detail ?? "" })
+					}),
+					activeTab?.closeError !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: panel_module_css_default.banner,
+						"data-kind": "error",
+						children: tt("terminal.closeFailed")
+					}),
+					listError !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: panel_module_css_default.banner,
+						"data-kind": "error",
+						children: tt("terminal.error", { error: listError })
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: panel_module_css_default.termWrap,
@@ -15410,11 +16028,11 @@ window.__ModuleLoader__.load({
 								className: panel_module_css_default.termContainer,
 								"data-dsh-part": "terminal"
 							}),
-							status.kind === "idle" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							terminalTabs.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 								className: panel_module_css_default.termPlaceholder,
 								children: hosts.length === 0 ? tt("hosts.empty") : tt("terminal.placeholder")
 							}),
-							authPrompt !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							activeTab?.authPrompt !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 								className: panel_module_css_default.modalBackdrop,
 								style: {
 									position: "absolute",
@@ -15429,14 +16047,14 @@ window.__ModuleLoader__.load({
 											className: panel_module_css_default.modalHeader,
 											children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
 												className: panel_module_css_default.modalTitle,
-												children: authPrompt.name || tt("terminal.auth.title")
+												children: activeTab.authPrompt.name || tt("terminal.auth.title")
 											})
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 											className: panel_module_css_default.hint,
-											children: authPrompt.instructions || tt("terminal.auth.hint")
+											children: activeTab.authPrompt.instructions || tt("terminal.auth.hint")
 										}),
-										authPrompt.prompts.map((p, idx) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+										activeTab.authPrompt.prompts.map((p, idx) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
 											className: panel_module_css_default.field,
 											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 												className: panel_module_css_default.fieldLabel,
@@ -15446,11 +16064,9 @@ window.__ModuleLoader__.load({
 												className: panel_module_css_default.input,
 												type: p.echo ? "text" : "password",
 												placeholder: tt("terminal.auth.placeholder"),
-												value: authInputs[idx] ?? "",
+												value: activeTab.authAnswers?.[idx] ?? "",
 												onChange: (event) => {
-													const next = [...authInputs];
-													next[idx] = event.target.value;
-													setAuthInputs(next);
+													controller.setTerminalAuthAnswer(activeTab.id, idx, event.target.value);
 												}
 											})]
 										}, idx)),
@@ -15459,7 +16075,9 @@ window.__ModuleLoader__.load({
 											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 												type: "button",
 												className: panel_module_css_default.ghostButton,
-												onClick: disconnect,
+												onClick: () => {
+													if (activeTab !== void 0) closeTab(activeTab.id);
+												},
 												children: tt("terminal.auth.cancel")
 											}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 												type: "submit",
@@ -16109,12 +16727,11 @@ window.__ModuleLoader__.load({
 		* The SSH operations panel shell: a header with a close control, a five-tab
 		* bar, and the active tab's content.
 		*
-		* The active tab, the pending connect request and the live terminal session id
-		* live in the controller, not in component state: the layout mounts this page
-		* only while the panel is selected, so local state would reset the tab on
-		* every panel switch and lose the id the terminal tab needs to reattach its
-		* host-side session. Inactive tabs unmount, so each tab fetches its own data
-		* on activation.
+		* The active tab and the terminal tabs live in the controller, not in
+		* component state: the layout mounts this page only while the panel is
+		* selected, so local state would reset the tab on every panel switch and lose
+		* the ids the terminal tab needs to reattach its host-side sessions. Inactive
+		* tabs unmount, so each tab fetches its own data on activation.
 		*/
 		/** The tab bar definition (labels resolved at render time). */
 		const TABS = [
@@ -16141,7 +16758,7 @@ window.__ModuleLoader__.load({
 		];
 		/** The tabbed SSH panel. */
 		function SshPanel({ controller, api, terminalFont }) {
-			const { panelOpen, activeTab, connectRequest, terminalSessionId } = (0, react.useSyncExternalStore)((0, react.useCallback)((listener) => controller.subscribe(listener), [controller]), (0, react.useCallback)(() => controller.getSnapshot(), [controller]));
+			const { panelOpen, activeTab } = (0, react.useSyncExternalStore)((0, react.useCallback)((listener) => controller.subscribe(listener), [controller]), (0, react.useCallback)(() => controller.getSnapshot(), [controller]));
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: panel_module_css_default.panel,
 				"data-dsh-plugin": "ssh",
@@ -16194,9 +16811,6 @@ window.__ModuleLoader__.load({
 							activeTab === "terminal" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TerminalTab, {
 								api,
 								controller,
-								presetAlias: connectRequest?.alias,
-								requestId: connectRequest?.nonce,
-								sessionId: terminalSessionId,
 								terminalFont
 							}),
 							activeTab === "transfer" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TransferTab, { api }),
@@ -16317,8 +16931,7 @@ window.__ModuleLoader__.load({
 			base: void 0,
 			user: void 0,
 			revision: void 0,
-			writable: false,
-			mode: "host"
+			writable: false
 		};
 		/** Whether one Host namespace section carries a field this plugin's schema declares. */
 		function carriesField(section, field) {

@@ -14,6 +14,13 @@ export interface SessionArchiveConfig {
   autoDeleteEnabled?: boolean
   /** Archive retention in days for auto-delete (1-3650). */
   autoDeleteDays?: number
+  /**
+   * Default off. When enabled, a session found already archived with no ledger
+   * entry (archived from the official sidebar, which never reaches this
+   * plugin) gets one backfilled `observed` entry at the moment the plugin
+   * observes it, so the retention clock starts for that session.
+   */
+  recordManualArchive?: boolean
   /** Scheduler cadence in minutes (15-1440). */
   checkIntervalMin?: number
 }
@@ -42,6 +49,7 @@ export interface SessionArchiveConfigFields {
   autoArchiveDays?: ConfigField<number>
   autoDeleteEnabled?: ConfigField<boolean>
   autoDeleteDays?: ConfigField<number>
+  recordManualArchive?: ConfigField<boolean>
   checkIntervalMin?: ConfigField<number>
 }
 
@@ -69,6 +77,7 @@ export function readArchiveConfig(config?: SessionArchiveConfigFields): SessionA
     autoArchiveDays: readConfigField(config?.autoArchiveDays),
     autoDeleteEnabled: readConfigField(config?.autoDeleteEnabled),
     autoDeleteDays: readConfigField(config?.autoDeleteDays),
+    recordManualArchive: readConfigField(config?.recordManualArchive),
     checkIntervalMin: readConfigField(config?.checkIntervalMin),
   }
 }
@@ -79,6 +88,7 @@ export interface ResolvedAutoConfig {
   autoArchiveDays: number
   autoDeleteEnabled: boolean
   autoDeleteDays: number
+  recordManualArchive: boolean
   checkIntervalMin: number
 }
 
@@ -95,6 +105,7 @@ export const DEFAULT_AUTO_CONFIG: ResolvedAutoConfig = {
   autoArchiveDays: 7,
   autoDeleteEnabled: false,
   autoDeleteDays: 7,
+  recordManualArchive: false,
   checkIntervalMin: 60,
 }
 
@@ -121,6 +132,7 @@ export function resolveAutoConfig(config?: SessionArchiveConfig): ResolvedAutoCo
     autoArchiveDays: days ?? DEFAULT_AUTO_CONFIG.autoArchiveDays,
     autoDeleteEnabled: config?.autoDeleteEnabled ?? DEFAULT_AUTO_CONFIG.autoDeleteEnabled,
     autoDeleteDays: retain ?? DEFAULT_AUTO_CONFIG.autoDeleteDays,
+    recordManualArchive: config?.recordManualArchive ?? DEFAULT_AUTO_CONFIG.recordManualArchive,
     checkIntervalMin: interval ?? DEFAULT_AUTO_CONFIG.checkIntervalMin,
   }
 }

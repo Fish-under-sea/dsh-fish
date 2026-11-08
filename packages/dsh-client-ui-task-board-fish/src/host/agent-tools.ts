@@ -132,9 +132,12 @@ function executionView(execution: ExecutionRecord): Record<string, unknown> {
     ...(execution.initiatedBy === undefined ? {} : { initiatedBy: execution.initiatedBy }),
     // Set only by record-external-outcome: the Host observed no session for it.
     ...(execution.external === true ? { external: true } : {}),
+    // Every Host run joins a run group (single-member for a new run, and
+    // multi-member for a group the ledger stored before it stopped spreading one
+    // run across a subtree); the field keeps its historical name.
     ...(execution.runGroupId === undefined ? {} : { cascade: true }),
-    // A deferred cascade parent has settled its own turn but still waits for
-    // its subtasks; that is not a stuck card and the model must not retry it.
+    // A parent of a stored group has settled its own turn but still waits for
+    // its members; that is not a stuck card and the model must not retry it.
     ...(execution.ownResult === undefined
       ? {}
       : { ownResult: execution.ownResult, awaitingSubtasks: execution.endedAt === undefined }),
@@ -166,6 +169,7 @@ function taskSummary(
     ...(task.mode === undefined ? {} : { mode: task.mode }),
     ...(task.permission === undefined ? {} : { permission: task.permission }),
     ...(task.model === undefined ? {} : { model: task.model }),
+    ...(task.reasoningEffort === undefined ? {} : { reasoningEffort: task.reasoningEffort }),
     ...(task.reuseSession === true ? { reuseSession: true } : {}),
     ...(task.teamRun === true ? { teamRun: true } : {}),
     // Default-OFF opt-in: only a card that asked for the goal run reports it.
@@ -276,8 +280,8 @@ function buildSetParentTool(host: TaskBoardToolHost): ToolDefinition {
     description: [
       'Attach an existing task under a parent (making it a subtask) or detach it back to the root board by setting its parentId.',
       'Pass an empty parentId to detach.',
-      'The Host refuses the link when the parent is unknown or archived, when the moved task is one of its own descendants, when the resulting depth exceeds the deployment subtask limit (default one level, maximum three), or while the task has an unsettled execution (its link may still be a running cascade parent pointer).',
-      'Running a task runs its whole subtree concurrently; a parent card settles only after its own turn and every direct subtask settle.',
+      'The Host refuses the link when the parent is unknown or archived, when the moved task is one of its own descendants, when the resulting depth exceeds the deployment subtask limit (default one level, maximum three), or while the task has an unsettled execution (its link may still be a stored run group parent pointer).',
+      'Running a task opens one run group over its subtree concurrently and leaves a subtask that already sits in the done column alone; a parent card settles only after its own turn and every direct subtask it opened have settled.',
     ].join(' '),
     parameters: {
       taskId: { type: 'string', required: true, description: 'The task whose parent link changes.' },
@@ -306,14 +310,13 @@ function buildRunTool(host: TaskBoardToolHost): ToolDefinition {
     name: 'task_board_run',
     description: [
       'Run a task on the board now, or re-run a settled one.',
-      'Running a task also runs its whole subtask tree CONCURRENTLY: the Host opens one real DSH session per member under one run group, each replaying its card pinned workspace, agent preset, permission and model; a subtask that does not pin them inherits its nearest ancestor.',
-      'The parent card stays in the running column until its own turn and every direct subtask have settled, and it fails when any member failed; one failing subtask never stops the others.',
+      'Running a card opens ONE session for that card: no session is opened for its subtasks, and the card agent dispatches them itself with subagent. A card whose subtasks are still unfinished runs under the liangshen agent preset and is told which cards to pick up.',
+      'Clicking a subtask runs that subtask as its own root, again without opening anything for its descendants.',
       'A card whose effective permission is above the deployment session default is refused with confirmation-required until a HUMAN confirms the binding in the board UI; this tool cannot confirm it.',
-      'A card whose task carries teamRun instead starts ONE Team Lead session and the Host spawns a teammate per subtask inside it, so those cards run as an Agent Team rather than as independent sessions; that mode needs the deployment Agent Teams service and is refused when it is missing.',
       'Executions consume real API quota. Sessions are created asynchronously, so read their ids and outcomes back with task_board_get.',
     ].join(' '),
     parameters: {
-      taskId: { type: 'string', required: true, description: 'The task to run; running a root task runs its whole subtree.' },
+      taskId: { type: 'string', required: true, description: 'The task to run; only this card gets a session, its unfinished subtasks are dispatched by that session own agent.' },
       rerun: { type: 'boolean', description: 'Re-run a settled task: reset its column to todo before starting (default false).' },
     },
     output: { schema: { type: 'json' }, render: renderJson },
@@ -340,7 +343,7 @@ function buildRunTool(host: TaskBoardToolHost): ToolDefinition {
           ok: true,
           started,
           ...(root === undefined ? {} : { task: taskSummary(root, snapshot.tasks, snapshot.sessionDefaultPermission) }),
-          note: 'Executions run asynchronously; call task_board_get to read session ids and the settled outcome. The parent settles only after its own turn and every direct subtask settle.',
+          note: 'Executions run asynchronously; call task_board_get to read session ids and the settled outcome.',
         })
       } catch (error) {
         const message = messageOf(error)
@@ -357,7 +360,7 @@ function buildManageTool(host: TaskBoardToolHost): ToolDefinition {
       'Move, archive, restore, delete, or settle one task board card.',
       'move-backlog, move-todo, move-running, move-done and move-failed are the manual column moves and cover every column; a card the runner is executing (one with an open execution) cannot be moved.',
       'A manual move writes the card column only and never fabricates an execution record, so the card reports a declaration rather than evidence of a run: done/failed declare work finished (or failed) outside a Host-run execution — human work, an external system, a decision made elsewhere — and running says the work is under way without a tracked session. Use task_board_run when the work should actually run in a session here.',
-      'record-external-outcome is the record-backed version of move-done and move-failed: use it when YOU, or another agent outside this Host, actually finished or failed the card with your own model, so the terminal column and the run history both derive from one execution record. It takes result (succeeded or failed) and initiatedBy (who completed it, for example your own agent name) plus an optional summary, and it is refused while the card still has an open execution: the Host stays the only authority over a run it is executing. It cannot record running or cancelled — those remain Host-only.',
+      'record-external-outcome is the record-backed version of move-done and move-failed: use it when YOU, or another agent outside this Host, actually finished or failed the card with your own model, so the terminal column and the run history both derive from one execution record. It takes result (succeeded or failed) and initiatedBy (who completed it, for example your own agent name) plus an optional summary, and it is refused while the card still has an open execution: the Host stays the only authority over a run it is executing. It cannot record running or cancelled — those remain Host-only. A parent card that dispatched its subtasks uses it once, at the end, to backfill every subtask card with the conclusion it reached; the Host records an inherited verdict on a subtask the parent never wrote back, so the write-back is what keeps each subtask conclusion its own.',
       'settle force-closes the open execution of a card the board can no longer observe (a stuck running card) and records it cancelled with the caller as the reason, so the card returns to the todo column and can be run again.',
       'reset-verification clears the acceptance anomalies (timeouts, authentication failures, an unresolvable judge route, or an attempt the time budget ended) recorded on a card open execution, so the next update_goal(action: complete) runs a fresh acceptance. It is refused unless that execution really carries such anomalies, it never clears a quality verdict, and a spent anomaly budget otherwise HOLDS the card open instead of failing it: tell the user the acceptance environment is unusable and that this action is how they clear it once they have fixed it.',
       'archive takes the whole subtask tree off the board and is refused while any member has an unsettled execution; restore brings the task, its ancestors and its subtree back; delete removes one card and is refused while it still has subtasks (detach or delete them first) or while it runs.',
@@ -458,7 +461,7 @@ function buildScheduleTool(host: TaskBoardToolHost): ToolDefinition {
       'Arm, change, or disarm a task scheduled runs. Two kinds of plan exist: a recurring 5-field cron rule (day-of-month and day-of-week follow Vixie semantics: both restricted means OR, otherwise AND), and a one-shot that runs once at a future instant.',
       'For a one-shot pass mode "once" with at (the planned instant, ms since epoch UTC). For a recurring rule pass mode "cron" (or omit mode) with a cron expression, optionally capped by maxRuns (a positive whole number of scheduled executions; omit for unlimited, pass 0 to clear a cap).',
       'The wall clock is read in the rule stored IANA time zone; omit timeZone to use the Host zone reported by task_board_list/task_board_get. DST gaps are skipped and an ambiguous fall-back time fires once, at the earlier instant.',
-      'A due scheduled task runs the same cascade a manual run does, so a root task runs its whole subtask tree.',
+      'A due scheduled task runs exactly what a manual run of that card does: one session for the card, never one per subtask.',
       'The scheduler counts executions it actually starts; once a rule reaches its run budget it stops itself in the ledger, and a manual run never consumes the budget. A schedule whose tree contains an unconfirmed above-default permission is refused and does not consume the budget; the reason is reported in the list board summary as schedulerError.',
       'Missed occurrences during Host downtime are skipped, never queued (a one-shot whose instant passed while the Host was down is stopped as missed); a task that is already running skips its occurrence without consuming the budget.',
     ].join(' '),
@@ -565,7 +568,8 @@ function buildGetTool(host: TaskBoardToolHost): ToolDefinition {
     name: 'task_board_get',
     description: [
       'Read one task board card in full: prompt, description, labels, column, parent link, direct subtasks, execution targets, schedule, permission gate state, and the last ten execution attempts with their session ids and outcomes.',
-      'Use it before running or editing a card, and after a run to read the settled outcome.',
+      'Use it before running or editing a card, after a run to read the settled outcome, and to read each subtask card before dispatching it with subagent.',
+      'A card written before team runs were retired may still report teamRun: true; the field is history and never changes how the Host runs the card.',
     ].join(' '),
     parameters: {
       taskId: { type: 'string', required: true, description: 'Task id, as reported by task_board_list or task_board_create.' },
@@ -586,7 +590,7 @@ function buildCreateTool(host: TaskBoardToolHost): ToolDefinition {
     name: 'task_board_create',
     description: [
       'Create a task on the DSH task board, or a subtask by passing parentId.',
-      'A subtask inherits every execution target it does not override (workspace, agent preset, permission, model) from its parent, and inherits the parent human permission confirmation together with an inherited binding.',
+      'A subtask inherits every execution target it does not override (workspace, agent preset, permission, model, reasoning effort) from its parent, and inherits the parent human permission confirmation together with an inherited binding.',
       'The deployment caps subtask depth (default one level, maximum three): a subtask of a subtask is refused unless the board is configured deeper.',
       'The task lands in the todo column and does NOT run; call task_board_run to execute it.',
     ].join(' '),
@@ -596,11 +600,11 @@ function buildCreateTool(host: TaskBoardToolHost): ToolDefinition {
       prompt: { type: 'string', description: 'The instruction sent to the execution agent; the title is used when blank.' },
       parentId: { type: 'string', description: 'Parent task id, making this a subtask. Omit for a root task.' },
       workspaceId: { type: 'string', description: 'Workspace id the execution must run in; omit to inherit the workspace this session is in (root task) or the parent value (subtask).' },
-      mode: { type: 'string', description: 'Agent preset id the execution session is composed from; omit for the deployment default or the parent value.' },
-      permission: { type: 'string', enum: [...TASK_PERMISSIONS], description: 'Permission preset for the execution session. Omit to inherit the parent binding; a value above the session default needs a human confirmation in the board UI before the card can run.' },
-      model: { type: 'string', description: 'Pinned model as provider/model (or a model id); omit for the host default or the parent value.' },
+      mode: { type: 'string', description: 'Agent preset id the execution session is composed from; omit to adopt the board new-card default, and the deployment default when none is configured.' },
+      permission: { type: 'string', enum: [...TASK_PERMISSIONS], description: 'Permission preset for the execution session; omit to adopt the board new-card default. An omitted permission is never taken from a parent: the launch resolves the parent binding instead. A value above the session default needs a human confirmation in the board UI before the card can run.' },
+      model: { type: 'string', description: 'Pinned model as provider/model (or a model id); omit to adopt the board new-card default, and the host default when none is configured.' },
+      reasoningEffort: { type: 'string', description: 'Reasoning effort id for that model (an adapter-owned level such as "high"); omit to adopt the board new-card default for that model, and the model own default when none applies. Only an effort the target model declares is sent; an empty string clears it back to the default.' },
       reuseSession: { type: 'boolean', description: 'Continue later runs in the previous execution session instead of a fresh conversation.' },
-      teamRun: { type: 'boolean', description: 'Run this task as an Agent Team: running it starts one Team Lead session and the Host spawns a teammate per subtask inside it. Omit or false for one independent session per member. Refused when the deployment serves no Agent Teams service.' },
       goalRun: { type: 'boolean', description: 'Start each run with dsh built-in /goal so the session keeps working continuation rounds until the goal completes. Off by default: omit (or pass false) for a single plain turn, and pass true to opt this card in. It only takes effect while the deployment global native /goal switch is on.' },
       skipVerification: { type: 'boolean', description: 'Run this task without the board acceptance gate: update_goal may mark the goal complete without a passing acceptance, and the execution record is marked skipped. Default false (omit to inherit the board-wide acceptance switch). Only affects executions started afterwards.' },
       tags: {
@@ -645,8 +649,13 @@ function buildCreateTool(host: TaskBoardToolHost): ToolDefinition {
         ...(args.mode === undefined || args.mode === '' ? {} : { mode: args.mode }),
         ...(args.permission === undefined ? {} : { permission: args.permission }),
         ...(args.model === undefined || args.model === '' ? {} : { model: args.model }),
+        ...(args.reasoningEffort === undefined || args.reasoningEffort === '' ? {} : { reasoningEffort: args.reasoningEffort }),
+        // This tool creates cards on behalf of a deployment that configured its
+        // new-card defaults once: an omitted target adopts them instead of
+        // leaving the card to resolve the host default at run time. Only the
+        // targets the caller omitted are filled.
+        applyCardDefaults: true,
         ...(args.reuseSession === true ? { reuseSession: true } : {}),
-        ...(args.teamRun === true ? { teamRun: true } : {}),
         ...(args.goalRun === true ? { goalRun: true } : {}),
     ...(args.skipVerification === true ? { skipVerification: true } : {}),
         ...(tags.length === 0 ? {} : { tags }),
@@ -676,7 +685,7 @@ function buildUpdateTool(host: TaskBoardToolHost): ToolDefinition {
   return defineTool({
     name: 'task_board_update',
     description: [
-      'Edit a task board card: title, description, prompt, labels, and the execution targets (workspace, agent preset, permission, model, session reuse).',
+      'Edit a task board card: title, description, prompt, labels, and the execution targets (workspace, agent preset, permission, model, reasoning effort, session reuse).',
       'Only the fields you pass change; pass an empty string to clear a target, or an empty labels array to clear the labels.',
       'Title, description and prompt freeze once the task has started executing; the execution targets stay editable because they only affect future runs.',
       'Changing the pinned permission re-arms the permission confirmation gate.',
@@ -704,8 +713,8 @@ function buildUpdateTool(host: TaskBoardToolHost): ToolDefinition {
         description: 'New permission preset; an empty string clears it back to the session default.',
       },
       model: { type: 'string', description: 'New pinned model; an empty string clears it.' },
+      reasoningEffort: { type: 'string', description: 'New reasoning effort id for the pinned model; an empty string clears it back to the model own default. Only an effort the target model declares is sent at run time.' },
       reuseSession: { type: 'boolean', description: 'Continue later runs in the previous execution session.' },
-      teamRun: { type: 'boolean', description: 'Switches this task between a plain cascade (one session per member) and an Agent Team run (Lead session plus a teammate per subtask).' },
       goalRun: { type: 'boolean', description: 'Whether each run starts with dsh built-in /goal (default false, one plain turn). Pass true to opt this card in, or false to return it to the default.' },
       skipVerification: { type: 'boolean', description: 'Whether this task runs without the board acceptance gate (default false, inherit the board-wide switch). Pass true to opt out; pass false to opt back in. Only affects executions started afterwards.' },
       tags: {
@@ -730,12 +739,15 @@ function buildUpdateTool(host: TaskBoardToolHost): ToolDefinition {
       if (has(args, 'workspaceId') && typeof args.workspaceId === 'string') patch.workspaceId = args.workspaceId
       if (has(args, 'mode') && typeof args.mode === 'string') patch.mode = args.mode
       if (has(args, 'model') && typeof args.model === 'string') patch.model = args.model
+      // An empty effort is the wire's clearing value (back to the model's own default).
+      if (has(args, 'reasoningEffort') && typeof args.reasoningEffort === 'string') {
+        patch.reasoningEffort = args.reasoningEffort
+      }
       // An empty permission is the wire's clearing value (back to the session default).
       if (has(args, 'permission') && typeof args.permission === 'string') {
         patch.permission = args.permission === '' ? undefined : args.permission
       }
       if (has(args, 'reuseSession')) patch.reuseSession = args.reuseSession === true
-      if (has(args, 'teamRun')) patch.teamRun = args.teamRun === true
       if (has(args, 'goalRun')) patch.goalRun = args.goalRun === true ? true : false
       if (has(args, 'skipVerification')) patch.skipVerification = args.skipVerification === true ? true : false
       if (has(args, 'tags')) {

@@ -1,9 +1,11 @@
-import type { TypertGateway } from '@deepseek-ai/dsh-api-gateway';
-import type { PeerScope } from '@deepseek-ai/dsh-client-connection';
+import { Context } from '@deepseek-ai/cordis';
+import type { InvokeRemoteRequest, TypertGateway } from '@deepseek-ai/dsh-api-gateway';
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/types';
 import type { CommandResult } from '@deepseek-ai/dsh-commands/types';
 import type { Workspace } from '@deepseek-ai/dsh-workspace/types';
-import type { TaskRecord } from './core/tasks.ts';
+import type { ModelCatalogView } from './core/verification.ts';
+import type { ExecutionSummary, TaskRecord } from './core/tasks.ts';
+import { type ExecutionFilePart, type ModelInfoResolver, type TaskBoardAttachmentStore } from './host/attachments.ts';
 /**
  * Host services needed to validate a task's workspace before creating a
  * session, and to resolve the workspace an unpinned card runs in.
@@ -11,13 +13,47 @@ import type { TaskRecord } from './core/tasks.ts';
 export interface TaskBoardWorkspaceRegistry {
     list(): readonly Workspace[];
 }
+/**
+ * The peer every gateway request names: derived from the public
+ * `InvokeRemoteRequest` type so this package needs no direct dependency on
+ * `@deepseek-ai/dsh-typert-protocol` for the shape.
+ */
+export type GatewayPeer = InvokeRemoteRequest['peer'];
 interface GatewayRequest {
     namespace: string;
     method: string;
     args: Record<string, unknown>;
-    peer?: PeerScope;
+    peer: GatewayPeer;
     signal?: AbortSignal;
 }
+/**
+ * Mint the in-process owner peer this plugin's Host calls speak for.
+ *
+ * The 0.2.1 gateway made `peer` mandatory on every request, and the
+ * authorization layer reads only `peer.principal`: a principal of
+ * `{ kind: 'owner' }` is how host-local code states that the call IS the local
+ * user driving their own Host, so the gateway answers it directly instead of
+ * running a remote-access decision (only non-owner principals are judged).
+ * That is exactly the task board's position — it creates, renames, prompts,
+ * and reads sessions as the Host itself, which before 0.2.1 was the implicit
+ * privilege of every in-process caller. The board claims owner explicitly, and
+ * only ever inside its own Host process: no wire field can set a principal,
+ * and this plugin never forwards a browser-supplied one.
+ *
+ * `interactions` stays `'none'`: the board only invokes methods and opens the
+ * short `session/follow` stream. The gateway's interactions check gates
+ * exactly the forwarded-event endpoints (opening an event stream, answering a
+ * waterfall), which this caller never touches; an `'answer'` peer would
+ * additionally receive forwarded Host events, a capability the board neither
+ * needs nor wants.
+ *
+ * The peer's signal aborts once `ctx` disposes, so streams opened for it end
+ * with the plugin fiber, and `dispose()` is idempotent with racing calls
+ * sharing one completion. The id carries no credential — the protocol fixes
+ * `principal` as the only identity persisted in a session log — so a fresh
+ * unique id per mount is sufficient.
+ */
+export declare function createOwnerPeer(ctx: Context): GatewayPeer;
 interface SessionGateway {
     invoke(request: GatewayRequest): Promise<unknown>;
     stream?(request: GatewayRequest): Promise<AsyncIterable<unknown>>;
@@ -42,12 +78,15 @@ export type ExecutionInspection =
     reason?: string;
 } | {
     outcome: 'succeeded';
+    summary?: ExecutionSummary;
 } | {
     outcome: 'failed';
     error: string;
+    summary?: ExecutionSummary;
 } | {
     outcome: 'cancelled';
     error: string;
+    summary?: ExecutionSummary;
 };
 /** A post-create launch failure that still identifies the session to the ledger. */
 export declare class SessionLaunchError extends Error {
@@ -64,21 +103,23 @@ export declare class SessionLaunchError extends Error {
  * first, the provenance wrap then encloses the instruction. Plain tasks (no
  * freeze) keep the bare handover preamble + prompt.
  */
-/** One other execution member of a run, as named in the launched task's prompt. */
-export interface PromptPeer {
-    /** Task id of the member. */
+/** One unfinished subtask the launched card's own agent has to dispatch. */
+export interface PromptDescendant {
+    /** Task id of the subtask card. */
     id: string;
-    /** Member title. */
+    /** Subtask title. */
     title: string;
-    /** Teammate name when this member runs as a teammate. */
-    name?: string;
+    /** Its column, so the run can tell a fresh card from one already failed before. */
+    status: string;
 }
 /** Execution-shape context appended to the launched task's prompt. */
 export interface PromptContext {
-    /** The other members this run opens, excluding the launched task itself. */
-    peers?: readonly PromptPeer[];
-    /** True when those members run as teammates inside this session (Team Lead). */
-    team?: boolean;
+    /**
+     * The card's outstanding descendants. Present exactly when this run is an
+     * autonomous dispatch: the Host opens no session for them, so this session
+     * reads them and dispatches subagents itself.
+     */
+    descendants?: readonly PromptDescendant[];
     /**
      * Scheduled-run provenance: the instant the rule actually fired, its kind,
      * and the IANA zone its wall clock was read in. Present only for a
@@ -91,6 +132,22 @@ export interface PromptContext {
         mode: 'cron' | 'once';
         cron?: string;
     };
+    /**
+     * Rework provenance: the instructions a reviewer sent the previous run back
+     * with. Present exactly when this execution continues the card's own session
+     * to redo work, so the agent reads why it is being asked again instead of
+     * seeing the card body a second time with no explanation.
+     */
+    rework?: {
+        instructions: string;
+    };
+    /**
+     * The card's attached files, resolved to readable host paths for THIS
+     * execution. Present exactly when the card carries files: the section is a
+     * preamble of its own, separate from the handover references, so the two
+     * kinds of reference stay distinguishable to the reading agent.
+     */
+    files?: readonly ExecutionFilePart[];
 }
 /**
  * Build the execution prompt for one task.
@@ -109,20 +166,51 @@ export declare function promptText(task: TaskRecord, context?: PromptContext): s
  * @returns the objective text for `/goal <objective>`.
  */
 export declare function goalObjective(prompt: string): string;
+/**
+ * The optional runtime faces an execution needs beyond the session gateway:
+ * the official attachment storage and the model-info reader the image
+ * preflight uses. Both are read live, so a deployment that mounts them after
+ * the board still gains the capability.
+ */
+export interface TaskBoardRuntimeFaces {
+    /** The official attachment storage, or undefined when the deployment has none. */
+    attachments?: () => TaskBoardAttachmentStore | undefined;
+    /** The model-info reader, or undefined when the deployment serves no model information. */
+    llm?: () => ModelInfoResolver | undefined;
+    /**
+     * Whether this deployment runs the legacy Agent Teams runtime, read live
+     * from the agent tool registry. Absent, or answering false, means the
+     * deployment is not PROVEN legacy: the dispatcher preset is then forced as
+     * before. Only a positive answer refuses the run, so a deployment whose
+     * registry cannot be read keeps its current behaviour instead of losing the
+     * ability to dispatch a subtask tree.
+     */
+    legacyAgentTeams?: () => boolean;
+}
 export declare class HostExecutionRunner {
     private readonly gateway;
     private readonly commands?;
     private readonly workspaceRegistry?;
-    private readonly operatorPeer?;
-    /** Newest scanned event sequence per session with no matching execution end. */
+    private readonly faces;
+    /**
+     * Newest event sequence per session whose COMPLETE history walk (reaching
+     * the execution boundary) found no matching execution end. A later walk may
+     * trust everything at or below it and examine only newer records.
+     */
     private readonly scanMemos;
     private readonly unavailableAttempts;
     private readonly unavailableBackoffMs;
+    /**
+     * The peer every request speaks for. Production passes the peer bound to the
+     * plugin fiber; a bare runner (unit tests around fake gateways) gets one
+     * bound to a fresh root context instead.
+     */
+    private readonly ownerPeer;
     private unsupportedSessionListWarned;
     constructor(gateway: SessionGateway | TypertGateway, commands?: SessionCommandDispatcher | undefined, workspaceRegistry?: TaskBoardWorkspaceRegistry | undefined, unavailableRetry?: {
         attempts?: number;
         backoffMs?: number;
-    }, operatorPeer?: (() => PeerScope | undefined) | undefined);
+    }, ownerPeer?: GatewayPeer, faces?: TaskBoardRuntimeFaces);
     private invoke;
     private stream;
     /**
@@ -146,6 +234,14 @@ export declare class HostExecutionRunner {
     launch(task: TaskRecord, options?: {
         reuseSessionId?: string;
         promptContext?: PromptContext;
+        /**
+         * Agent preset this execution is FORCED under, overriding the card's own
+         * `mode` pin (and a handover bundle's): the caller decides it from the run's
+         * shape (a card with unfinished subtasks runs as the autonomous dispatcher),
+         * and the override is never written into the card. A preset the deployment
+         * does not register fails the launch before any session exists.
+         */
+        agentPreset?: string;
         onSession?: (sessionId: string) => void;
         onGoalArmed?: (armed: boolean) => void;
         /**
@@ -160,7 +256,27 @@ export declare class HostExecutionRunner {
          * `goalRun` still applies on top of it (both must ASK for a goal).
          */
         goalEnabled?: boolean;
+        /**
+         * The host model catalog, read ONCE per execution by the caller. The card's
+         * pinned reasoning effort is sent only when this catalog declares it for the
+         * route the execution runs at, so one snapshot decides both the acceptance
+         * contract and the effort this run freezes. Absent means "no capability
+         * evidence": an effort is then not sent at all.
+         */
+        catalog?: ModelCatalogView;
     }): Promise<string>;
+    /**
+     * Queue one follow-up user message into an existing execution session.
+     *
+     * This is the same `session/prompt` call a launch makes, with none of the
+     * launch pins: a follow-up continues a conversation the board already
+     * composed, so it must not re-assert the permission, rename the session, or
+     * switch the model. The message is queued behind whatever that session is
+     * doing, which is what lets a caller reach a run that is still working.
+     * @param sessionId - the session the card's execution recorded.
+     * @param text - the message to deliver, already validated by the caller.
+     */
+    followUp(sessionId: string, text: string): Promise<void>;
     /**
      * Fail closed when a reused session records a different Agent preset than
      * the one this task pins.
@@ -177,11 +293,41 @@ export declare class HostExecutionRunner {
      */
     private assertReusedPreset;
     /**
+     * Split a `provider/model` pin. A pin without a provider keeps only the model
+     * id: the provider is the one the host catalog declares for it, resolved at
+     * launch because the session wire contract requires a provider.
+     */
+    private static pinnedRoute;
+    /**
+     * The route a card that pins no model actually runs at: the session's own
+     * recorded selection (the durable fold the GUI reads; `next` is the pending
+     * user choice, `lastUsed` what the last request consumed), or — for a session
+     * that has selected none yet, which is exactly a session that would start at
+     * the deployment default — the host default from the catalog.
+     *
+     * A route that cannot be READ is undefined and the effort is not sent:
+     * falling back to the host default there would silently switch the model of a
+     * session this run only meant to continue.
+     */
+    private sessionRoute;
+    /**
      * Re-assert the pinned execution contract on a session and queue the task
      * prompt. Shared by the fresh-session and reuse paths so both apply exactly
-     * the same permission/model pins before the prompt.
+     * the same permission/model/effort pins before the prompt. A session that
+     * refuses a selection carrying a catalog-confirmed effort throws here, so the
+     * prompt is never queued behind a run at the wrong level.
      */
     private pinAndPrompt;
+    /**
+     * Resolve a card's attachments for one execution.
+     *
+     * A card without attachments resolves to nothing, even in a deployment that
+     * serves no attachment storage at all. A card WITH attachments cannot run
+     * without the storage: the run fails with a readable reason instead of
+     * silently dropping the attachment and running the card as if it carried
+     * none.
+     */
+    private resolveAttachments;
     /**
      * Read the host's model catalog: the default route an unconfigured session
      * starts at, and each provider's models with the reasoning metadata its

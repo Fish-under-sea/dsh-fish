@@ -1,11 +1,17 @@
 /**
- * dsh-session-archive browser half — owns the `archived-sessions` settings
- * section (the official id, at nav order 25) instead of seating a parallel
- * first-level entry. DSH 0.1.7-alpha.2 no longer mounts the official
- * `@deepseek-ai/dsh-client-ui-settings-unarchive-sessions` page that used to
- * own that id, so this section is the only 「已归档会话」 nav entry and it
- * carries both the native restore behaviour (the section opens on the archived
- * view) and this plugin's batch, delete and retention surfaces. All session
+ * dsh-session-archive browser half — seats this plugin's own
+ * `settings.section` (id `dsh-session-archive`, the plugin id) at nav order
+ * 25. The id is never the official `archived-sessions` one: the settings shell
+ * renders one nav row per registration without merging same-id sections, and
+ * its registry refuses a second registration of the same `id` at the same
+ * `priority` (default 0), while `order` only sorts the rows. Two archive
+ * plugins claiming the same section id therefore collide whatever order they
+ * pick — one registration throws, or one of the two entries silently
+ * disappears. Distinct ids let an official page and a third-party archive
+ * plugin coexist with this one, one entry each, while a single-archive-plugin
+ * install still shows exactly one entry. The section carries this plugin's
+ * inventory, batch
+ * archive/unarchive, cascade physical delete and retention surfaces. All session
  * enumeration and mutation happens in the host half over loopback-fenced
  * routes; this bundle renders the inventory document and drives the batch
  * pipelines.

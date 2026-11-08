@@ -9,7 +9,10 @@ import { type HostStore } from '../store.ts';
 export interface EngineOptions {
     /** Connections idle longer than this are closed (ms). */
     idleTimeoutMs?: number;
-    /** SSH handshake timeout (ms). */
+    /**
+     * Ceiling for the whole pre-ready sequence (ms): TCP connect, SSH key
+     * exchange and user authentication. Passed to ssh2's `readyTimeout`.
+     */
     connectTimeoutMs?: number;
     /** Keepalive ping interval (ms). */
     keepaliveIntervalMs?: number;
@@ -22,6 +25,12 @@ export interface EngineOptions {
     /** SFTP concurrent channel count for transfers. */
     sftpConcurrency?: number;
 }
+/**
+ * Default ceiling for TCP connect, SSH key exchange and user authentication
+ * together (ms). Password authentication behind PAM / LDAP can outlast the
+ * previous 15 s ceiling while the server still eventually accepts it.
+ */
+export declare const DEFAULT_CONNECT_TIMEOUT_MS = 30000;
 /** Default engine knobs (applied when an option is omitted). */
 export declare const DEFAULTS: Required<EngineOptions>;
 /** One pooled connection record. */
@@ -48,13 +57,49 @@ export interface PoolEngine {
 }
 /** Build the ssh2 connect config for one entry (key read from disk). */
 export declare function buildConnectConfig(entry: SshHostEntry, sock: ConnectConfig['sock'] | undefined, opts: Required<EngineOptions>): ConnectConfig;
+/**
+ * The default ssh-agent endpoint on Windows: the named pipe the native
+ * OpenSSH ssh-agent service listens on. ssh2 connects to a named pipe for any
+ * path matching its Windows pipe form, so the default is a real endpoint
+ * rather than a protocol name (#1910). PuTTY Pageant is still reachable — it
+ * is what the literal `pageant` agent path selects — but it is no longer the
+ * assumption.
+ */
+export declare const WINDOWS_AGENT_PIPE = "\\\\.\\pipe\\openssh-ssh-agent";
 /** Resolve the ssh2 agent path for 'agent' auth. */
 export declare function resolveAgentPath(agentPath?: string): string | undefined;
+/**
+ * Resolve the ssh-agent endpoint that forwarding brokers signatures through:
+ * an explicitly configured agent path wins, then SSH_AUTH_SOCK, then the
+ * native OpenSSH named pipe on Windows. Undefined means no endpoint exists on
+ * this machine.
+ *
+ * Forwarding shares the auth resolution on purpose — the endpoint a host
+ * signs through is the same one it authenticates with — but it is a separate
+ * name so the forwarding path can evolve without touching auth.
+ */
+export declare function resolveForwardAgentPath(agentPath?: string): string | undefined;
 /** Keyboard-interactive handler callback for 2FA / dynamic prompt flow. */
 export type KeyboardInteractiveHandler = (name: string, instructions: string, instructionsLang: string, prompts: Array<{
     prompt: string;
     echo: boolean;
 }>, finish: (responses: string[]) => void) => void;
+/**
+ * Name the phase that actually stalled. ssh2 reports every pre-ready timeout
+ * as "Timed out while waiting for handshake", including one that expires
+ * during user authentication after a completed key exchange.
+ *
+ * @param timeoutMs - the configured `readyTimeout` (0 disables it).
+ * @param handshakeComplete - whether ssh2 completed the key exchange.
+ * @returns the operator-facing timeout message.
+ */
+export declare function readyTimeoutMessage(timeoutMs: number | undefined, handshakeComplete: boolean): string;
+/**
+ * Whether ssh2 ended the attempt with its pre-ready timeout. The level is the
+ * stable discriminator; the message is reused for connect, key exchange and
+ * authentication alike.
+ */
+export declare function isReadyTimeout(error: Error): boolean;
 /** Connect one ssh2 client (resolve on ready, reject on error/close). */
 export declare function connectClient(config: ConnectConfig, onKeyboardInteractive?: KeyboardInteractiveHandler): Promise<Client>;
 /** Cap captured output at the configured byte budget (marks truncation). */
@@ -76,6 +121,12 @@ export declare function parseJumpSpec(spec: string): {
  * Resolve one ProxyJump spec: an alias configured in this plugin wins, and any
  * other value is read as an OpenSSH address whose credentials come from the
  * target entry (an ad-hoc hop has no stored auth of its own).
+ *
+ * An address hop deliberately carries no forwardAgent flag: OpenSSH's
+ * ForwardAgent is a per-Host setting and an ad-hoc address was never
+ * configured, so it must never inherit the target's opt-in. A hop written as
+ * an alias uses that alias's own entry, which is how a user forwards on a
+ * bastion on purpose.
  */
 export declare function resolveHop(engine: PoolEngine, entry: SshHostEntry, spec: string): SshHostEntry;
 /**

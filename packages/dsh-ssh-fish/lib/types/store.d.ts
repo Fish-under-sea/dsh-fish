@@ -67,5 +67,12 @@ export declare function normalizeAgentPath(agentPath: string | undefined): strin
  * OpenSSH's `none` keyword as "no proxy command" (an explicit clear).
  */
 export declare function normalizeProxyCommand(raw: string | undefined): string | undefined;
+/**
+ * Read an ssh_config `ForwardAgent` value into the stored boolean flag. Only
+ * an explicit yes/true/on enables forwarding; an absent value, no/false/off,
+ * and anything unrecognized leave it off instead of failing the import — an
+ * unknown keyword must never cost the user the whole Host block.
+ */
+export declare function parseForwardAgentValue(raw: string | undefined): boolean;
 /** Expand a leading `~` in a filesystem path. */
 export declare function expandHome(path: string): string;

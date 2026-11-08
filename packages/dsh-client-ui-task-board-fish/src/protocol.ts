@@ -5,15 +5,18 @@ import { parseLedger } from './core/store.ts'
 import { isValidTimeZone } from './core/schedule.ts'
 import { sanitizeFreezeSnapshot, type FreezeSnapshot } from './core/freeze-snapshot.ts'
 import { sanitizeHandover, type TaskHandoverInput } from './core/handover.ts'
-import { isTaskBoardExtensionPayload, normalizeTaskIntegrations, type TaskBoardExtensionPayload } from './core/extension.ts'
+import { TASK_BOARD_MESSAGE_MAX_LENGTH, isTaskBoardExtensionPayload, normalizeTaskIntegrations, type TaskBoardExtensionPayload } from './core/extension.ts'
 import { normalizeVerification, type ModelCatalogView, type VerificationContract, type VerificationSettings } from './core/verification.ts'
+import { isTaskAttachmentList, TASK_ATTACHMENT_LIMIT, TASK_ATTACHMENT_MAX_BYTES, TASK_ATTACHMENT_TOTAL_MAX_BYTES } from './core/attachment.ts'
 
 /** Freeze payload carried by create/update actions after the gate (redacted in place). */
 type FreezePayload = FreezeSnapshot & { redacted?: boolean; frozenBy?: string }
 
-export const TASK_BOARD_SCHEMA_VERSION = 6 as const
-/** Ledger documents written before v6; loaded once and migrated on startup. */
-export const TASK_BOARD_LEGACY_SCHEMA_VERSION = 5 as const
+export const TASK_BOARD_SCHEMA_VERSION = 7 as const
+/** Ledger documents written before v7; loaded once and migrated on startup. */
+export const TASK_BOARD_LEGACY_SCHEMA_VERSION = 6 as const
+/** Ledger documents written before v6 (the scheduling mode and run budget). */
+export const TASK_BOARD_PRE_RUN_BUDGET_SCHEMA_VERSION = 5 as const
 /** Ledger documents written before v5; migrated through the v5 normalization too. */
 export const TASK_BOARD_PRE_ACCEPTANCE_SCHEMA_VERSION = 4 as const
 /** Ledger documents written before v4; migrated through the v4 normalization too. */
@@ -29,12 +32,14 @@ export const TASK_BOARD_OLDEST_SCHEMA_VERSION = 2 as const
 export const TASK_BOARD_ZONE_STAMP_SCHEMA_VERSION = 4 as const
 /**
  * Every older generation the loader migrates in place. v5 only added the
- * per-execution acceptance block and v6 only added the scheduling mode and run
- * budget, so the migration is the normalization pass that re-validates each
- * row; a document from any listed generation upgrades losslessly.
+ * per-execution acceptance block, v6 only added the scheduling mode and run
+ * budget, and v7 only added the card attachment metadata, so the migration is
+ * the normalization pass that re-validates each row; a document from any
+ * listed generation upgrades losslessly.
  */
 export const TASK_BOARD_MIGRATABLE_SCHEMA_VERSIONS: readonly number[] = [
   TASK_BOARD_LEGACY_SCHEMA_VERSION,
+  TASK_BOARD_PRE_RUN_BUDGET_SCHEMA_VERSION,
   TASK_BOARD_PRE_ACCEPTANCE_SCHEMA_VERSION,
   TASK_BOARD_OLDER_SCHEMA_VERSION,
   TASK_BOARD_OLDEST_SCHEMA_VERSION,
@@ -81,11 +86,6 @@ export interface TaskBoardSnapshot {
    */
   maxSubtaskDepth?: number
   /**
-   * Whether this deployment serves the Agent Teams service, so a task may opt
-   * into team execution (Team Lead session plus one teammate per subtask).
-   */
-  teamRunAvailable?: boolean
-  /**
    * Live GLOBAL native-/goal switch. The browser uses it to disable the
    * task-level option (and explain that the global switch must be turned on
    * first) WITHOUT rewriting anyone's stored per-task preference; the Host
@@ -94,10 +94,38 @@ export interface TaskBoardSnapshot {
    */
   goalRunEnabled?: boolean
   /**
+   * New-card defaults this deployment configures: what the create dialog opens
+   * with, and what the create path fills an omitted target from when the caller
+   * opts in (`applyCardDefaults`). A target the board configures nothing for is
+   * omitted rather than published blank, so the browser can tell "no default
+   * model" from "a blank one".
+   */
+  cardDefaults?: { mode?: string; permission?: TaskPermission; model?: string; reasoningEffort?: string }
+  /**
    * Read-only summaries published by running extensions, keyed by extension id.
    * The board forwards them verbatim; it never interprets their shape.
    */
   extensions?: Record<string, unknown>
+  /**
+   * The attachment limits this deployment enforces, so the browser can refuse
+   * an oversized selection before it uploads anything. The board's own caps
+   * are the ceiling; a deployment whose attachment storage publishes stricter
+   * image limits lowers the bounds it publishes here.
+   */
+  attachmentLimits?: {
+    /** Maximum number of attachments one card may carry. */
+    maxAttachments: number
+    /** Maximum byte length of one attachment. */
+    maxBytes: number
+    /** Maximum byte length of all attachments of one card together. */
+    maxTotalBytes: number
+    /** Maximum number of IMAGES one card may carry (the official per-message budget). */
+    maxImages: number
+    /** Maximum byte length of one image. */
+    maxImageBytes: number
+    /** Maximum byte length of all images of one card together (the official per-message budget). */
+    maxMessageImageBytes: number
+  }
 }
 
 /**
@@ -178,6 +206,12 @@ export type TaskBoardAction =
   | { kind: 'set-schedule'; taskId: string; patch: SetSchedulePatch }
   | { kind: 'run'; taskId: string }
   | { kind: 'rerun'; taskId: string }
+  /**
+   * Re-run an executed card in its own session, carrying rework instructions as
+   * this run's additional input. Every run gate applies exactly as it does to
+   * `rerun`, and the card's frozen content is never rewritten.
+   */
+  | { kind: 'rework'; taskId: string; instructions: string }
   | { kind: 'confirm-permission'; taskId: string }
   | { kind: 'set-parent'; taskId: string; parentId: string | null }
   /** Ledger-wide label management; see core/use-cases/task-tag.ts. */
@@ -263,7 +297,13 @@ function validImportedKnownFields(value: Record<string, unknown>): boolean {
   // must carry a well-formed list or none at all, so a hand-edited export
   // cannot smuggle a malformed tag past the gate.
   if (value.tags !== undefined && !isTaskTagList(value.tags)) return false
+  // The model pin is carried by the import (with the level bound to it), so a
+  // non-string value is refused here like the other carried known fields.
+  if (value.model !== undefined && typeof value.model !== 'string') return false
   if (value.integrations !== undefined && normalizeTaskIntegrations(value.integrations) === undefined) return false
+  // 安全门（对抗场景 e）：import 不接受附件——旧版浏览器导出从不携带附件，
+  // 一条声称携带附件的导入必须被拒绝，而不是让未经校验的引用进入账本。
+  if (value.attachments !== undefined) return false
   if (value.schedule !== undefined && !validImportedSchedule(value.schedule)) return false
   if (value.executions !== undefined) {
     if (!Array.isArray(value.executions)) return false
@@ -326,7 +366,15 @@ function importedTask(value: unknown): TaskRecord | undefined {
     ...(task.parentId === undefined ? {} : { parentId: task.parentId }),
     ...(task.workspaceId === undefined ? {} : { workspaceId: task.workspaceId }),
     ...(task.mode === undefined ? {} : { mode: task.mode }),
+    // The model pin rides the import together with the level bound to it: the
+    // two are one pair, and an imported level without its model would run at
+    // whatever route the session happens to be on. Blank text means "no pin",
+    // like every other target, so it is not carried as a pin of its own.
+    ...(typeof task.model !== 'string' || task.model.trim() === '' ? {} : { model: task.model }),
     ...(task.permission === undefined ? {} : { permission: task.permission }),
+    // The reasoning effort rides the import like the other execution targets: it
+    // is the user's own card preference, not a verdict.
+    ...(task.reasoningEffort === undefined ? {} : { reasoningEffort: task.reasoningEffort }),
     ...(task.reuseSession === undefined ? {} : { reuseSession: task.reuseSession }),
     ...(task.goalRun === undefined ? {} : { goalRun: task.goalRun }),
     // The per-card acceptance opt-out rides the import like the /goal opt-in:
@@ -372,17 +420,25 @@ function handoverPayload(value: unknown): TaskHandoverInput | undefined {
 
 function createInput(value: unknown): value is NewTaskInput {
   const input = record(value)
-  if (input === undefined || !exactKeys(input, ['title', 'description', 'prompt', 'parentId', 'workspaceId', 'mode', 'permission', 'schedule', 'freeze', 'handover', 'model', 'reuseSession', 'teamRun', 'goalRun', 'skipVerification', 'tags', 'integrations'])) return false
+  if (input === undefined || !exactKeys(input, ['title', 'description', 'prompt', 'parentId', 'workspaceId', 'mode', 'permission', 'schedule', 'freeze', 'handover', 'model', 'reasoningEffort', 'applyCardDefaults', 'reuseSession', 'goalRun', 'skipVerification', 'tags', 'integrations', 'attachments'])) return false
   if (input.parentId !== undefined && (typeof input.parentId !== 'string' || input.parentId.trim() === '')) return false
   if (typeof input.title !== 'string' || typeof input.description !== 'string' || typeof input.prompt !== 'string') return false
-  if (!optionalString(input.workspaceId) || !optionalString(input.mode) || !optionalString(input.model)) return false
+  // The reasoning effort is an adapter-owned id the Host resolves against the
+  // live model catalog, so this gate only keeps a malformed value (a number, an
+  // object, null) off the ledger; blank text means "inherit" like every other
+  // pinned target.
+  if (!optionalString(input.workspaceId) || !optionalString(input.mode) || !optionalString(input.model) || !optionalString(input.reasoningEffort)) return false
+  if (input.applyCardDefaults !== undefined && typeof input.applyCardDefaults !== 'boolean') return false
   if (input.reuseSession !== undefined && typeof input.reuseSession !== 'boolean') return false
-  if (input.teamRun !== undefined && typeof input.teamRun !== 'boolean') return false
   if (input.goalRun !== undefined && typeof input.goalRun !== 'boolean') return false
   if (input.skipVerification !== undefined && typeof input.skipVerification !== 'boolean') return false
   if (input.permission !== undefined && !isTaskPermission(input.permission)) return false
   if (input.tags !== undefined && !isTaskTagList(input.tags)) return false
   if (input.integrations !== undefined && normalizeTaskIntegrations(input.integrations) === undefined) return false
+  // Attachments are host-verified against the official storage before the
+  // ledger sees them; the wire gate only keeps a malformed, duplicated or
+  // oversized list off the action.
+  if (input.attachments !== undefined && !isTaskAttachmentList(input.attachments)) return false
   if (input.freeze !== undefined && freezePayload(input.freeze) === undefined) return false
   if (input.handover !== undefined && handoverPayload(input.handover) === undefined) return false
   if (input.schedule !== undefined) {
@@ -402,22 +458,24 @@ function createInput(value: unknown): value is NewTaskInput {
 
 function updatePatch(value: unknown): boolean {
   const patch = record(value)
-  if (patch === undefined || !exactKeys(patch, ['title', 'description', 'prompt', 'workspaceId', 'mode', 'permission', 'freeze', 'handover', 'model', 'reuseSession', 'teamRun', 'goalRun', 'skipVerification', 'tags'])) return false
+  if (patch === undefined || !exactKeys(patch, ['title', 'description', 'prompt', 'workspaceId', 'mode', 'permission', 'freeze', 'handover', 'model', 'reasoningEffort', 'reuseSession', 'goalRun', 'skipVerification', 'tags', 'attachments'])) return false
   // null (or false) clears the reuse opt-in; only a real boolean is accepted.
   if (patch.reuseSession !== undefined && patch.reuseSession !== null && typeof patch.reuseSession !== 'boolean') return false
-  if (patch.teamRun !== undefined && patch.teamRun !== null && typeof patch.teamRun !== 'boolean') return false
   // The goal opt-in is tri-state: null/true return the card to its default
   // (goal run), false pins a single plain turn.
   if (patch.goalRun !== undefined && patch.goalRun !== null && typeof patch.goalRun !== 'boolean') return false
   // The acceptance opt-out is the mirror tri-state: null/false return the card
   // to inheriting the board-wide switch, true pins it out of the gate.
   if (patch.skipVerification !== undefined && patch.skipVerification !== null && typeof patch.skipVerification !== 'boolean') return false
-  for (const key of ['title', 'description', 'prompt', 'workspaceId', 'mode', 'model'] as const) {
+  for (const key of ['title', 'description', 'prompt', 'workspaceId', 'mode', 'model', 'reasoningEffort'] as const) {
     if (!optionalString(patch[key])) return false
   }
   if (patch.permission !== undefined && !isTaskPermission(patch.permission)) return false
   // null clears the label set; a present array must be a well-formed list.
   if (patch.tags !== undefined && patch.tags !== null && !isTaskTagList(patch.tags)) return false
+  // null clears the attachment set; a present array replaces it wholesale and
+  // must be a well-formed list within the card-wide limits.
+  if (patch.attachments !== undefined && patch.attachments !== null && !isTaskAttachmentList(patch.attachments)) return false
   // null clears the snapshot; an object must pass the freeze gate.
   if (patch.freeze !== undefined && patch.freeze !== null && freezePayload(patch.freeze) === undefined) return false
   // Same convention for the handover bundle.
@@ -574,6 +632,13 @@ function parseEnvelopeAction(value: unknown): TaskBoardActionEnvelope | undefine
           ...(summary === '' ? {} : { summary }),
         },
       }
+    }
+    case 'rework': {
+      if (!exactKeys(action, ['kind', 'taskId', 'instructions'])) return undefined
+      if (taskId === undefined || typeof action.instructions !== 'string') return undefined
+      const instructions = action.instructions.trim()
+      if (instructions === '' || instructions.length > TASK_BOARD_MESSAGE_MAX_LENGTH) return undefined
+      return { requestId: envelope.requestId, action: { kind: 'rework', taskId, instructions } }
     }
     case 'confirm-permission':
     case 'delete':

@@ -8,6 +8,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { UsageDayView, UsageOverviewView } from '../core/types.ts';
+import { type SpendDisplay } from '../core/spend.ts';
 /**
  * Persisted accrual state for the official DeepSeek family's real spend:
  * consecutive observations of the official CNY balance, decreases counted
@@ -27,6 +28,12 @@ export interface SpendWatch {
 export interface UsageServiceOptions {
     pollIntervalSec: number;
     retainDays: number;
+    /**
+     * How the browser halves should read the stored CNY costs. Optional so a
+     * caller that predates the display setting keeps the CNY rendering (issue
+     * #1937); the overview stamps the resolved value on every document.
+     */
+    display?: SpendDisplay;
 }
 export declare class UsageService {
     private readonly ctx;

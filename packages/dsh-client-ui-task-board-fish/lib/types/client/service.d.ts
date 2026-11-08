@@ -10,13 +10,15 @@
  * @module dsh-task-board/client/service
  */
 import type { BoardController } from '../core/controller.ts';
-import type { TaskBoardClientFace, TaskBoardClientMirror, TaskBoardExtensionActionRequest, TaskBoardVisibilityPredicate } from '../core/extension.ts';
+import type { TaskBoardClientFace, TaskBoardClientMirror, TaskBoardExtensionActionRequest, TaskBoardGroupingSelector, TaskBoardVisibilityPredicate } from '../core/extension.ts';
 export declare class TaskBoardClientService implements TaskBoardClientFace {
     private controller;
     private enabled;
     private unsubscribeController;
     /** Predicates registered before the controller exists, replayed on attach. */
     private readonly pendingVisibility;
+    /** Source selectors registered before the controller exists, replayed on attach. */
+    private readonly pendingGrouping;
     private readonly listeners;
     /** Bind the live board controller (called when the UI mounts). */
     attach(controller: BoardController): void;
@@ -26,6 +28,7 @@ export declare class TaskBoardClientService implements TaskBoardClientFace {
     setEnabled(enabled: boolean): void;
     dispatch(request: TaskBoardExtensionActionRequest): Promise<boolean>;
     registerVisibility(predicate: TaskBoardVisibilityPredicate): () => void;
+    registerGrouping(selector: TaskBoardGroupingSelector): () => void;
     subscribe(callback: (mirror: TaskBoardClientMirror) => void): () => void;
     snapshot(): TaskBoardClientMirror;
     private notify;

@@ -37,9 +37,32 @@ interface LookupCtx {
  */
 export function isPairedOrLoopbackAllowed(ctx: LookupCtx, request: IncomingMessage): boolean {
   if (isLoopbackRequest(request)) return true
-  const fromGet = typeof ctx.get === 'function' ? ctx.get('remoteWebUiPairing', false) : undefined
-  const pairing = (isPairingAccess(fromGet) ? fromGet : ctx.remoteWebUiPairing)
-  return pairing?.isPairedDevice(request) === true
+  return lookupPairing(ctx)?.isPairedDevice(request) === true
+}
+
+/**
+ * The pairing service, or undefined when this composition does not expose it.
+ *
+ * Two lookups exist because the fence is shared with test harnesses that hand
+ * over a bare object: a real cordis context resolves services through `get`, a
+ * harness may carry the property directly. `get(name, false)` is the
+ * non-strict form, so an unloaded service answers undefined rather than
+ * throwing. Reading an un-injected service as a PROPERTY throws instead
+ * (`cannot get property "remoteWebUiPairing" without inject`); a trust fence
+ * must answer "not paired" in that case, never leak the error into the route
+ * handler, where the host web server turns it into an empty-body 400 (#1942).
+ */
+function lookupPairing(ctx: LookupCtx): PairingAccess | undefined {
+  if (typeof ctx.get === 'function') {
+    const viaGet = ctx.get('remoteWebUiPairing', false)
+    return isPairingAccess(viaGet) ? viaGet : undefined
+  }
+  try {
+    const viaProperty = ctx.remoteWebUiPairing
+    return isPairingAccess(viaProperty) ? viaProperty : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function isPairingAccess(value: unknown): value is PairingAccess {

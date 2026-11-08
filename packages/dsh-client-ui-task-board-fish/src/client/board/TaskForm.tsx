@@ -4,12 +4,12 @@
  * NewTaskModal and the EditTaskModal. State stays in the owning modal; these
  * are controlled components.
  */
-import { useState, type ReactNode } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { TAG_NAME_MAX_LENGTH, TAG_PROMPT_MAX_LENGTH, TASK_TAG_LIMIT, normalizeTags, type TaskTag } from '../../core/tasks.ts'
 import { t } from '../locales.ts'
 import css from '../board.module.css'
 import { IconClose, IconPlus } from './icons.tsx'
-import { useDialog, type OverlayPhase } from './overlay.tsx'
+import { useDialog, usePresence, type OverlayPhase } from './overlay.tsx'
 
 /** DOM id shared by the tag-name inputs and their datalist (one board at a time). */
 const TAG_NAME_LIST_ID = 'dsh-task-board-tag-names'
@@ -88,6 +88,10 @@ export function ModalShell({
  * region keeps a one-line summary of the values it holds, so nothing is hidden
  * without a trace; a region holding a blocking error is forced open by its
  * owner (forceOpen) rather than reporting the error out of sight.
+ *
+ * The body is the panel fold's body under another name: it enters and leaves on
+ * the same animation pair, and `usePresence` keeps it mounted through the exit
+ * leg so collapsing never snaps.
  */
 export function CollapsibleSection({
   title,
@@ -106,13 +110,20 @@ export function CollapsibleSection({
   children: ReactNode
 }) {
   const [open, setOpen] = useState(defaultOpen)
+  const panelId = useId()
   const expanded = forceOpen || open
+  const presence = usePresence(expanded)
+  // The one-line preview is also the row's title, so the line that ellipsizes
+  // in the header stays readable in full (same rule as the panel's folds).
+  const fullLine = summary ?? ''
   return (
     <section className={css.formSection} data-dsh-part="form-section" data-open={expanded ? 'true' : undefined}>
       <button
         type="button"
         className={css.formSectionHeader}
         aria-expanded={expanded}
+        aria-controls={panelId}
+        title={fullLine === '' ? undefined : fullLine}
         onClick={() => { setOpen(value => !value) }}
       >
         <span className={css.formSectionChevron} aria-hidden="true" />
@@ -121,7 +132,11 @@ export function CollapsibleSection({
           <span className={css.formSectionSummary}>{summary}</span>
         )}
       </button>
-      {expanded && <div className={css.formSectionBody}>{children}</div>}
+      {presence.mounted && (
+        <div className={css.formSectionBody} id={panelId} data-state={presence.phase}>
+          {children}
+        </div>
+      )}
     </section>
   )
 }
@@ -231,7 +246,7 @@ export function TaskTagFields({
           />
           <button
             type="button"
-            className={css.ghostButton}
+            className={css.iconButton}
             aria-label={t('new.tagRemove', { name: tag.name })}
             onClick={() => { onChange(tags.filter((_, position) => position !== index)) }}
           >

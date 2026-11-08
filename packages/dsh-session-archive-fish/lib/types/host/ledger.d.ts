@@ -7,11 +7,22 @@
  * @module @fish-under-sea/dsh-session-archive-fish/host/ledger
  */
 import type { RunStats } from '../core/types.ts';
-/** One archive-time record. The ledger only knows archives this plugin made. */
+/**
+ * Where one ledger archive time came from.
+ *
+ * - `manual` / `auto`: this plugin performed the archive, so the time is the
+ *   real archive moment.
+ * - `observed`: the session was already archived when this plugin first saw it
+ *   (archived from the official sidebar, which never reaches this plugin), and
+ *   the time records the moment of observation — a conservative lower bound on
+ *   the real archive moment, never a file timestamp.
+ */
+export type LedgerSource = 'manual' | 'auto' | 'observed';
+/** One archive-time record. The ledger stays the only archive-time fact source. */
 export interface LedgerEntry {
-    /** Epoch ms of the archive action (manual or automatic). */
+    /** Epoch ms of the archive action (manual, automatic) or of the observation. */
     archivedAt: number;
-    source: 'manual' | 'auto';
+    source: LedgerSource;
 }
 export interface LedgerDocument {
     version: 1;

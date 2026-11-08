@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "任务看板",
+    "description": "拖拽管理任务并按 Cron 真实执行"
+  }
+}

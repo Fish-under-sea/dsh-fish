@@ -10,7 +10,7 @@
  * @module @fish-under-sea/dsh-session-archive-fish/host/inventory
  */
 import type { ArchiveSessionRow, WorkspaceView } from '../core/types.ts';
-import type { LedgerDocument } from './ledger.ts';
+import type { LedgerDocument, LedgerSource } from './ledger.ts';
 import { type SessionDirIndex } from './session-files.ts';
 /** Minimal duck-typed face of the host SessionController feed. */
 export interface SessionFeedFace {
@@ -62,6 +62,15 @@ export interface InventorySources {
      * reads and parses the file itself.
      */
     projcacheIndex?: ProjcacheIndex;
+    /**
+     * Optional host-side protection facts the browser half cannot observe: live
+     * SessionStore members (`attached`) and sessions a mutating operation owns
+     * (`in-flight`). The service passes one so the served rows say why the host
+     * will refuse to delete them; absent means rows carry no
+     * {@link ArchiveSessionRow.hostProtectedReason}, exactly as before the field
+     * existed.
+     */
+    hostProtectedReason?: ReadonlyMap<string, 'attached' | 'in-flight'>;
 }
 /** Enrichment facts from one per-session projection-cache file. */
 export interface ProjcacheFileEntry {
@@ -115,7 +124,7 @@ export interface BuiltInventory {
 /** Ledger entry for a session under either id spelling; canonical wins. */
 export declare function ledgerEntryFor(ledger: LedgerDocument, canonicalId: string, nativeId?: string): {
     archivedAt: number;
-    source: 'manual' | 'auto';
+    source: LedgerSource;
 } | undefined;
 /**
  * Build the full inventory. Rows exist only for sessions the feed lists or

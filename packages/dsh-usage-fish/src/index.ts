@@ -4,6 +4,7 @@ import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 import { mountOnce } from './mount-once.ts'
 import { UsageService, type UsageServiceOptions } from './host/usage-service.ts'
+import { DEFAULT_CNY_PER_USD, resolveSpendDisplay, type SpendDisplay } from './core/spend.ts'
 import { makeUsageDayRoute, makeUsageOverviewRoute, makeUsageRefreshRoute } from './host/routes.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -46,6 +47,10 @@ export interface UsageConfigFields {
   pollIntervalSec?: ConfigField<number>
   /** Ledger retention in local days. */
   retainDays?: ConfigField<number>
+  /** Currency the spend figures are DISPLAYED in; the ledger itself stays CNY. */
+  spendCurrency?: ConfigField<'CNY' | 'USD'>
+  /** CNY per USD, consulted only while the display currency is USD. */
+  cnyPerUsd?: ConfigField<number>
 }
 
 /**
@@ -66,10 +71,18 @@ export const Config = z.object({
   enabled: z.boolean().default(true).volatile(),
   pollIntervalSec: z.number().min(30).max(3600).default(60).volatile(),
   retainDays: z.number().min(7).max(730).default(180).volatile(),
+  // Display only: the ledger keeps every cost estimate in CNY, and switching
+  // this field never rewrites history (issue #1937). The plugin fetches no live
+  // rate, so an unset or unusable rate renders with the documented default
+  // instead of failing the card.
+  spendCurrency: z.union(['CNY', 'USD'] as const).default('CNY').volatile(),
+  cnyPerUsd: z.number().min(0.01).max(1000).default(DEFAULT_CNY_PER_USD).volatile(),
 })
 
 export interface ResolvedConfig extends UsageServiceOptions {
   enabled: boolean
+  /** The resolved spend display; always present, unlike the optional service option. */
+  display: SpendDisplay
 }
 
 /** Read one config field, following the live reference the schema produces. */
@@ -99,6 +112,10 @@ export function resolveConfig(config?: UsageConfigFields): ResolvedConfig {
     enabled: readConfigField(config?.enabled) ?? true,
     pollIntervalSec: readNumber(config?.pollIntervalSec, 60),
     retainDays: readNumber(config?.retainDays, 180),
+    display: resolveSpendDisplay({
+      currency: readConfigField(config?.spendCurrency),
+      cnyPerUsd: readNumber(config?.cnyPerUsd, DEFAULT_CNY_PER_USD),
+    }),
   }
 }
 

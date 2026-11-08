@@ -27,8 +27,12 @@ import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react
 import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { t } from './locales.ts'
 import styles from './usage.module.css'
+import { formatClock, PeakBadge } from './PeakBadge.tsx'
 import { formatTokens, type UsageSettings } from './UsageSectionCard.tsx'
+import { deepseekPeriodAt } from '../core/pricing.ts'
+import { isDeepSeekProviderRoute } from '../core/adapters.ts'
 import { totalTokens } from '../core/ledger.ts'
+import { formatSpend } from '../core/spend.ts'
 import type { BalanceView, ProviderSnapshotView, UsageOverviewView } from '../core/types.ts'
 import type { UsageStoreInstance } from './usage-store.ts'
 
@@ -114,27 +118,23 @@ function formatBalance(balance: BalanceView): string {
   return currency + ' ' + balance.totalBalance
 }
 
-function formatClock(ms: number): string {
-  try {
-    return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  } catch {
-    return ''
-  }
-}
-
 /**
- * Display name of the provider owning today's priced spend: the day's highest
- * cost row, else the current session route, resolved through the provider
- * snapshot (an older host without the day rows falls back to the current
- * route). Undefined when there is no route to name.
+ * Route key owning today's priced spend: the day's highest cost row, else the
+ * current session route (an older host without the day rows falls back to the
+ * current route). Undefined when neither names one.
  */
-function spendProvider(snapshot: UsageOverviewView): string | undefined {
+function spendRoute(snapshot: UsageOverviewView): string | undefined {
   let top: UsageOverviewView['usage']['today']['providers'][number] | undefined
   for (const row of snapshot.usage.today.providers) {
     if (row.totals.cost <= 0) continue
     if (top === undefined || row.totals.cost > top.totals.cost) top = row
   }
-  const route = top?.provider ?? snapshot.current.provider
+  return top?.provider ?? snapshot.current.provider
+}
+
+/** Display name of the route spendRoute() names, resolved through the snapshot. */
+function spendProvider(snapshot: UsageOverviewView): string | undefined {
+  const route = spendRoute(snapshot)
   if (route === undefined) return undefined
   return snapshot.providers.find((entry) => entry.provider === route)?.displayName
     ?? (route === snapshot.current.provider ? snapshot.current.displayName : undefined)
@@ -149,9 +149,9 @@ function spendProvider(snapshot: UsageOverviewView): string | undefined {
  */
 function headline(snapshot: UsageOverviewView): { label: string; value: string; tokenFallback: boolean; provider?: string } {
   const totals = snapshot.usage.today.totals
-  if (totals.cost > 0) return { label: t('usage.foot.cost'), value: '¥' + totals.cost.toFixed(2), tokenFallback: false, provider: spendProvider(snapshot) }
+  if (totals.cost > 0) return { label: t('usage.foot.cost'), value: formatSpend(totals.cost, snapshot.display), tokenFallback: false, provider: spendProvider(snapshot) }
   if (totals.calls > 0) return { label: t('usage.today'), value: formatTokens(totalTokens(totals)) + ' tokens', tokenFallback: true }
-  return { label: t('usage.foot.cost'), value: '¥0.00', tokenFallback: false }
+  return { label: t('usage.foot.cost'), value: formatSpend(0, snapshot.display), tokenFallback: false }
 }
 
 /** The tokens/calls sub-line under the headline; a quiet no-data line on an empty day. */
@@ -266,6 +266,11 @@ export function UsageFootCard(props: UsageFootCardProps): ReactNode {
 
   const head = headline(snapshot)
   const balances = balanceLine(snapshot)
+  // The published peak/off-peak clock prices the official DeepSeek family only,
+  // so the marker follows the route that owns today's spend (else the session
+  // route) and stays away from every other provider's card.
+  const route = spendRoute(snapshot)
+  const period = route !== undefined && isDeepSeekProviderRoute(route) ? deepseekPeriodAt(Date.now()) : undefined
 
   if (collapsed) {
     return (
@@ -274,6 +279,7 @@ export function UsageFootCard(props: UsageFootCardProps): ReactNode {
           <span className={styles.footStrip} data-dsh-part="foot-card-strip">
             <GaugeIcon />
             {head.provider !== undefined && <span className={styles.footStripProvider}>{head.provider}</span>}
+            {period !== undefined && <PeakBadge peak={period.peak} boundaryMs={period.boundaryMs} variant="compact" />}
             <span className={styles.footStripLabel}>{head.label}</span>
             <span className={styles.footStripValue}>{head.value}</span>
           </span>
@@ -292,6 +298,14 @@ export function UsageFootCard(props: UsageFootCardProps): ReactNode {
         </span>
         <span className={styles.footLine} data-dsh-part="foot-card-usage">{usageLine(snapshot, head.tokenFallback)}</span>
         {balances !== undefined && <span className={styles.footLine} data-dsh-part="foot-card-balances">{balances}</span>}
+        {period !== undefined && (
+          <span className={styles.footPeak}>
+            <PeakBadge peak={period.peak} boundaryMs={period.boundaryMs} variant="compact" />
+            <span className={styles.footPeakClock}>
+              {t(period.peak ? 'usage.peak.ends' : 'usage.peak.starts', { time: formatClock(period.boundaryMs) })}
+            </span>
+          </span>
+        )}
         <span className={styles.footMeta}>{t('usage.updated', { time: formatClock(snapshot.updatedAt) })}</span>
       </button>
       {toggle}

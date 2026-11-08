@@ -52,6 +52,8 @@ export const FAMILY_GROUP_SERVICE = 'webUiSettings'
 export interface PluginCardSlots {
   /** Contribution of one card entry. */
   register(options: never, component: never): unknown
+  /** Declaration probe: a target seat may appear after this plugin applies. */
+  spec?(key: string): unknown
 }
 
 /** The slice of the client context a card contribution needs. */
@@ -60,7 +62,7 @@ export interface PluginCardContext {
   /** Service lookup; absent on a context double that only models the slots. */
   get?(name: string): unknown
   /** Event subscription seat; absent on an event-less test double. */
-  on?(event: string, listener: (...args: never[]) => void): unknown
+  on?(event: never, listener: never): unknown
 }
 
 /** Owner share of a family list-seat card (that seat supplies nothing). */
@@ -154,6 +156,10 @@ export function installPluginCard(ctx: PluginCardContext, seat: PluginCardSeat):
     if (reconciling) return
     const target = familyGroupLoaded(ctx) ? FAMILY_PLUGIN_CARD_SEAT : OFFICIAL_PLUGIN_CARD_SEAT
     if (current === target) return
+    // The group's child seat can be declared after this card applies (the
+    // parent mounts its pages through the extension service). Wait for the
+    // declaration instead of logging a refused registration on every boot.
+    if (typeof slots.spec === 'function' && slots.spec(target) === undefined) return
     reconciling = true
     const previous = dispose
     dispose = undefined
@@ -187,7 +193,7 @@ export function installPluginCard(ctx: PluginCardContext, seat: PluginCardSeat):
 
   if (typeof ctx.on === 'function') {
     try {
-      ctx.on('slots/changed', () => { reconcile() })
+      ctx.on('slots/changed' as never, (() => { reconcile() }) as never)
     } catch {
       // An event seat that refuses the subscription leaves the initial
       // decision in place; the card still renders in the seat chosen below.

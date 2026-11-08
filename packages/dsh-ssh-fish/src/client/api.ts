@@ -503,6 +503,76 @@ export class SshApi {
     return this.terminalSocket(query({ session: sessionId, cols, rows }))
   }
 
+  /**
+   * End a host session this view is not attached to (closing a background
+   * tab). The session has no other handle from the browser: giving it a
+   * dedicated HTTP route would widen the host's surface for one frame, so this
+   * opens one short-lived attach instead and sends the close frame as soon as
+   * the socket is open.
+   *
+   * The answer is "is this session no longer running", which has three
+   * truthful answers and one lie to avoid:
+   *   - the frame went out on an open socket: the host ends the session;
+   *   - the host answered with an exit frame: an unknown id is reported as
+   *     `terminal session expired` and an ended shell also exits, and in both
+   *     cases nothing is running, so the tab really is closed;
+   *   - the socket errored, closed before opening, or never settled inside
+   *     `timeoutMs`: delivery is unproven, so the session may still be alive and
+   *     the caller must keep the tab instead of claiming it closed.
+   * @param sessionId - the session id the host reported on its ready frame.
+   * @param timeoutMs - bounded wait for the delivery signal (default 5000).
+   * @returns true when the session is known to be gone.
+   */
+  closeTerminalSession(sessionId: string, timeoutMs = 5000): Promise<boolean> {
+    const target = terminalSocketUrl(
+      window.location,
+      query({ session: sessionId, cols: 2, rows: 1 }),
+      transportStreamBaseUrl(),
+    )
+    if (target === undefined) return Promise.resolve(false)
+    let socket: WebSocket
+    try {
+      socket = new WebSocket(target)
+    } catch {
+      return Promise.resolve(false)
+    }
+    return new Promise<boolean>((resolve) => {
+      let settled = false
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const finish = (gone: boolean): void => {
+        if (settled) return
+        settled = true
+        if (timer !== undefined) clearTimeout(timer)
+        try { socket.close() } catch { /* already closed */ }
+        resolve(gone)
+      }
+      timer = setTimeout(() => { finish(false) }, timeoutMs)
+      socket.onopen = () => {
+        const closeFrame: TerminalClientFrame = { type: 'close' }
+        try {
+          socket.send(JSON.stringify(closeFrame))
+          finish(true)
+        } catch {
+          // The frame never left, which proves nothing either way: wait for the
+          // host's own answer (an exit frame for an id that no longer exists),
+          // for the socket to fail, or for the bounded wait to expire.
+        }
+      }
+      socket.onmessage = (event: MessageEvent<string>) => {
+        let frame: TerminalServerFrame
+        try {
+          frame = JSON.parse(event.data) as TerminalServerFrame
+        } catch {
+          return
+        }
+        // Exit (expired id or an ended shell) means there is nothing left to end.
+        if (frame.type === 'exit') finish(true)
+      }
+      socket.onerror = () => { finish(false) }
+      socket.onclose = () => { finish(false) }
+    })
+  }
+
   /** One terminal socket over either an alias (open) or a session id (attach). */
   private terminalSocket(search: string): TerminalConnection {
     const target = terminalSocketUrl(window.location, search, transportStreamBaseUrl())

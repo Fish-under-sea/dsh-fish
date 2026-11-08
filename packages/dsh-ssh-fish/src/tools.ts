@@ -28,6 +28,7 @@ export interface AgentHostRow {
   keyReady: boolean
   proxyJump: string[]
   proxyCommandConfigured: boolean
+  forwardAgent: boolean
   description?: string
   environment?: string
   tags: string[]
@@ -52,11 +53,14 @@ function renderHosts(hosts: AgentHostRow[]): string {
     host.user,
     host.auth,
     host.proxyJump.length > 0 ? 'jump:' + host.proxyJump.join(',') : host.proxyCommandConfigured ? 'proxy-command' : '-',
+    // Forwarding is a security-relevant opt-in (the remote can sign with this
+    // machine's agent), so the model must see it in the table, not only in JSON.
+    host.forwardAgent ? 'yes' : '-',
     host.environment ?? '-',
     (host.tags.length > 0 ? host.tags.join(',') : '-'),
     host.description ?? '',
   ].join(' | '))
-  return ['alias | host | port | user | auth | proxy | environment | tags | description', '--- | --- | --- | --- | --- | --- | --- | --- | ---', ...rows].join('\n')
+  return ['alias | host | port | user | auth | proxy | forward | environment | tags | description', '--- | --- | --- | --- | --- | --- | --- | --- | --- | ---', ...rows].join('\n')
 }
 
 /** Render one exec result (mirrors the bash-tool exit-code convention). */
@@ -91,7 +95,7 @@ function renderTunnel(tunnel: TunnelInfo): string {
 export function sshListTool(engine: SshEngine) {
   return defineTool({
     name: 'ssh_list',
-    description: 'List configured SSH hosts (alias, host, user, auth, environment, tags, description). Use ssh_exec etc. with the alias.',
+    description: 'List configured SSH hosts (alias, host, user, auth, agent forwarding, environment, tags, description). Use ssh_exec etc. with the alias.',
     parameters: {
       query: { type: 'string', description: 'Optional fuzzy match against alias, description, host, and tags.' },
     },
@@ -115,6 +119,7 @@ export function sshListTool(engine: SshEngine) {
                 keyReady: { type: 'boolean', required: true },
                 proxyJump: { type: 'array', items: { type: 'string' }, required: true },
                 proxyCommandConfigured: { type: 'boolean', required: true },
+                forwardAgent: { type: 'boolean', required: true },
                 description: { type: 'string' },
                 environment: { type: 'string' },
                 tags: { type: 'array', items: { type: 'string' }, required: true },
@@ -144,7 +149,7 @@ export function sshExecTool(engine: SshEngine) {
     parameters: {
       alias: { type: 'string', required: true, description: 'Host alias from ssh_list.' },
       command: { type: 'string', required: true, description: 'The shell command to run remotely.' },
-      timeoutMs: { type: 'integer', description: 'Timeout in milliseconds (default 60000).' },
+      timeoutMs: { type: 'integer', description: 'Remote command execution timeout in milliseconds (default 60000); it starts after the connection is ready. The connection and authentication ceiling is the dsh-ssh connectTimeoutMs setting, not this argument.' },
     },
     output: {
       schema: {
@@ -362,7 +367,7 @@ export function sshClusterTool(engine: SshEngine) {
       aliases: { type: 'array', items: { type: 'string' }, description: 'Optional alias filter; at least one of aliases, environment, or tags is required.' },
       environment: { type: 'string', description: 'Optional environment filter; at least one selector is required.' },
       tags: { type: 'array', items: { type: 'string' }, description: 'Optional ALL-tags filter; at least one selector is required.' },
-      timeoutMs: { type: 'integer', description: 'Per-host timeout in milliseconds.' },
+      timeoutMs: { type: 'integer', description: 'Per-host command execution timeout in milliseconds (default 60000); it does not extend the connection and authentication ceiling (the dsh-ssh connectTimeoutMs setting).' },
       maxWorkers: { type: 'integer', description: 'Concurrency cap (default 8).' },
     },
     output: {

@@ -40,6 +40,7 @@ export const Config = z.object({
   autoArchiveDays: z.number().min(1).max(3650).default(7).volatile(),
   autoDeleteEnabled: z.boolean().default(false).volatile(),
   autoDeleteDays: z.number().min(1).max(3650).default(7).volatile(),
+  recordManualArchive: z.boolean().default(false).volatile(),
   checkIntervalMin: z.number().min(15).max(1440).default(60).volatile(),
 })
 

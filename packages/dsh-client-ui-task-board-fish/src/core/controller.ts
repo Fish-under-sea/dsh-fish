@@ -13,6 +13,7 @@
  */
 import type { TaskStore } from './store.ts'
 import { hasOpenExecution, withStatus, type NewTaskInput, type TaskRecord, type TaskStatus } from './tasks.ts'
+import type { TaskAttachment, TaskAttachmentKind } from './attachment.ts'
 import { applyArchiveTask, applyRestoreTask } from './use-cases/task-archive.ts'
 import { applyCreateTask } from './use-cases/task-create.ts'
 import { applyDeleteTask } from './use-cases/task-delete.ts'
@@ -31,6 +32,7 @@ import type {
 } from '../protocol.ts'
 import type {
   TaskBoardExtensionActionRequest,
+  TaskBoardGroupingSelector,
   TaskBoardVisibilityPredicate,
 } from './extension.ts'
 
@@ -48,6 +50,12 @@ export interface TaskBoardTransport {
    * that cannot parse simply omits it, and the form hides the section.
    */
   parseDraft?(request: TaskBoardParseRequest, signal?: AbortSignal): Promise<TaskBoardParseDraft>
+  /**
+   * Upload one file or image into the Host's attachment storage. Optional: a
+   * deployment that serves no attachment storage omits it, and the form then
+   * refuses to stage an attachment.
+   */
+  uploadAttachment?(file: File, kind: TaskAttachmentKind): Promise<TaskAttachment>
 }
 
 /**
@@ -127,6 +135,17 @@ export interface ExecutionModelOption {
   name?: string
   label?: string
   provider?: string
+  /**
+   * Reasoning metadata the adapter declares for this exact route. An effort
+   * picker is offered only while `supported`, and its choices are `efforts` —
+   * the ids the target model really accepts, so the UI never offers (or keeps)
+   * a level the model would reject. Absent means the deployment published no
+   * capability for this model; the card value is then left untouched.
+   */
+  reasoning?: {
+    supported: boolean
+    efforts?: readonly string[]
+  }
 }
 
 /** The execution-target option sets the UI feeds into the controller. */
@@ -141,7 +160,7 @@ export interface ExecutionOptionsSnapshot {
  * (revision/scheduler/power); a full snapshot also carries the deployment
  * constants the UI reads (session default permission, subtask depth).
  */
-export type HostMirror = Pick<TaskBoardSnapshot, 'revision' | 'scheduler' | 'power' | 'sessionDefaultPermission' | 'maxSubtaskDepth' | 'teamRunAvailable' | 'goalRunEnabled' | 'extensions'>
+export type HostMirror = Pick<TaskBoardSnapshot, 'revision' | 'scheduler' | 'power' | 'sessionDefaultPermission' | 'maxSubtaskDepth' | 'goalRunEnabled' | 'cardDefaults' | 'extensions' | 'attachmentLimits'>
 
 /** Immutable controller snapshot for UI subscriptions. */
 export interface ControllerSnapshot {
@@ -166,6 +185,8 @@ export interface ControllerSnapshot {
    * hand-built snapshot (tests, a shell-less composition) defaults to visible.
    */
   visibility?: readonly TaskBoardVisibilityPredicate[]
+  /** Provider source-group selectors, in registration order; browser-only functions. */
+  grouping?: readonly TaskBoardGroupingSelector[]
   /** Read-only summaries published by running extensions, keyed by extension id. */
   extensions?: Readonly<Record<string, unknown>>
 }
@@ -217,6 +238,8 @@ export class BoardController {
   private hostState: HostMirror | undefined
   /** Provider visibility predicates (immutable array; replaced on change). */
   private visibility: readonly TaskBoardVisibilityPredicate[] = []
+  /** Provider source-group selectors (immutable array; replaced on change). */
+  private grouping: readonly TaskBoardGroupingSelector[] = []
   private remoteSubscribed = false
   private remoteInitialization: Promise<boolean> | undefined
 
@@ -268,6 +291,7 @@ export class BoardController {
       ...(this.transportError === undefined ? {} : { transportError: this.transportError }),
       ...(this.hostState === undefined ? {} : { host: this.hostState }),
       visibility: this.visibility,
+      grouping: this.grouping,
       ...(this.hostState?.extensions === undefined ? {} : { extensions: this.hostState.extensions }),
     }
   }
@@ -283,6 +307,18 @@ export class BoardController {
       const next = this.visibility.filter(candidate => candidate !== predicate)
       if (next.length === this.visibility.length) return
       this.visibility = next
+      this.notify()
+    }
+  }
+
+  /** Register one source-group selector; registration order breaks ownership ties. */
+  registerGrouping(selector: TaskBoardGroupingSelector): () => void {
+    this.grouping = [...this.grouping, selector]
+    this.notify()
+    return () => {
+      const next = this.grouping.filter(candidate => candidate !== selector)
+      if (next.length === this.grouping.length) return
+      this.grouping = next
       this.notify()
     }
   }
@@ -316,6 +352,22 @@ export class BoardController {
   /** Retry initial migration/state synchronization after an explicit Host error. */
   async retryHostSync(): Promise<boolean> {
     return await this.initializeRemote()
+  }
+
+  /**
+   * Re-read the authoritative Host snapshot.
+   *
+   * The board's volatile deployment configuration — the new-card defaults among
+   * it — is republished the moment the settings document is written, but the SSE
+   * frame that republish emits carries the value as of BEFORE the write (the
+   * loader hands the update to the fiber while the new document is not yet
+   * visible to it), so a mirror that followed frames alone would stay one edit
+   * behind and the create dialog would prefill from the previous defaults for
+   * the rest of the session. The surface that owns the write asks for the
+   * snapshot again instead of trusting the frame.
+   */
+  refreshHostState(): void {
+    void this.refreshRemote()
   }
 
   // --- view state -------------------------------------------------------------
@@ -407,7 +459,7 @@ export class BoardController {
 
   createTask(input: NewTaskInput): TaskRecord | undefined {
     const id = this.uuid()
-    const { task, tasks } = applyCreateTask(this.tasks, input, this.now(), id, this.mirrorDepth())
+    const { task, tasks } = applyCreateTask(this.tasks, input, this.now(), id, this.mirrorDepth(), undefined, this.hostState?.cardDefaults)
     if (task === undefined) return undefined
     this.tasks = [...tasks]
     this.persistAndNotify()
@@ -421,7 +473,7 @@ export class BoardController {
     // The preview must obey the SAME lineage gate the Host will: a browser-side
     // default of one level would reject a legal subtask-of-subtask before the
     // request is ever sent.
-    const preview = applyCreateTask(this.tasks, input, this.now(), id, this.mirrorDepth()).task
+    const preview = applyCreateTask(this.tasks, input, this.now(), id, this.mirrorDepth(), undefined, this.hostState?.cardDefaults).task
     if (preview === undefined) return undefined
     return await this.commitRemote({ kind: 'create', id, input }, id)
       ? this.tasks.find(task => task.id === id)
@@ -483,6 +535,23 @@ export class BoardController {
     const parse = transport?.parseDraft
     if (transport === undefined || parse === undefined) throw new Error('task parsing is unavailable')
     return await parse.call(transport, request, signal)
+  }
+
+  /**
+   * Upload one attachment into the Host's attachment storage.
+   *
+   * The form calls this when the card is SAVED, never when a file is picked:
+   * a staged file is a local preview until the card is really saved.
+   * @param file - the picked file.
+   * @param kind - whether the file is stored as an image or verbatim.
+   * @returns the metadata the Host computed, or undefined when this
+   *   deployment serves no attachment storage.
+   */
+  async uploadAttachment(file: File, kind: TaskAttachmentKind): Promise<TaskAttachment | undefined> {
+    const transport = this.deps.transport
+    const upload = transport?.uploadAttachment
+    if (transport === undefined || upload === undefined) return undefined
+    return await upload.call(transport, file, kind)
   }
 
   moveTask(id: string, status: TaskStatus): void {
@@ -804,28 +873,38 @@ export class BoardController {
   }
 
   /**
-   * Project a Host snapshot onto the browser's mirror. SSE frames and partial
-   * snapshots carry only the volatile subset (revision/scheduler/power), so the
-   * deployment constants the UI reads — the session-default permission the
-   * confirmation banner compares against and the subtask depth limit — are
-   * carried over from the last full snapshot instead of being dropped by a
-   * heartbeat frame.
+   * Project a Host snapshot onto the browser's mirror. Every snapshot the
+   * transport serves is a full document (bootstrap/state/action all answer
+   * `TaskBoardHostService.snapshot()`), so the deployment constants the UI reads
+   * — the session-default permission the confirmation banner compares against,
+   * the subtask depth limit, the platform switches and the extensions a provider
+   * published — are taken as published, carried over only where the snapshot
+   * itself omits the key.
    */
   private mirrorOf(snapshot: TaskBoardSnapshot): HostMirror {
     const sessionDefaultPermission = snapshot.sessionDefaultPermission ?? this.hostState?.sessionDefaultPermission
     const maxSubtaskDepth = snapshot.maxSubtaskDepth ?? this.hostState?.maxSubtaskDepth
-    const teamRunAvailable = snapshot.teamRunAvailable ?? this.hostState?.teamRunAvailable
     const goalRunEnabled = snapshot.goalRunEnabled ?? this.hostState?.goalRunEnabled
+    // The new-card defaults are NOT carried over: the Host publishes a target
+    // nothing configures by omitting it (protocol.ts states that explicitly), so
+    // an absent key means "this deployment configures none". Carrying the last
+    // value over would keep a CLEARED default alive in the create dialog, which
+    // is the mirror image of the staleness this key is re-read for.
+    const cardDefaults = snapshot.cardDefaults
     const extensions = snapshot.extensions ?? this.hostState?.extensions
+    // The attachment limits are carried over: a deployment that lowers them
+    // must keep the browser's refusal in step until the next snapshot.
+    const attachmentLimits = snapshot.attachmentLimits ?? this.hostState?.attachmentLimits
     return {
       revision: snapshot.revision,
       scheduler: snapshot.scheduler,
       power: snapshot.power,
       ...(sessionDefaultPermission === undefined ? {} : { sessionDefaultPermission }),
       ...(maxSubtaskDepth === undefined ? {} : { maxSubtaskDepth }),
-      ...(teamRunAvailable === undefined ? {} : { teamRunAvailable }),
       ...(goalRunEnabled === undefined ? {} : { goalRunEnabled }),
+      ...(cardDefaults === undefined ? {} : { cardDefaults }),
       ...(extensions === undefined ? {} : { extensions }),
+      ...(attachmentLimits === undefined ? {} : { attachmentLimits }),
     }
   }
 

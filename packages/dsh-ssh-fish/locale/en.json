@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "SSH terminal",
+    "description": "Run commands and transfer files on remote hosts."
+  }
+}

@@ -59,12 +59,28 @@ export interface ArchiveSessionRow {
   readonly archived: boolean
   /** Present only when a reliable archive time exists (this plugin recorded it). */
   readonly archivedAt?: number
+  /**
+   * Where {@link archivedAt} came from; present only together with it.
+   * `observed` marks a backfilled entry: the session was already archived when
+   * this plugin first saw it, so the time is the observation moment, not the
+   * real archive moment.
+   */
+  readonly archivedAtSource?: 'manual' | 'auto' | 'observed'
   /** Last activity from the authoritative session feed; absent when unknown. */
   readonly lastActivityAt?: number
   /** False when last activity could not be determined reliably. */
   readonly lastActivityReliable: boolean
   readonly sizeBytes?: number
   readonly running: boolean
+  /**
+   * Host-side protection fact the browser half cannot observe on its own:
+   * `attached` (the running harness process holds the session open) or
+   * `in-flight` (a mutating operation currently owns it). Absent when the host
+   * protects the row for no reason of its own, and absent on an older host that
+   * does not report these facts at all — the browser half then degrades to what
+   * it can observe itself (`running`, the current session).
+   */
+  readonly hostProtectedReason?: 'attached' | 'in-flight'
   readonly blank: boolean
   readonly origin?: 'subagent'
   readonly parentId?: string

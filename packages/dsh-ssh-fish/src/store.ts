@@ -72,6 +72,9 @@ export function validateHostPayload(payload: unknown): string | undefined {
   if (p.tags !== undefined && (!Array.isArray(p.tags) || p.tags.some(x => typeof x !== 'string'))) {
     return 'tags must be an array of strings'
   }
+  if (p.forwardAgent !== undefined && typeof p.forwardAgent !== 'boolean') {
+    return 'forwardAgent must be a boolean'
+  }
   return undefined
 }
 
@@ -136,6 +139,9 @@ export class HostStore {
       ...(entry.environment !== undefined ? { environment: entry.environment } : {}),
       tags: [...entry.tags],
       ...(entry.location !== undefined ? { location: entry.location } : {}),
+      // Always a definite boolean, unlike the conditional optional fields:
+      // the tool bridge rejects undefined-valued JSON properties.
+      forwardAgent: entry.forwardAgent === true,
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt,
     }
@@ -171,6 +177,9 @@ export class HostStore {
       environment: payload.environment?.trim() || undefined,
       tags: [...(payload.tags ?? [])].map(tag => tag.trim()).filter(tag => tag !== ''),
       location: payload.location?.trim() || undefined,
+      // Stored only when enabled, so a store file written without agent
+      // forwarding stays byte-identical to the pre-feature format.
+      forwardAgent: payload.forwardAgent === true ? true : undefined,
       createdAt: now,
       updatedAt: now,
     }
@@ -200,6 +209,9 @@ export class HostStore {
     }
     if (patch.proxyCommand !== undefined && typeof patch.proxyCommand !== 'string') {
       throw new Error('proxyCommand must be a string when provided')
+    }
+    if (patch.forwardAgent !== undefined && typeof patch.forwardAgent !== 'boolean') {
+      throw new Error('forwardAgent must be a boolean')
     }
     // The mutual exclusion is checked on the MERGED view: a patch that only
     // adds one transport must not slip past a stored value of the other.
@@ -250,6 +262,8 @@ export class HostStore {
     if (patch.environment !== undefined) entry.environment = patch.environment.trim() || undefined
     if (patch.tags !== undefined) entry.tags = [...patch.tags].map(tag => tag.trim()).filter(tag => tag !== '')
     if (patch.location !== undefined) entry.location = patch.location.trim() || undefined
+    // PATCH semantics: an omitted key keeps the stored value, false clears it.
+    if (patch.forwardAgent !== undefined) entry.forwardAgent = patch.forwardAgent === true ? true : undefined
     entry.updatedAt = Date.now()
     this.save(file)
     return entry
@@ -326,6 +340,7 @@ export class HostStore {
         environment: block.props.environment,
         tags: (block.props.tags ?? '').split(',').map(tag => tag.trim()).filter(tag => tag !== ''),
         location: block.props.location,
+        forwardAgent: parseForwardAgentValue(block.props.forwardagent),
       }
       try {
         this.create(payload)
@@ -409,6 +424,17 @@ export function normalizeProxyCommand(raw: string | undefined): string | undefin
   if (trimmed === undefined || trimmed === '') return undefined
   if (trimmed.toLowerCase() === 'none') return undefined
   return trimmed
+}
+
+/**
+ * Read an ssh_config `ForwardAgent` value into the stored boolean flag. Only
+ * an explicit yes/true/on enables forwarding; an absent value, no/false/off,
+ * and anything unrecognized leave it off instead of failing the import — an
+ * unknown keyword must never cost the user the whole Host block.
+ */
+export function parseForwardAgentValue(raw: string | undefined): boolean {
+  const value = raw?.trim().toLowerCase()
+  return value === 'yes' || value === 'true' || value === 'on'
 }
 
 /** Expand a leading `~` in a filesystem path. */

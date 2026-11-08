@@ -12,6 +12,7 @@
  * @module dsh-task-board/core/extension
  */
 import type { ToolDefinition } from '@deepseek-ai/dsh-tools';
+import type { TaskBoardAction, TaskBoardSnapshot, TaskBoardVerificationOptions } from '../protocol.ts';
 import type { ExecutionOutcome, TaskRecord, TaskStatus } from './tasks.ts';
 /** Cordis service name the host and browser halves each publish. */
 export declare const TASK_BOARD_SERVICE_NAME = "taskBoard";
@@ -36,6 +37,13 @@ export declare const TASK_BOARD_EXTENSION_SEATS: readonly string[];
  * channel.
  */
 export declare const TASK_BOARD_PAYLOAD_LIMIT_BYTES: number;
+/**
+ * Largest accepted free text a provider pushes into an execution, in
+ * characters: one follow-up message, or one set of rework instructions. Both
+ * reach a model as user input, so the bound keeps a single provider call from
+ * becoming an unbounded context injection.
+ */
+export declare const TASK_BOARD_MESSAGE_MAX_LENGTH = 4000;
 /** One opaque provider payload the board stores and forwards without interpreting. */
 export type TaskBoardExtensionPayload = Record<string, unknown>;
 /**
@@ -90,6 +98,26 @@ export interface TaskBoardTaskDraft {
      * no reason to know better pins nothing.
      */
     workspaceId?: string;
+    /**
+     * Agent preset the created card pins as its execution composition. Absent
+     * pins nothing and leaves the board's own resolution in charge. The value is
+     * forwarded to the board's creation path unchanged, so a preset this
+     * deployment does not register fails the RUN closed, exactly as it does for a
+     * card created anywhere else.
+     */
+    mode?: string;
+    /**
+     * Model the created card pins, in `provider/model` form — the same field
+     * `task_board_create` takes. Resolved against the host catalog at launch, so
+     * an unknown route is a run-time answer, not a creation-time one.
+     */
+    model?: string;
+    /**
+     * Reasoning level for the pinned {@link model}. It travels with the model it
+     * was chosen for: the board never applies a level to a route that does not
+     * declare it.
+     */
+    reasoningEffort?: string;
 }
 /** Options of {@link TaskBoardTasksFace.create}. */
 export interface TaskBoardCreateOptions {
@@ -131,6 +159,41 @@ export interface TaskBoardTasksFace {
     setStatus(taskId: string, status: TaskStatus, initiator?: string): void;
     /** Every task carrying this extension's payload. */
     linked(): readonly TaskBoardLinkedTask[];
+    /**
+     * Run a card that already executed again — in its ORIGINAL session — with
+     * `instructions` carried as this run's additional input, which is how a
+     * reviewer sends work back rather than asking for a fresh attempt. The
+     * instructions are recorded on the execution the request opens, so the run
+     * history says why that run exists.
+     *
+     * The request passes through every run gate the board already has — the
+     * running lock, the permission confirmation, the acceptance contract and the
+     * spend cap — and it never rewrites the card: an executed card's frozen
+     * title, description and prompt stay exactly what ran (see
+     * {@link TaskBoardTasksFace.patchContent}). A card that never executed, or
+     * whose session cannot be continued, is refused instead of quietly starting a
+     * conversation the caller never saw.
+     *
+     * Optional, like {@link TaskBoardExtensionHost.sessions}: the contract
+     * version stays 1, so a provider checks the face before using it.
+     */
+    rework?(taskId: string, instructions: string, initiator?: string): void;
+}
+/**
+ * Execution-session face: what a provider delivers INTO a run the board
+ * already executed or is executing now.
+ */
+export interface TaskBoardSessionsFace {
+    /**
+     * Queue one follow-up user message into the session of the card's current
+     * execution, or of its most recent one when no execution is open.
+     *
+     * The message is an ordinary user turn queued behind whatever that session is
+     * doing; it re-asserts nothing, so the execution's permission, model and
+     * preset stay the ones the run froze. A card that never executed, an archived
+     * card, and a session the host no longer reaches are refused.
+     */
+    followUp(taskId: string, text: string): Promise<void>;
 }
 /** Storage face for one extension's own payload on a task. */
 export interface TaskBoardIntegrationFace {
@@ -178,6 +241,12 @@ export interface TaskBoardEventFace {
  */
 export interface TaskBoardExtensionHost {
     tasks: TaskBoardTasksFace;
+    /**
+     * Delivery into a card's execution session. Optional in the contract on
+     * purpose: the API version stays 1, so a provider built against this revision
+     * probes the face and keeps working against a board that serves none.
+     */
+    sessions?: TaskBoardSessionsFace;
     integration: TaskBoardIntegrationFace;
     events: TaskBoardEventFace;
     /**
@@ -214,6 +283,15 @@ export interface TaskBoardClientMirror {
 }
 /** Whether a task should be shown on the board; false hides it. */
 export type TaskBoardVisibilityPredicate = (task: TaskRecord) => boolean;
+/** Generic source bucket a provider assigns to one card. */
+export interface TaskBoardSourceGroup {
+    /** Stable, provider-namespaced identity used for ordering and fold persistence. */
+    id: string;
+    /** Full human-readable source label, such as an owner/repository pair. */
+    label: string;
+}
+/** Return a card's source group, or undefined when this provider does not own it. */
+export type TaskBoardGroupingSelector = (task: TaskRecord) => TaskBoardSourceGroup | undefined;
 /**
  * Client capability face the board's browser half provides. A provider's
  * browser half resolves it from the shared cordis service name; it never
@@ -224,6 +302,11 @@ export interface TaskBoardClientFace {
     dispatch(request: TaskBoardExtensionActionRequest): Promise<boolean>;
     /** Register one card visibility predicate; the returned disposer removes it. */
     registerVisibility(predicate: TaskBoardVisibilityPredicate): () => void;
+    /**
+     * Register one source-group selector; the first selector returning a group
+     * wins. Optional so an older board can serve the same API version.
+     */
+    registerGrouping?(selector: TaskBoardGroupingSelector): () => void;
     /** Subscribe to the board mirror. */
     subscribe(callback: (mirror: TaskBoardClientMirror) => void): () => void;
     /** Read the current board mirror. */
@@ -255,6 +338,39 @@ export interface TaskBoardHostFace {
     registerExtension(extension: TaskBoardExtension): () => void;
     /** Whether the board currently runs a given extension (board x extension). */
     isExtensionEnabled(extensionId: string): boolean;
+    /**
+     * The whole ledger as the board builds it, tasks included.
+     *
+     * Part of the read/write face an IN-PROCESS consumer drives the board through
+     * (the remote bridge plugin forwarding it to a paired phone); a browser half
+     * reads the same document over the board's own HTTP surface. Forwards
+     * {@link ../host-service.ts | TaskBoardHostService.snapshot}, so nothing is
+     * interpreted between the ledger and the caller.
+     */
+    snapshot(): TaskBoardSnapshot;
+    /**
+     * Apply one action through every gate the board already has — the running
+     * lock, the permission confirmation, the subtask depth, the schedule budget —
+     * and answer the resulting snapshot.
+     *
+     * The `requestId` is the ledger's own idempotency key, so a caller that
+     * retries one envelope does not apply it twice. Refusals are the ledger's:
+     * they throw with the Host's own text, which is why this face adds no code
+     * table of its own.
+     */
+    apply(requestId: string, action: TaskBoardAction, initiator?: string): TaskBoardSnapshot | Promise<TaskBoardSnapshot>;
+    /**
+     * Follow the board's change notifications. The listener receives no payload —
+     * a consumer that needs the state reads {@link snapshot} — and the returned
+     * disposer unsubscribes.
+     */
+    subscribe(listener: () => void): () => void;
+    /**
+     * The acceptance settings, the contract they resolve to right now, and the
+     * model catalog the choices come from. The same document the board's own
+     * `/verification` route serves.
+     */
+    verificationOptions(): Promise<TaskBoardVerificationOptions>;
 }
 declare module '@deepseek-ai/cordis' {
     interface Context {

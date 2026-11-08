@@ -1,8 +1,8 @@
 /**
  * Subtask lineage: the depth gate, the ancestry/descendant queries, the
- * cascade participant set one run request opens, the deferred settlement of a
- * cascade parent, and the execution-target inheritance a subtask resolves at
- * run time.
+ * outstanding-descendant decision one run request makes, the deferred
+ * settlement of a historical run group, and the execution-target inheritance a
+ * subtask resolves at run time.
  *
  * Framework-free (no cordis, no runtime imports) so every rule is
  * unit-testable in isolation. The Host ledger is the only authority; the
@@ -182,22 +182,127 @@ export function checkParentLink(
 }
 
 /**
- * The tasks one run request opens executions for: the requested task first,
- * then its on-board descendants within the configured depth. Archived tasks
- * never run; a participant that already has an open execution is skipped by
- * the caller, which cannot start it twice.
+ * The tasks one run request opens executions for: the requested card ALONE.
+ *
+ * Running a card never expands into its subtask tree. The card's own session
+ * reads its subtasks through the board tools and dispatches subagents itself,
+ * so a parent run opens exactly one session. Clicking a subtask runs that
+ * subtask as its own root, again without expanding its own descendants. The
+ * lineage queries around this one answer questions about the tree the card's
+ * agent works with (who is still outstanding, what a historical run group
+ * still holds open) — never who gets a session from the Host.
+ * @param tasks - the ledger.
+ * @param rootId - the task the run request named.
+ * @returns the one card this run opens an execution for, or [] when unknown.
  */
-export function cascadeTargets(
+export function cascadeTargets(tasks: readonly TaskRecord[], rootId: string): TaskRecord[] {
+  const root = tasks.find(task => task.id === rootId)
+  return root === undefined ? [] : [root]
+}
+
+/**
+ * A task together with every descendant within the configured depth: the
+ * subtree a lineage gate (archive, restore, force-close) has to walk.
+ */
+export function subtreeTasks(tasks: readonly TaskRecord[], id: string, maxSubtaskDepth: number): TaskRecord[] {
+  const root = tasks.find(task => task.id === id)
+  return root === undefined ? [] : [root, ...descendantTasks(tasks, id, maxSubtaskDepth)]
+}
+
+/**
+ * Whether a card still has work outstanding: anything outside the `done`
+ * column. It keys on the column alone, so it covers both a subtask that ran
+ * and one an operator moved to done by hand.
+ */
+export function isOutstanding(task: TaskRecord): boolean {
+  return task.status !== 'done'
+}
+
+/**
+ * The descendants of a card that still have work outstanding, in breadth-first
+ * order: the cards its own session is expected to dispatch. An archived
+ * descendant is off the board and cannot be dispatched, so it is not listed.
+ */
+export function outstandingDescendants(
   tasks: readonly TaskRecord[],
   rootId: string,
   maxSubtaskDepth: number,
 ): TaskRecord[] {
-  const root = tasks.find(task => task.id === rootId)
-  if (root === undefined) return []
-  return [root, ...descendantTasks(tasks, rootId, maxSubtaskDepth)]
+  return descendantTasks(tasks, rootId, maxSubtaskDepth)
+    .filter(task => task.archivedAt === undefined && isOutstanding(task))
 }
 
-/** One still-open execution belonging to a cascade run group. */
+/**
+ * Whether any descendant of this card still sits outside the `done` column.
+ * This is the ONE decision behind both the forced agent preset and the dispatch
+ * section of the execution prompt: a card whose tree still holds work runs as
+ * the autonomous dispatcher.
+ */
+export function hasOutstandingDescendants(
+  tasks: readonly TaskRecord[],
+  rootId: string,
+  maxSubtaskDepth: number,
+): boolean {
+  return outstandingDescendants(tasks, rootId, maxSubtaskDepth).length > 0
+}
+
+/**
+ * Agent preset a run with unfinished subtasks is forced under. The id comes
+ * from packages/dsh-liangshen (its own `LIANGSHEN_PRESET_ID`); the force is
+ * applied at launch and never written into a card's `mode` field.
+ */
+export const LIANGSHEN_PRESET_ID = 'liangshen'
+
+/**
+ * The tool a legacy Agent Teams runtime registers, and the one fingerprint
+ * this board reads off a deployment: the pre-#7519 generation registers
+ * `spawn_teammate` and replaces `send_message` / `list_agents` /
+ * `interrupt_agent` with team-scoped variants, so children exist but are
+ * unreachable. The current runtime adds a shared task board instead and reuses
+ * the coordination tools, so those three names prove nothing and are never
+ * gated on (the criterion is the same one
+ * `packages/dsh-liangshen/presets/liangshen/dispatcher-rules.mjs` states).
+ */
+export const LEGACY_AGENT_TEAMS_TOOL = 'spawn_teammate'
+
+/**
+ * The failure text the Host records when a run would have been forced under
+ * the dispatcher preset on a deployment that cannot orchestrate.
+ *
+ * A finished sentence rather than a code (the shape `core/workspace-target.ts`
+ * gives its missing-workspace refusal): the ledger stores it as the
+ * execution's failure text, the agent tools serve it to a model, and any
+ * client prints it verbatim. It names the fix, not the mechanism. The launch
+ * is refused before any session exists, because the dispatcher preset would
+ * otherwise stop and wait for a human reply that an unattended run never
+ * brings.
+ */
+export const LEGACY_AGENT_TEAMS_REASON = 'this deployment runs the legacy Agent Teams runtime, which cannot dispatch a card that has unfinished subtasks under the ' + LIANGSHEN_PRESET_ID + ' preset; disable that runtime and restart the Host, or finish the subtasks before running'
+
+/**
+ * Whether a recorded failure text is the legacy-runtime refusal, which the
+ * browser half renders in the reader's own language.
+ * @param reason - the execution's recorded failure text.
+ * @returns true when that run was refused for a deployment that cannot orchestrate.
+ */
+export function isLegacyAgentTeamsReason(reason: string): boolean {
+  return reason === LEGACY_AGENT_TEAMS_REASON
+}
+
+/**
+ * Whether a card belongs to a run's dispatch set: the card the request named,
+ * or a card whose work is still outstanding. Kept for the browser's subtask
+ * preview; the Host run itself opens the clicked card alone
+ * ({@link cascadeTargets}).
+ * @param task - the candidate card.
+ * @param rootId - the task the run request named.
+ * @returns false when this card is finished and left alone.
+ */
+export function joinsCascadeRun(task: TaskRecord, rootId: string): boolean {
+  return task.id === rootId || isOutstanding(task)
+}
+
+/** One still-open execution belonging to a stored run group. */
 export interface OpenCascadeChild {
   taskId: string
   execution: ExecutionRecord
@@ -210,8 +315,9 @@ export function openGroupExecution(task: TaskRecord, runGroupId: string): Execut
 
 /**
  * The direct subtasks of parentTaskId whose execution in this run group is
- * still open: the parent remaining waiters. The parent may settle once this
- * list is empty and its own outcome is known.
+ * still open: the parent's remaining waiters. A stored multi-member group (a
+ * run the Host opened before it stopped spreading one run across a subtree)
+ * folds once this list is empty and the parent's own outcome is known.
  */
 export function pendingCascadeChildren(
   tasks: readonly TaskRecord[],
@@ -228,9 +334,9 @@ export function pendingCascadeChildren(
 }
 
 /**
- * Fold a cascade parent own outcome and its children outcomes into one
- * verdict: failure dominates, then cancellation, then success. The error text
- * is the first failure, falling back to the first cancellation.
+ * Fold a stored run-group parent's own outcome and its children's outcomes into
+ * one verdict: failure dominates, then cancellation, then success. The error
+ * text is the first failure, falling back to the first cancellation.
  */
 export function combineCascadeOutcome(
   entries: readonly { result: ExecutionOutcome; error?: string }[],
@@ -263,53 +369,13 @@ export function effectiveTaskPermission(task: TaskRecord): TaskRecord['permissio
 /**
  * Resolve the execution targets a (sub)task actually runs with: its own value
  * wins, and an unset target inherits the nearest ancestor up to the root.
- * Workspace, agent preset and model inherit the ancestor's PIN only — a
- * handover bundle is a per-card continuation artefact and is never inherited.
- * The permission inherits the ancestor's EFFECTIVE binding, and its human
- * confirmation travels with it, so a subtask of an already-confirmed elevated
- * card is runnable while a subtask's own unconfirmed binding stays gated.
+ * Workspace, agent preset, model and reasoning effort inherit the ancestor's
+ * PIN only — a handover bundle is a per-card continuation artefact and is never
+ * inherited. The permission inherits the ancestor's EFFECTIVE binding, and its
+ * human confirmation travels with it, so a subtask of an already-confirmed
+ * elevated card is runnable while a subtask's own unconfirmed binding stays
+ * gated.
  */
-/**
- * The immutable teammate name for one team-mode member. Teammate names are
- * lower-kebab-case and must stay unique for the lifetime of the Team: the
- * run-group token separates two runs of the same tree, and the member
- * discriminator separates two members of one run that reduce to the same slug.
- *
- * The discriminator is not cosmetic. A title with no ASCII word characters (a
- * CJK title, for example) carries no slug at all, so every such title of one
- * run group collides on the generic prefix; Agent Teams answers every member
- * after the first with `teammate name "..." was already used in this Team`,
- * and those subtasks never start. Two ASCII titles that share a slug
- * (`AI 强度预测` next to `AI 配比优化`) collide the same way.
- * @param title - the member task's title.
- * @param token - the run group id (the task id when no group is recorded).
- * @param memberId - the member task's id, which makes the name unique in the run.
- * @returns the teammate name handed to the Agent Teams service.
- */
-export function teammateName(title: string, token: string, memberId?: string): string {
-  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32).replace(/-+$/g, '')
-  const suffix = token.replace(/[^a-z0-9]/gi, '').slice(0, 8).toLowerCase()
-  const member = memberId === undefined || memberId === '' ? undefined : stableTag(memberId)
-  return [slug === '' ? 'subtask' : slug, member, suffix === '' ? 'run' : suffix]
-    .filter((part): part is string => part !== undefined)
-    .join('-')
-}
-
-/**
- * A stable 4-hex tag for one member id. The name is derived twice for the same
- * member — once for the Lead's prompt and once for the spawn request — so the
- * tag must be a pure function of the id, never of a clock or a counter. FNV-1a
- * keeps it dependency-free in `core/`, which both halves compile.
- */
-function stableTag(value: string): string {
-  let hash = 0x811c9dc5
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index)
-    hash = Math.imul(hash, 0x01000193) >>> 0
-  }
-  return hash.toString(16).padStart(8, '0').slice(0, 4)
-}
-
 export function resolveExecutionTargets(
   task: TaskRecord,
   tasks: readonly TaskRecord[],
@@ -317,13 +383,22 @@ export function resolveExecutionTargets(
 ): TaskRecord {
   if (task.parentId === undefined) return task
   const chain = [task, ...ancestorChain(tasks, task).slice(0, maxSubtaskDepth)]
-  const first = (key: 'workspaceId' | 'mode' | 'model'): string | undefined => {
-    for (const candidate of chain) {
+  const first = (key: 'workspaceId' | 'mode' | 'model' | 'reasoningEffort', candidates: readonly TaskRecord[]): string | undefined => {
+    for (const candidate of candidates) {
       const value = candidate[key]
       if (value !== undefined) return value
     }
     return undefined
   }
+  // The model pin is the boundary of the effort: an effort is only ever taken
+  // from the card the model came from, or from the card that pinned it below
+  // that one. A card with a model of its own thus sends NO effort when it stores
+  // none — the model's own default — instead of quietly running at an ancestor
+  // level chosen for a different model, even when both models declare that
+  // level. A card with no model of its own still inherits the nearest model
+  // together with the nearest level pinned at or below it.
+  const boundary = chain.findIndex(candidate => candidate.model !== undefined)
+  const effortChain = boundary === -1 ? chain : chain.slice(0, boundary + 1)
   const own = effectiveTaskPermission(task)
   // An own binding (pin or handover) keeps its own confirmation stamp; only an
   // absent one borrows the ancestor's binding AND that ancestor's stamp.
@@ -332,9 +407,10 @@ export function resolveExecutionTargets(
     : undefined
   return {
     ...task,
-    workspaceId: first('workspaceId'),
-    mode: first('mode'),
-    model: first('model'),
+    workspaceId: first('workspaceId', chain),
+    mode: first('mode', chain),
+    model: first('model', chain),
+    reasoningEffort: first('reasoningEffort', effortChain),
     permission: own ?? (owner === undefined ? undefined : effectiveTaskPermission(owner)),
     permissionConfirmedAt: own === undefined ? owner?.permissionConfirmedAt : task.permissionConfirmedAt,
   }

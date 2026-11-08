@@ -32,6 +32,7 @@ interface FormState {
   agentPath: string
   proxyJump: string
   proxyCommand: string
+  forwardAgent: boolean
   description: string
   environment: string
   tags: string
@@ -57,6 +58,7 @@ function blankOf(editing: SshHostSummary | null | undefined): FormState {
     agentPath: '',
     proxyJump: (editing?.proxyJump ?? []).join(', '),
     proxyCommand: editing?.proxyCommand ?? '',
+    forwardAgent: editing?.forwardAgent === true,
     description: editing?.description ?? '',
     environment: editing?.environment ?? '',
     tags: (editing?.tags ?? []).join(', '),
@@ -104,12 +106,15 @@ export function HostFormDialog({ api, editing, onClose, onSaved }: HostFormDialo
     }
     // Secrets are never echoed back by the API: when editing and the secret
     // fields are left empty, the auth block is omitted so the stored
-    // authentication is preserved.
+    // authentication is preserved. The agent path is not a secret — an empty
+    // one is the documented "auto-detect" choice — so an agent form always
+    // submits its auth block; omitting it would make the PATCH a silent no-op
+    // that keeps the previous auth kind (#1910).
     const secretEmpty = form.authKind === 'password'
       ? form.password === ''
       : form.authKind === 'key'
         ? form.keyPath.trim() === ''
-        : form.agentPath.trim() === ''
+        : false
     const auth: HostPayload['auth'] = editing != null && secretEmpty
       ? undefined
       : form.authKind === 'password'
@@ -126,6 +131,10 @@ export function HostFormDialog({ api, editing, onClose, onSaved }: HostFormDialo
       // Always sent (never omitted): an empty value is the explicit clear,
       // because the API cannot express "remove this field" any other way.
       proxyCommand: form.proxyCommand.trim(),
+      // Always sent (never omitted): the flag is a plain boolean, so saving the
+      // form can both enable and clear forwarding (omitting it would keep the
+      // stored value under PATCH semantics).
+      forwardAgent: form.forwardAgent,
       description: form.description.trim() === '' ? undefined : form.description.trim(),
       environment: form.environment.trim() === '' ? undefined : form.environment.trim(),
       tags: splitList(form.tags),
@@ -226,6 +235,11 @@ export function HostFormDialog({ api, editing, onClose, onSaved }: HostFormDialo
             onChange={event => { set('proxyCommand', event.target.value) }}
           />
           <span className={css.hint}>{tt('form.proxyCommandHint')}</span>
+        </label>
+        <label className={css.field}>
+          <span className={css.fieldLabel}>{tt('form.forwardAgent')}</span>
+          <input type="checkbox" checked={form.forwardAgent} onChange={event => { set('forwardAgent', event.target.checked) }} />
+          <span className={css.hint}>{tt('form.forwardAgentHint')}</span>
         </label>
         <div className={css.formRow}>
           <label className={css.field}>

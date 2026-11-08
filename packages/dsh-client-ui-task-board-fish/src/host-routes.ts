@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import type { TaskBoardHostService } from './host-service.ts'
 import { writeJson } from './http.ts'
-import { isLoopbackAddress, isLoopbackRequest } from './loopback.ts'
+import { isForwardedLoopbackRequest, isLoopbackAddress, isLoopbackRequest } from './loopback.ts'
 import { TaskParseError, TASK_PARSE_MAX_INPUT } from './host-ai.ts'
 import {
   parseActionEnvelope,
@@ -12,18 +12,65 @@ import {
   type TaskBoardParseDraft,
   type TaskBoardParseRequest,
 } from './protocol.ts'
+import {
+  attachmentErrorStatus,
+  effectiveImageByteLimit,
+  imageRefOf,
+  readRequestBytes,
+  requestChunks,
+  sanitizeAttachmentName,
+  storeFile,
+  storeImage,
+  TaskBoardAttachmentError,
+  type TaskBoardAttachmentStore,
+} from './host/attachments.ts'
 
 const ACTION_LIMIT = 64 * 1024
 const IMPORT_LIMIT = 2 * 1024 * 1024
-const HEARTBEAT_MS = 15_000
+/**
+ * Comment-frame cadence on the event stream. It keeps the connection alive
+ * through intermediaries that would close an idle one; it is not a frame the
+ * browser reports to the panel (an SSE comment is invisible to EventSource).
+ */
+export const HEARTBEAT_MS = 15_000
 
 /** Header replaced by an authenticated same-host reverse proxy. */
 export const TASK_BOARD_PROXY_TOKEN_HEADER = 'x-dsh-task-board-proxy-token'
+
+/**
+ * The composition's Host connection service, narrowed to the one check the
+ * board bridges: `requestRejection` runs the Host/Origin fence and verifies
+ * the authority-bound `dsh-auth-*` browser session minted by the Host. It
+ * answers `undefined` only for a request it admits and 401/403 otherwise.
+ * Declared structurally, like the official open-in-app routes do, because the
+ * service's package is a browser-side dependency this Host half does not
+ * import.
+ */
+export interface TaskBoardConnectionTrust {
+  requestRejection(request: { readonly headers: IncomingMessage['headers'] }): 401 | 403 | undefined
+}
 
 /** Optional authenticated reverse-proxy access layered over the loopback default. */
 export interface TaskBoardRouteAccess {
   trustedProxyHosts?: readonly string[]
   proxyToken?: string
+  /**
+  /**
+   * Whether the operator's own reverse proxy or tunnel may speak for the
+   * browser: a forwarded request that landed on this machine's loopback
+   * upstream then counts as trustable, still behind the browser same-origin
+   * marker. Read at each request (hence the function), so the settings switch
+   * binds the next request without re-registering the routes. Absent or false
+   * keeps the pre-existing fence exactly as it was (issue #1906).
+   */
+  trustForwardedProxy?: () => boolean
+  /**
+   * Resolves the Host's `connection` service when a request arrives, so a
+   * deployment that mounts it after these routes still gains the bridge and a
+   * composition that never mounts it keeps the pre-existing fence. Absent means
+   * no bridge (issue #1930).
+   */
+  connection?: () => TaskBoardConnectionTrust | undefined
 }
 
 /**
@@ -34,11 +81,20 @@ export interface TaskBoardRouteAccess {
  */
 export interface TaskBoardRouteOptions {
   parseTask?: (request: TaskBoardParseRequest, signal: AbortSignal) => Promise<TaskBoardParseDraft>
+  /**
+   * The official attachment storage, read at request time so a deployment that
+   * mounts it after these routes still gains the attachment surface. Absent
+   * means this deployment stores no attachments, and every attachment route
+   * answers with a typed "storage unavailable" failure.
+   */
+  attachments?: () => TaskBoardAttachmentStore | undefined
 }
 
 interface ResolvedRouteAccess {
   trustedProxyHosts: ReadonlySet<string>
   proxyToken?: string
+  trustForwardedProxy: () => boolean
+  connection?: () => TaskBoardConnectionTrust | undefined
 }
 
 function parseAuthority(authority: string): { canonical: string; url: URL } | undefined {
@@ -70,7 +126,12 @@ function resolveAccess(access: TaskBoardRouteAccess): ResolvedRouteAccess {
   if (trustedProxyHosts.size > 0 && (access.proxyToken === undefined || access.proxyToken === '')) {
     throw new Error('task-board: authenticated proxy hosts require a non-empty proxy token')
   }
-  return { trustedProxyHosts, ...(access.proxyToken === undefined ? {} : { proxyToken: access.proxyToken }) }
+  return {
+    trustedProxyHosts,
+    trustForwardedProxy: access.trustForwardedProxy ?? ((): boolean => false),
+    ...(access.proxyToken === undefined ? {} : { proxyToken: access.proxyToken }),
+    ...(access.connection === undefined ? {} : { connection: access.connection }),
+  }
 }
 
 /**
@@ -146,10 +207,36 @@ function matchesToken(candidate: string | string[] | undefined, expected: string
  * tripwire, the socket/Host/origin-equality checks carry the authority).
  * Authenticated proxies must be explicitly allowlisted and replace the
  * internal token header after their own authentication step.
+ *
+ * A third party's proxy cannot inject that token, so a deployment whose own
+ * tunnel dials the loopback upstream (issue #1918) can instead turn on
+ * trustForwardedProxy: a forwarded request that landed on this machine
+ * (loopback socket AND loopback Host) is then admitted on the same browser
+ * marker alone. The switch defaults off, so an unconfigured board keeps
+ * refusing every forwarded request (issue #1906).
+ *
+ * A deployment behind a reverse proxy or ingress that DSH itself serves
+ * (`--trusted-host`, TLS terminated at the edge) is admitted by the Host's
+ * `connection` service instead: a request whose Host/Origin fence and signed
+ * browser session it accepts needs no board-specific allowlist, which is why
+ * the check runs first when the service is mounted (issue #1930). The fence
+ * below stays untouched as the fallback, so a deployment without the service,
+ * and every direct client the service does not admit, keeps exactly the
+ * pre-existing decision.
  */
 export function isTrustedTaskBoardRequest(req: IncomingMessage, access: ResolvedRouteAccess): boolean {
+  const connection = access.connection?.()
+  if (connection !== undefined && connection.requestRejection(req) === undefined) return true
   if (!browserSameOriginMarker(req)) return false
   if (isLoopbackRequest(req)) return true
+  // The tunnel makes the socket and the Host describe the proxy, so the
+  // origin-equality check of the direct fence has nothing to compare on this
+  // path; the explicit cross-site marker is then the one signal that separates
+  // the operator's own page from a third-party page posting through the tunnel,
+  // and it is refused instead of being read as a mere tripwire.
+  if (access.trustForwardedProxy()
+    && req.headers['sec-fetch-site'] !== 'cross-site'
+    && isForwardedLoopbackRequest(req)) return true
   if (!isLoopbackAddress(req.socket.remoteAddress)) return false
   const host = req.headers.host
   if (typeof host !== 'string') return false
@@ -170,6 +257,18 @@ async function readBody(req: IncomingMessage): Promise<{ raw: string; value: unk
   }
   const raw = Buffer.concat(chunks).toString('utf8')
   return { raw, value: JSON.parse(raw) }
+}
+
+/**
+ * The query parameters of one request, read against a fixed base so a
+ * relative request target still parses.
+ */
+function requestQuery(req: IncomingMessage): URLSearchParams {
+  try {
+    return new URL(req.url ?? '/', 'http://localhost').searchParams
+  } catch {
+    return new URLSearchParams()
+  }
 }
 
 export function makeTaskBoardRoutes(
@@ -208,9 +307,19 @@ export function makeTaskBoardRoutes(
         if (parsed.action.kind !== 'import' && Buffer.byteLength(body.raw) > ACTION_LIMIT) {
           return writeJson(res, 413, { ok: false, error: 'body-too-large' }, { 'cache-control': 'no-store' })
         }
-        writeJson(res, 200, await service.apply(parsed.requestId, parsed.action, parsed.initiator), { 'cache-control': 'no-store' })
+        // The verified path: an action that carries attachments is proven
+        // against the official storage BEFORE the ledger commits it, so a
+        // spoofed claim can never become a stored fact.
+        writeJson(res, 200, await service.applyVerified(parsed.requestId, parsed.action, parsed.initiator), { 'cache-control': 'no-store' })
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
+        // An attachment failure keeps its own class: a storage that is
+        // unavailable answers 503 exactly like the upload route does, instead
+        // of being flattened into a generic rejected action.
+        if (error instanceof TaskBoardAttachmentError) {
+          writeJson(res, attachmentErrorStatus(error.code), { ok: false, code: error.code, error: message }, { 'cache-control': 'no-store' })
+          return
+        }
         writeJson(res, message === 'body-too-large' ? 413 : 400, { ok: false, error: message }, { 'cache-control': 'no-store' })
       }
     },
@@ -230,18 +339,48 @@ export function makeTaskBoardRoutes(
         'cache-control': 'no-cache',
         connection: 'keep-alive',
       })
+      // The stream is the board's only live signal, so it also has to be able to
+      // STOP being one. A connection can stop accepting bytes while neither end
+      // has closed it (a half-open socket, an intermediary that stopped
+      // reading); from then on every frame is written into nothing, the browser's
+      // EventSource sees an open stream that never speaks, and the panel keeps
+      // the snapshot it last applied with no error to react to. A failed write is
+      // the one report of that state, so it ends the connection here: the browser
+      // then reports the closed stream, and a closed stream makes the panel read
+      // the state again.
+      let heartbeat: ReturnType<typeof setInterval> | undefined
+      let release: (() => void) | undefined
+      const stop = (): void => {
+        if (heartbeat !== undefined) {
+          clearInterval(heartbeat)
+          heartbeat = undefined
+        }
+        const unsubscribe = release
+        release = undefined
+        unsubscribe?.()
+      }
+      const drop = (): void => {
+        if (release === undefined) return
+        stop()
+        res.destroy()
+      }
+      const write = (chunk: string): void => {
+        if (release === undefined || res.writableEnded || res.destroyed) return
+        // The callback is the only place Node reports a write that never landed;
+        // its result (backpressure) is not an error and is ignored.
+        res.write(chunk, (error) => { if (error !== null && error !== undefined) drop() })
+      }
       const push = (): void => {
-        const payload = service.eventPayload()
-        res.write(`data: ${JSON.stringify(payload)}\n\n`)
+        write(`data: ${JSON.stringify(service.eventPayload())}\n\n`)
       }
-      const unsubscribe = service.subscribe(push)
-      const heartbeat = setInterval(() => { res.write(': ping\n\n') }, HEARTBEAT_MS)
-      const close = (): void => {
-        clearInterval(heartbeat)
-        unsubscribe()
-      }
-      req.once('close', close)
-      res.once('close', close)
+      release = service.subscribe(push)
+      heartbeat = setInterval(() => { write(': ping\n\n') }, HEARTBEAT_MS)
+      req.once('close', stop)
+      res.once('close', stop)
+      // A reset socket reports the same fact as a failed write. Without this
+      // listener Node treats a response error as unhandled, so the connection is
+      // released here instead of being left behind.
+      res.on('error', () => { drop() })
       push()
     },
   }
@@ -302,5 +441,84 @@ export function makeTaskBoardRoutes(
       }
     },
   }
-  return [state, action, events, parse, verification]
+  const attachmentUpload: WebRoute = {
+    kind: 'exact',
+    path: `${TASK_BOARD_API_PREFIX}/attachments/upload`,
+    handler: async (req, res): Promise<void> => {
+      if (req.method !== 'POST') return writeJson(res, 405, { ok: false, error: 'method-not-allowed' }, { 'cache-control': 'no-store' })
+      if (!guard(req, res)) return
+      const store = options.attachments?.()
+      if (store === undefined) {
+        return writeJson(res, 503, { ok: false, code: 'storage-unavailable', error: 'this deployment serves no attachment storage' }, { 'cache-control': 'no-store' })
+      }
+      const query = requestQuery(req)
+      const kind = query.get('kind')
+      if (kind !== 'image' && kind !== 'file') {
+        return writeJson(res, 400, { ok: false, code: 'invalid-request', error: 'the attachment kind must be image or file' }, { 'cache-control': 'no-store' })
+      }
+      const name = sanitizeAttachmentName(query.get('name'))
+      const mediaType = query.get('mediaType') ?? ''
+      try {
+        if (kind === 'image') {
+          // The declared type is what the storage checks the decoded bytes
+          // against, so it is required rather than guessed: a guess would
+          // store a mislabelled object or fail with the storage's own
+          // mismatch error.
+          if (mediaType === '') {
+            return writeJson(res, 400, { ok: false, code: 'invalid-request', error: 'an image upload must declare its media type' }, { 'cache-control': 'no-store' })
+          }
+          const limit = effectiveImageByteLimit(store)
+          const bytes = await readRequestBytes(req, limit)
+          const attachment = await storeImage(store, bytes, name, mediaType)
+          writeJson(res, 200, { ok: true, attachment }, { 'cache-control': 'no-store' })
+          return
+        }
+        const stored = await storeFile(store, requestChunks(req), name, mediaType)
+        writeJson(res, 200, { ok: true, attachment: stored.attachment }, { 'cache-control': 'no-store' })
+      } catch (error) {
+        // The body is drained so the refusal reaches the caller instead of a
+        // closed socket.
+        req.resume()
+        const failure = error instanceof TaskBoardAttachmentError
+          ? error
+          : new TaskBoardAttachmentError('storage-unavailable', 'the attachment storage is unavailable', { cause: error })
+        writeJson(res, attachmentErrorStatus(failure.code), { ok: false, code: failure.code, error: failure.message }, { 'cache-control': 'no-store' })
+      }
+    },
+  }
+  const attachmentImage: WebRoute = {
+    kind: 'exact',
+    path: `${TASK_BOARD_API_PREFIX}/attachments/image`,
+    handler: async (req, res): Promise<void> => {
+      if (req.method !== 'GET') return writeJson(res, 405, { ok: false, error: 'method-not-allowed' }, { 'cache-control': 'no-store' })
+      if (!guard(req, res)) return
+      const store = options.attachments?.()
+      if (store === undefined) {
+        return writeJson(res, 503, { ok: false, code: 'storage-unavailable', error: 'this deployment serves no attachment storage' }, { 'cache-control': 'no-store' })
+      }
+      const id = requestQuery(req).get('id') ?? ''
+      // An image is served only when a card of THIS board references it: an
+      // unreferenced identifier must never become a readable object.
+      const referenced = service.ledger.allTasks().flatMap(task => task.attachments ?? [])
+        .find(attachment => attachment.kind === 'image' && attachment.attachmentId === id)
+      if (referenced === undefined) {
+        return writeJson(res, 404, { ok: false, code: 'not-found', error: 'no card references this attachment' }, { 'cache-control': 'no-store' })
+      }
+      try {
+        const stored = await store.readImage(imageRefOf(referenced))
+        res.writeHead(200, {
+          'content-type': stored.ref.mediaType,
+          'content-length': String(stored.data.byteLength),
+          'cache-control': 'no-store',
+        })
+        res.end(Buffer.from(stored.data))
+      } catch (error) {
+        const failure = error instanceof TaskBoardAttachmentError
+          ? error
+          : new TaskBoardAttachmentError('unreadable', 'the stored attachment could not be read back', { cause: error })
+        writeJson(res, attachmentErrorStatus(failure.code), { ok: false, code: failure.code, error: failure.message }, { 'cache-control': 'no-store' })
+      }
+    },
+  }
+  return [state, action, events, parse, verification, attachmentUpload, attachmentImage]
 }

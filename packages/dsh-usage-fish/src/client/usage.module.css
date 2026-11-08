@@ -3,17 +3,29 @@
    section reads on light and dark themes alike. */
 
 .section {
+  container-name: usage-section;
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
   color: inherit;
 }
 
 .header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px 16px;
+}
+
+.headerActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .currentProvider {
@@ -50,39 +62,40 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 45%, transparent);
 }
 
+/* The page card (PluginSettingsCard) sits in a bare list, as on the sibling
+   Web Extensions pages. */
+.sectionList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The statistics tabs ride the family's segmented track
+   (settings-card.module.css), spread across the card. */
 .tabs {
   display: flex;
-  gap: 4px;
-  border-bottom: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  align-self: stretch;
 }
 
-.tab {
-  appearance: none;
-  border: none;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 13px;
-  padding: 6px 14px;
-  cursor: pointer;
-  opacity: 0.65;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
+.tabs > .tab {
+  flex: 1 1 0;
+  min-width: max-content;
+  text-align: center;
 }
 
-.tab:hover {
-  opacity: 0.9;
+/* The display rows close the card body under a quiet heading, above the
+   hairline the rows draw between themselves. */
+.settingsGroup {
+  display: flex;
+  flex-direction: column;
+  margin-top: 16px;
 }
 
-.tab:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 45%, transparent);
-}
-
-.tabActive {
-  opacity: 1;
+.groupTitle {
+  margin: 0 0 2px;
+  font-size: 12px;
   font-weight: 600;
-  border-bottom-color: currentColor;
+  opacity: 0.6;
 }
 
 .card {
@@ -135,27 +148,30 @@
    control's background, so an unset option background falls back to the
    browser's own (light) list surface while the option text still inherits the
    section's light text color — light text on a light list, unreadable on a
-   dark skin. Both the day picker and the settings-row select therefore give
-   their option list one explicit surface/label pair, read from the tokens the
+   dark skin. The day picker therefore gives its option list one explicit
+   surface/label pair, read from the tokens the
    platform and the skins ship (a skin that omits the surface token falls back
    to the platform's, a host with no theme layer to Canvas). Text and
    background always travel together, per theme half. */
-.daySelect option,
-.settingItem select option {
+.daySelect option {
   background-color: var(--dsw-alias-bg-multi-select, Canvas);
   color: var(--dsw-alias-label-primary, CanvasText);
 }
 
 .statRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 18px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .stat {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, currentColor 4%, transparent);
 }
 
 .statValue {
@@ -218,9 +234,31 @@
 /* 近 30 天提供方/模型条形图：provider 行主导（条宽按窗口内最大 provider
    归一），模型子行缩进细条（行内归一）。 */
 .chart {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+}
+
+.usageSummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.trendAxis {
+  grid-column: 1 / -1;
+}
+
+@container usage-section (max-width: 680px) {
+  .usageSummaryGrid,
+  .chart {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .statRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .chartProvider {
@@ -383,52 +421,6 @@
   opacity: 0.55;
   font-variant-numeric: tabular-nums;
 }
-
-.settingsGrid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  align-items: center;
-}
-
-.settingItem {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-}
-
-.settingItem input[type='checkbox'] {
-  accent-color: currentColor;
-}
-
-.settingItem input[type='number'] {
-  width: 90px;
-  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 13px;
-  padding: 3px 8px;
-}
-
-.settingItem select {
-  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
-  border-radius: 6px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: 13px;
-  padding: 3px 8px;
-}
-
-.settingItem input:focus-visible,
-.settingItem select:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 45%, transparent);
-}
-
 
 /* ---------------------------------------------------------------------------
    Sidebar foot card: the compact usage glance the mount seats as the shell
@@ -594,7 +586,7 @@
 
 .footStripProvider {
   flex: none;
-  max-width: 45%;
+  max-width: 38%;
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 500;
@@ -615,4 +607,62 @@
 :global([data-dsh-frame][data-sidebar-collapsed]) .footCard,
 :global([data-sidebar-collapsed]) .footCard {
   display: none;
+}
+
+/* ---------------------------------------------------------------------------
+   DeepSeek pricing clock: red while the peak window bills double, green while
+   off-peak bills half. The period word rides with the dot, so colour is never
+   the only signal, and the priced sentence lives in the title attribute.
+   --------------------------------------------------------------------------- */
+
+.peakBadge,
+.peakLine {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.peakBadge {
+  flex: none;
+}
+
+.peakLine {
+  gap: 6px;
+}
+
+.peakBadge[data-peak='on'],
+.peakLine[data-peak='on'] {
+  color: var(--dsw-alias-state-error-primary, #b42318);
+}
+
+.peakBadge[data-peak='off'],
+.peakLine[data-peak='off'] {
+  color: var(--dsw-alias-state-success-primary, #067647);
+}
+
+.peakDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* Expanded foot card: its own line at full opacity (the meta line below is
+   dimmed) so the red/green reads on every skin. */
+.footPeak {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.footPeakClock {
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
 }

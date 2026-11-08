@@ -11,11 +11,23 @@ import { mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { RunStats } from '../core/types.ts'
 
-/** One archive-time record. The ledger only knows archives this plugin made. */
+/**
+ * Where one ledger archive time came from.
+ *
+ * - `manual` / `auto`: this plugin performed the archive, so the time is the
+ *   real archive moment.
+ * - `observed`: the session was already archived when this plugin first saw it
+ *   (archived from the official sidebar, which never reaches this plugin), and
+ *   the time records the moment of observation — a conservative lower bound on
+ *   the real archive moment, never a file timestamp.
+ */
+export type LedgerSource = 'manual' | 'auto' | 'observed'
+
+/** One archive-time record. The ledger stays the only archive-time fact source. */
 export interface LedgerEntry {
-  /** Epoch ms of the archive action (manual or automatic). */
+  /** Epoch ms of the archive action (manual, automatic) or of the observation. */
   archivedAt: number
-  source: 'manual' | 'auto'
+  source: LedgerSource
 }
 
 export interface LedgerDocument {
@@ -51,7 +63,9 @@ export function deserializeLedger(raw: string): LedgerDocument {
     if (typeof value !== 'object' || value === null) continue
     const entry = value as { archivedAt?: unknown; source?: unknown }
     if (typeof entry.archivedAt !== 'number' || !Number.isFinite(entry.archivedAt)) continue
-    if (entry.source !== 'manual' && entry.source !== 'auto') continue
+    // Documents written before `observed` existed carry only manual/auto and
+    // keep deserializing unchanged; an unknown source is still dropped.
+    if (entry.source !== 'manual' && entry.source !== 'auto' && entry.source !== 'observed') continue
     entries[id] = { archivedAt: entry.archivedAt, source: entry.source }
   }
   return { version: 1, entries }

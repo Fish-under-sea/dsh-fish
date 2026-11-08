@@ -19,6 +19,7 @@ export interface AgentHostRow {
     keyReady: boolean;
     proxyJump: string[];
     proxyCommandConfigured: boolean;
+    forwardAgent: boolean;
     description?: string;
     environment?: string;
     tags: string[];

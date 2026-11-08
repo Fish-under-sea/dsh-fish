@@ -6,6 +6,7 @@ window.__ModuleLoader__.load({
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
 		let react = require("react");
 		let react_jsx_runtime = require("react/jsx-runtime");
+		let _deepseek_ai_dsh_client_store = require("@deepseek-ai/dsh-client-store");
 		//#region src/core/extension.ts
 		/** Cordis service name the host and browser halves each publish. */
 		const TASK_BOARD_SERVICE_NAME = "taskBoard";
@@ -78,8 +79,204 @@ window.__ModuleLoader__.load({
 			}
 			return Object.keys(result).length === 0 ? void 0 : result;
 		}
+		/** Maximum byte length of one attachment (10 MiB). */
+		const TASK_ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
+		/** Maximum byte length of all attachments of one card together (32 MiB). */
+		const TASK_ATTACHMENT_TOTAL_MAX_BYTES = 32 * 1024 * 1024;
+		/** Raster media types the official image path accepts. */
+		const TASK_ATTACHMENT_IMAGE_MEDIA_TYPES = [
+			"image/png",
+			"image/jpeg",
+			"image/webp",
+			"image/gif"
+		];
+		/** Longest accepted display name of an attachment. */
+		const ATTACHMENT_NAME_MAX_LENGTH = 255;
+		/** Longest accepted media type of an attachment. */
+		const ATTACHMENT_MEDIA_TYPE_MAX_LENGTH = 255;
+		/** Longest accepted storage identifier of an attachment. */
+		const ATTACHMENT_ID_MAX_LENGTH = 512;
+		const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+		const MEDIA_TYPE_PATTERN = /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/;
+		/** Every key one attachment may carry. */
+		const ATTACHMENT_KEYS = [
+			"kind",
+			"attachmentId",
+			"name",
+			"bytes",
+			"mediaType",
+			"sha256",
+			"width",
+			"height"
+		];
+		function isPlainObject(value) {
+			return typeof value === "object" && value !== null && !Array.isArray(value);
+		}
+		/** Whether a value is a well-formed positive pixel count. */
+		function isPixelCount(value) {
+			return typeof value === "number" && Number.isInteger(value) && value > 0;
+		}
+		/**
+		* The canonical display name of an attachment.
+		*
+		* A name reaches the ledger from two directions: the browser picks it, and an
+		* execution prompt reads it. Both make one form mandatory — the name must be
+		* a single line without any path part, so it can neither break out of the
+		* prompt line nor point at a directory.
+		*
+		* The canonical form is therefore: the LEAF of whatever path-like text was
+		* offered, every control character (a newline included) turned into a space,
+		* whitespace runs collapsed into one space, the result trimmed and bounded.
+		* An empty result becomes a fixed placeholder.
+		*
+		* The Host upload path canonicalizes the name BEFORE publishing it, and the
+		* wire gate accepts only a name that already IS canonical — so the name the
+		* ledger holds and the name the storage holds are the same string.
+		* @param value - the offered name.
+		* @returns the canonical name.
+		*/
+		function canonicalAttachmentName(value) {
+			const cleaned = ((typeof value === "string" ? value : "").split(/[\\/]/).pop() ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+			if (cleaned === "") return "attachment";
+			return cleaned.slice(0, ATTACHMENT_NAME_MAX_LENGTH);
+		}
+		/**
+		* Whether an unknown value is a well-formed attachment (the STRICT gate: the
+		* wire path uses it, so a hand-written payload cannot smuggle an extra field
+		* onto the ledger, a path-like name, or an image without its pixel size).
+		* @param value - the candidate attachment.
+		* @returns whether the value is a usable attachment.
+		*/
+		function isTaskAttachment(value) {
+			if (!isPlainObject(value)) return false;
+			if (Object.keys(value).some((key) => !ATTACHMENT_KEYS.includes(key))) return false;
+			if (value.kind !== "image" && value.kind !== "file") return false;
+			if (typeof value.attachmentId !== "string") return false;
+			const id = value.attachmentId;
+			if (id === "" || id.length > ATTACHMENT_ID_MAX_LENGTH) return false;
+			if (id.includes("/") || id.includes("\\") || id.includes("..")) return false;
+			if (typeof value.name !== "string") return false;
+			if (value.name !== canonicalAttachmentName(value.name)) return false;
+			if (typeof value.bytes !== "number" || !Number.isInteger(value.bytes) || value.bytes < 0) return false;
+			if (typeof value.mediaType !== "string" || value.mediaType.length > ATTACHMENT_MEDIA_TYPE_MAX_LENGTH) return false;
+			if (!MEDIA_TYPE_PATTERN.test(value.mediaType)) return false;
+			if (value.mediaType !== value.mediaType.toLowerCase()) return false;
+			if (typeof value.sha256 !== "string" || !SHA256_PATTERN.test(value.sha256)) return false;
+			if (value.kind === "image") {
+				if (!TASK_ATTACHMENT_IMAGE_MEDIA_TYPES.includes(value.mediaType.toLowerCase())) return false;
+				if (!isPixelCount(value.width) || !isPixelCount(value.height)) return false;
+			} else if (value.width !== void 0 || value.height !== void 0) return false;
+			return true;
+		}
+		/**
+		* Repair one persisted attachment entry: canonicalize its name and keep the
+		* fields that are usable. An entry that cannot be repaired — an unknown kind,
+		* a malformed identifier, an image without its pixel size — is dropped.
+		* @param value - the persisted entry.
+		* @returns the repaired attachment, or undefined when it cannot be repaired.
+		*/
+		function repairAttachment(value) {
+			if (!isPlainObject(value)) return void 0;
+			if (value.kind !== "image" && value.kind !== "file") return void 0;
+			if (typeof value.attachmentId !== "string") return void 0;
+			const id = value.attachmentId;
+			if (id === "" || id.length > ATTACHMENT_ID_MAX_LENGTH) return void 0;
+			if (id.includes("/") || id.includes("\\") || id.includes("..")) return void 0;
+			if (typeof value.bytes !== "number" || !Number.isInteger(value.bytes) || value.bytes < 0) return void 0;
+			if (typeof value.mediaType !== "string" || !MEDIA_TYPE_PATTERN.test(value.mediaType)) return void 0;
+			if (typeof value.sha256 !== "string" || !SHA256_PATTERN.test(value.sha256)) return void 0;
+			const name = canonicalAttachmentName(value.name);
+			if (value.kind === "image") {
+				if (!TASK_ATTACHMENT_IMAGE_MEDIA_TYPES.includes(value.mediaType.toLowerCase())) return void 0;
+				if (!isPixelCount(value.width) || !isPixelCount(value.height)) return void 0;
+				return {
+					kind: "image",
+					attachmentId: id,
+					name,
+					bytes: value.bytes,
+					mediaType: value.mediaType.toLowerCase(),
+					sha256: value.sha256,
+					width: value.width,
+					height: value.height
+				};
+			}
+			if (value.width !== void 0 || value.height !== void 0) return void 0;
+			return {
+				kind: "file",
+				attachmentId: id,
+				name,
+				bytes: value.bytes,
+				mediaType: value.mediaType.toLowerCase(),
+				sha256: value.sha256
+			};
+		}
+		/**
+		* Drop the repeated storage identifiers of a list, keeping the FIRST entry of
+		* each identifier.
+		*
+		* The storage is content-addressed, so the same bytes uploaded twice produce
+		* the same identifier. A list that carried the identifier twice would render
+		* two rows for one object and claim it twice against the card's limits, so the
+		* list is deduplicated at the boundary that can produce it.
+		* @param attachments - the candidate list.
+		* @returns the deduplicated list, in the original order.
+		*/
+		function dedupeAttachments(attachments) {
+			const seen = /* @__PURE__ */ new Set();
+			const unique = [];
+			for (const attachment of attachments) {
+				if (seen.has(attachment.attachmentId)) continue;
+				seen.add(attachment.attachmentId);
+				unique.push(attachment);
+			}
+			return unique;
+		}
+		/**
+		* Repair a persisted attachment list: canonicalize the names, drop the
+		* entries that cannot be repaired, deduplicate the storage identifiers, and
+		* cap the count and the byte totals. Returns undefined when nothing usable
+		* remains, so the caller clears the field instead of storing an empty list —
+		* the same policy the tag and schedule repairs follow.
+		* @param value - the persisted value.
+		* @returns the repaired list, or undefined when nothing survives.
+		*/
+		function normalizeAttachments(value) {
+			if (!Array.isArray(value)) return void 0;
+			const repaired = [];
+			const seen = /* @__PURE__ */ new Set();
+			let total = 0;
+			for (const entry of value) {
+				const attachment = repairAttachment(entry);
+				if (attachment === void 0) continue;
+				if (attachment.bytes > 10485760) continue;
+				if (total + attachment.bytes > 33554432) continue;
+				if (seen.has(attachment.attachmentId)) continue;
+				seen.add(attachment.attachmentId);
+				total += attachment.bytes;
+				repaired.push(attachment);
+				if (repaired.length >= 8) break;
+			}
+			return repaired.length === 0 ? void 0 : repaired;
+		}
 		//#endregion
 		//#region src/core/tasks.ts
+		/**
+		* Upper bound of one recorded summary, in characters. The ledger stores a
+		* conclusion, not a transcript: a reader that needs the whole message follows
+		* {@link ExecutionSummary.seq} into the session history.
+		*/
+		const EXECUTION_SUMMARY_LIMIT = 4e3;
+		/**
+		* Repair a persisted rework block: only a non-blank instruction string
+		* survives, so a hand-edited ledger loses the block instead of the execution.
+		*/
+		function normalizeExecutionRework(value) {
+			if (typeof value !== "object" || value === null) return void 0;
+			const instructions = value.instructions;
+			if (typeof instructions !== "string") return void 0;
+			const trimmed = instructions.trim();
+			return trimmed === "" ? void 0 : { instructions: trimmed };
+		}
 		/** Every stop reason this build understands; the repair and wire gates share it. */
 		const SCHEDULE_STOP_REASONS = [
 			"fired",
@@ -280,6 +477,7 @@ window.__ModuleLoader__.load({
 		function createTask(input, now, id) {
 			const tags = normalizeTags(input.tags);
 			const integrations = normalizeTaskIntegrations(input.integrations);
+			const attachments = normalizeAttachments(input.attachments);
 			return {
 				id,
 				title: input.title.trim(),
@@ -294,8 +492,8 @@ window.__ModuleLoader__.load({
 				mode: normalizeTargetId(input.mode),
 				permission: isTaskPermission(input.permission) ? input.permission : void 0,
 				model: normalizeTargetId(input.model),
+				reasoningEffort: normalizeTargetId(input.reasoningEffort),
 				reuseSession: input.reuseSession === true ? true : void 0,
-				teamRun: input.teamRun === true ? true : void 0,
 				goalRun: input.goalRun === true ? true : void 0,
 				skipVerification: input.skipVerification === true ? true : void 0,
 				...input.freeze === void 0 ? {} : { freeze: freezeOf(input.freeze, now) },
@@ -305,6 +503,7 @@ window.__ModuleLoader__.load({
 				} },
 				...tags === void 0 ? {} : { tags },
 				...integrations === void 0 ? {} : { integrations },
+				...attachments === void 0 ? {} : { attachments },
 				...input.hidden === true ? { hidden: true } : {}
 			};
 		}
@@ -506,6 +705,48 @@ window.__ModuleLoader__.load({
 				reason: "depth-exceeded"
 			};
 			return { ok: true };
+		}
+		/**
+		* Whether a card still has work outstanding: anything outside the `done`
+		* column. It keys on the column alone, so it covers both a subtask that ran
+		* and one an operator moved to done by hand.
+		*/
+		function isOutstanding(task) {
+			return task.status !== "done";
+		}
+		/**
+		* The failure text the Host records when a run would have been forced under
+		* the dispatcher preset on a deployment that cannot orchestrate.
+		*
+		* A finished sentence rather than a code (the shape `core/workspace-target.ts`
+		* gives its missing-workspace refusal): the ledger stores it as the
+		* execution's failure text, the agent tools serve it to a model, and any
+		* client prints it verbatim. It names the fix, not the mechanism. The launch
+		* is refused before any session exists, because the dispatcher preset would
+		* otherwise stop and wait for a human reply that an unattended run never
+		* brings.
+		*/
+		const LEGACY_AGENT_TEAMS_REASON = "this deployment runs the legacy Agent Teams runtime, which cannot dispatch a card that has unfinished subtasks under the liangshen preset; disable that runtime and restart the Host, or finish the subtasks before running";
+		/**
+		* Whether a recorded failure text is the legacy-runtime refusal, which the
+		* browser half renders in the reader's own language.
+		* @param reason - the execution's recorded failure text.
+		* @returns true when that run was refused for a deployment that cannot orchestrate.
+		*/
+		function isLegacyAgentTeamsReason(reason) {
+			return reason === LEGACY_AGENT_TEAMS_REASON;
+		}
+		/**
+		* Whether a card belongs to a run's dispatch set: the card the request named,
+		* or a card whose work is still outstanding. Kept for the browser's subtask
+		* preview; the Host run itself opens the clicked card alone
+		* ({@link cascadeTargets}).
+		* @param task - the candidate card.
+		* @param rootId - the task the run request named.
+		* @returns false when this card is finished and left alone.
+		*/
+		function joinsCascadeRun(task, rootId) {
+			return task.id === rootId || isOutstanding(task);
 		}
 		/**
 		* The permission a task would actually run under: its handover bundle's pin
@@ -875,6 +1116,57 @@ window.__ModuleLoader__.load({
 			return /^\d+$/.test(value);
 		}
 		//#endregion
+		//#region src/core/card-defaults.ts
+		/** Trim one optional target: blank text means "not set", like every stored pin. */
+		function textOf(value) {
+			return value?.trim() ?? "";
+		}
+		/**
+		* Resolve the execution targets a new card starts from.
+		* @param defaults - the board's configured new-card defaults, if any.
+		* @param source - the card this one is created from (a duplicate or a parent), if any.
+		* @param picked - what the caller chose explicitly; a non-blank value wins.
+		* @returns the four targets, blank where nothing supplies a value.
+		*/
+		function resolveCardTargets(defaults, source, picked) {
+			const defaultMode = textOf(defaults?.mode);
+			const defaultPermission = textOf(defaults?.permission);
+			const defaultModel = textOf(defaults?.model);
+			const defaultEffort = defaultModel === "" ? "" : textOf(defaults?.reasoningEffort);
+			const chosen = {
+				mode: textOf(picked?.mode),
+				permission: textOf(picked?.permission),
+				model: textOf(picked?.model),
+				reasoningEffort: textOf(picked?.reasoningEffort)
+			};
+			const copied = source === void 0 ? void 0 : {
+				mode: textOf(source.task.mode),
+				permission: textOf(source.task.permission),
+				model: textOf(source.task.model),
+				reasoningEffort: textOf(source.task.reasoningEffort)
+			};
+			/** The value carried over from the source card, or the board default. */
+			const inherited = (key) => {
+				const fallback = key === "mode" ? defaultMode : key === "model" ? defaultModel : defaultPermission;
+				if (copied === void 0 || key === "permission" && source?.kind === "parent") return fallback;
+				return copied[key] === "" ? fallback : copied[key];
+			};
+			const mode = chosen.mode === "" ? inherited("mode") : chosen.mode;
+			const permission = chosen.permission === "" ? inherited("permission") : chosen.permission;
+			const model = chosen.model === "" ? inherited("model") : chosen.model;
+			let reasoningEffort = chosen.reasoningEffort;
+			if (reasoningEffort === "" && chosen.model === "") {
+				const sourced = copied === void 0 ? "" : copied.reasoningEffort;
+				reasoningEffort = sourced !== "" ? sourced : model !== "" && model === defaultModel ? defaultEffort : "";
+			}
+			return {
+				mode,
+				permission,
+				model,
+				reasoningEffort
+			};
+		}
+		//#endregion
 		//#region src/core/use-cases/task-create.ts
 		/**
 		* Create-task use case: mint a new task from user input, rejecting a blank
@@ -887,18 +1179,22 @@ window.__ModuleLoader__.load({
 		* appended ledger, or the unchanged ledger when the title is blank or the
 		* requested parent link is refused.
 		*
-		* A subtask inherits the execution targets its parent already pins (workspace,
-		* agent preset, permission, model) unless the form supplied its own; the
-		* parent human permission confirmation travels with an inherited permission,
-		* so a subtask of an already-confirmed elevated card is runnable at once.
+		* The execution targets resolve through {@link resolveCardTargets}: what the
+		* caller sent wins, then the parent's own pins, then - only when the caller
+		* opted in with `applyCardDefaults` - the deployment's configured new-card
+		* defaults. Without the flag the resolution sees no defaults at all, which is
+		* exactly the inline parent inheritance this path has always applied. The
+		* workspace is not part of that resolution: a subtask still takes the parent's
+		* workspace, and the defaults never name one.
 		* @param tasks - current ledger.
 		* @param input - raw user input (title/description/prompt + optional schedule/parent).
 		* @param now - clock instant (ms epoch).
 		* @param id - minted task id.
 		* @param maxSubtaskDepth - deployment subtask depth limit.
 		* @param hostTimeZone - zone a rule that stores no zone of its own follows.
+		* @param cardDefaults - the deployment's new-card defaults, read live at creation.
 		*/
-		function applyCreateTask(tasks, input, now, id, maxSubtaskDepth = 1, hostTimeZone = resolveHostTimeZone()) {
+		function applyCreateTask(tasks, input, now, id, maxSubtaskDepth = 1, hostTimeZone = resolveHostTimeZone(), cardDefaults) {
 			if (input.title.trim() === "") return {
 				task: void 0,
 				tasks,
@@ -924,11 +1220,22 @@ window.__ModuleLoader__.load({
 					error: `subtask depth limit (${limit}) exceeded`
 				};
 			}
-			let task = createTask(parent === void 0 ? input : {
+			const seed = resolveCardTargets(input.applyCardDefaults === true ? cardDefaults : void 0, parent === void 0 ? void 0 : {
+				kind: "parent",
+				task: parent
+			}, {
+				mode: input.mode,
+				permission: input.permission,
+				model: input.model,
+				reasoningEffort: input.reasoningEffort
+			});
+			let task = createTask({
 				...input,
-				workspaceId: input.workspaceId ?? parent.workspaceId,
-				mode: input.mode ?? parent.mode,
-				model: input.model ?? parent.model
+				workspaceId: input.workspaceId ?? parent?.workspaceId,
+				mode: seed.mode,
+				permission: isTaskPermission(seed.permission) ? seed.permission : void 0,
+				model: seed.model,
+				reasoningEffort: seed.reasoningEffort
 			}, now, id);
 			const requested = input.schedule;
 			if (requested?.enabled === true) {
@@ -1221,6 +1528,13 @@ window.__ModuleLoader__.load({
 		* Renaming onto a name that is already in use MERGES the two: a task carrying
 		* both keeps the row it already had (with its execution hint) and loses the
 		* duplicate, which is the only reading that cannot lose a hint the user typed.
+		*
+		* Clearing up is the third ledger-wide transition, and it is a SELECTION rather
+		* than a fourth rewrite: {@link cleanupCandidates} names the labels that are
+		* both rarely used and attached only to finished tasks, and each of them then
+		* leaves through {@link applyDeleteTag} like any other delete. One delete path,
+		* one meaning — a label never disappears by a second rule written beside the
+		* first.
 		*/
 		/** Trim a label name the way creation does. */
 		function normalizeName(value) {
@@ -1325,6 +1639,49 @@ window.__ModuleLoader__.load({
 				changed
 			};
 		}
+		/**
+		* Labels that are both rarely used and finished with: fewer tasks carry them
+		* than `threshold`, and every one of those tasks is done or failed.
+		*
+		* The judgement reads the whole ledger it is given — the board's label row and
+		* the archive draw from the same set, so an archived card counts towards a
+		* label's usage and can keep it alive on its own. Archiving alone decides
+		* nothing: an archived card in a finished column lets its label through, while
+		* an archived card still in backlog, todo or running holds it back, because a
+		* label that live work still points at is not junk.
+		*
+		* A non-finite threshold selects nothing (a missing number has no reading that
+		* is safe to act on); a threshold at or below one selects nothing either, since
+		* a label by definition sits on at least one task and none can carry fewer.
+		*
+		* Order follows {@link collectKnownTags}, which is the order the manager lists
+		* labels in, and the count is the same number the manager shows per label.
+		* @param tasks - the whole ledger (board and archive).
+		* @param threshold - exclusive upper bound on the usage count.
+		* @returns the labels a cleanup may remove, in listing order.
+		*/
+		function cleanupCandidates(tasks, threshold) {
+			if (!Number.isFinite(threshold)) return [];
+			const counts = /* @__PURE__ */ new Map();
+			const unfinished = /* @__PURE__ */ new Set();
+			for (const task of tasks) {
+				const settled = task.status === "done" || task.status === "failed";
+				for (const tag of task.tags ?? []) {
+					counts.set(tag.name, (counts.get(tag.name) ?? 0) + 1);
+					if (!settled) unfinished.add(tag.name);
+				}
+			}
+			const candidates = [];
+			for (const tag of collectKnownTags(tasks)) {
+				const count = counts.get(tag.name) ?? 0;
+				if (count >= threshold || unfinished.has(tag.name)) continue;
+				candidates.push({
+					name: tag.name,
+					count
+				});
+			}
+			return candidates;
+		}
 		//#endregion
 		//#region src/core/use-cases/task-update.ts
 		/**
@@ -1347,6 +1704,7 @@ window.__ModuleLoader__.load({
 			"description",
 			"prompt"
 		];
+		[...TASK_CONTENT_FIELDS];
 		/**
 		* Whether a task's content may still be edited: the task must be on-board
 		* (not archived) and must never have started executing. Fail-closed: a task
@@ -1373,11 +1731,12 @@ window.__ModuleLoader__.load({
 		function applyUpdateTask(tasks, id, patch, now) {
 			return tasks.map((task) => {
 				if (task.id !== id) return task;
-				const { freeze: freezePatch, handover: handoverPatch, tags: tagsPatch, ...rest } = patch;
+				const { freeze: freezePatch, handover: handoverPatch, tags: tagsPatch, attachments: attachmentsPatch, ...rest } = patch;
 				const workspaceId = "workspaceId" in patch ? normalizeTargetId(patch.workspaceId) : void 0;
 				const mode = "mode" in patch ? normalizeTargetId(patch.mode) : void 0;
 				const permission = "permission" in patch ? normalizePermission(task.permission, patch.permission) : void 0;
 				const model = "model" in patch ? normalizeTargetId(patch.model) : void 0;
+				const reasoningEffort = "reasoningEffort" in patch ? normalizeTargetId(patch.reasoningEffort) : void 0;
 				const next = {
 					...task,
 					...rest,
@@ -1394,15 +1753,16 @@ window.__ModuleLoader__.load({
 					bundledAt: now
 				};
 				if ("tags" in patch) next.tags = tagsPatch == null ? void 0 : normalizeTags(tagsPatch);
+				if ("attachments" in patch) next.attachments = attachmentsPatch == null ? void 0 : normalizeAttachments(attachmentsPatch);
 				if ("permission" in patch && patch.permission !== void 0 && patch.permission !== task.permission || "handover" in patch) next.permissionConfirmedAt = void 0;
 				if ("reuseSession" in patch) next.reuseSession = patch.reuseSession === true ? true : void 0;
-				if ("teamRun" in patch) next.teamRun = patch.teamRun === true ? true : void 0;
 				if ("goalRun" in patch) next.goalRun = patch.goalRun === true ? true : void 0;
 				if ("skipVerification" in patch) next.skipVerification = patch.skipVerification === true ? true : void 0;
 				if (workspaceId !== void 0 || "workspaceId" in patch) next.workspaceId = workspaceId;
 				if (mode !== void 0 || "mode" in patch) next.mode = mode;
 				if (permission !== void 0 || "permission" in patch) next.permission = permission;
 				if (model !== void 0 || "model" in patch) next.model = model;
+				if (reasoningEffort !== void 0 || "reasoningEffort" in patch) next.reasoningEffort = reasoningEffort;
 				return next;
 			});
 		}
@@ -1457,6 +1817,8 @@ window.__ModuleLoader__.load({
 			hostState;
 			/** Provider visibility predicates (immutable array; replaced on change). */
 			visibility = [];
+			/** Provider source-group selectors (immutable array; replaced on change). */
+			grouping = [];
 			remoteSubscribed = false;
 			remoteInitialization;
 			/** @param deps - store and the sessions navigation face. */
@@ -1497,6 +1859,7 @@ window.__ModuleLoader__.load({
 					...this.transportError === void 0 ? {} : { transportError: this.transportError },
 					...this.hostState === void 0 ? {} : { host: this.hostState },
 					visibility: this.visibility,
+					grouping: this.grouping,
 					...this.hostState?.extensions === void 0 ? {} : { extensions: this.hostState.extensions }
 				};
 			}
@@ -1511,6 +1874,17 @@ window.__ModuleLoader__.load({
 					const next = this.visibility.filter((candidate) => candidate !== predicate);
 					if (next.length === this.visibility.length) return;
 					this.visibility = next;
+					this.notify();
+				};
+			}
+			/** Register one source-group selector; registration order breaks ownership ties. */
+			registerGrouping(selector) {
+				this.grouping = [...this.grouping, selector];
+				this.notify();
+				return () => {
+					const next = this.grouping.filter((candidate) => candidate !== selector);
+					if (next.length === this.grouping.length) return;
+					this.grouping = next;
 					this.notify();
 				};
 			}
@@ -1542,6 +1916,21 @@ window.__ModuleLoader__.load({
 			/** Retry initial migration/state synchronization after an explicit Host error. */
 			async retryHostSync() {
 				return await this.initializeRemote();
+			}
+			/**
+			* Re-read the authoritative Host snapshot.
+			*
+			* The board's volatile deployment configuration — the new-card defaults among
+			* it — is republished the moment the settings document is written, but the SSE
+			* frame that republish emits carries the value as of BEFORE the write (the
+			* loader hands the update to the fiber while the new document is not yet
+			* visible to it), so a mirror that followed frames alone would stay one edit
+			* behind and the create dialog would prefill from the previous defaults for
+			* the rest of the session. The surface that owns the write asks for the
+			* snapshot again instead of trusting the frame.
+			*/
+			refreshHostState() {
+				this.refreshRemote();
 			}
 			/**
 			* Show the board. The layout owns which panel the center column renders, so
@@ -1616,7 +2005,7 @@ window.__ModuleLoader__.load({
 			}
 			createTask(input) {
 				const id = this.uuid();
-				const { task, tasks } = applyCreateTask(this.tasks, input, this.now(), id, this.mirrorDepth());
+				const { task, tasks } = applyCreateTask(this.tasks, input, this.now(), id, this.mirrorDepth(), void 0, this.hostState?.cardDefaults);
 				if (task === void 0) return void 0;
 				this.tasks = [...tasks];
 				this.persistAndNotify();
@@ -1626,7 +2015,7 @@ window.__ModuleLoader__.load({
 			async createTaskConfirmed(input) {
 				if (this.deps.transport === void 0) return this.createTask(input);
 				const id = this.uuid();
-				if (applyCreateTask(this.tasks, input, this.now(), id, this.mirrorDepth()).task === void 0) return void 0;
+				if (applyCreateTask(this.tasks, input, this.now(), id, this.mirrorDepth(), void 0, this.hostState?.cardDefaults).task === void 0) return void 0;
 				return await this.commitRemote({
 					kind: "create",
 					id,
@@ -1688,6 +2077,22 @@ window.__ModuleLoader__.load({
 				const parse = transport?.parseDraft;
 				if (transport === void 0 || parse === void 0) throw new Error("task parsing is unavailable");
 				return await parse.call(transport, request, signal);
+			}
+			/**
+			* Upload one attachment into the Host's attachment storage.
+			*
+			* The form calls this when the card is SAVED, never when a file is picked:
+			* a staged file is a local preview until the card is really saved.
+			* @param file - the picked file.
+			* @param kind - whether the file is stored as an image or verbatim.
+			* @returns the metadata the Host computed, or undefined when this
+			*   deployment serves no attachment storage.
+			*/
+			async uploadAttachment(file, kind) {
+				const transport = this.deps.transport;
+				const upload = transport?.uploadAttachment;
+				if (transport === void 0 || upload === void 0) return void 0;
+				return await upload.call(transport, file, kind);
 			}
 			moveTask(id, status) {
 				if (this.deps.transport !== void 0) {
@@ -2009,28 +2414,31 @@ window.__ModuleLoader__.load({
 				return this.hostState?.maxSubtaskDepth ?? 1;
 			}
 			/**
-			* Project a Host snapshot onto the browser's mirror. SSE frames and partial
-			* snapshots carry only the volatile subset (revision/scheduler/power), so the
-			* deployment constants the UI reads — the session-default permission the
-			* confirmation banner compares against and the subtask depth limit — are
-			* carried over from the last full snapshot instead of being dropped by a
-			* heartbeat frame.
+			* Project a Host snapshot onto the browser's mirror. Every snapshot the
+			* transport serves is a full document (bootstrap/state/action all answer
+			* `TaskBoardHostService.snapshot()`), so the deployment constants the UI reads
+			* — the session-default permission the confirmation banner compares against,
+			* the subtask depth limit, the platform switches and the extensions a provider
+			* published — are taken as published, carried over only where the snapshot
+			* itself omits the key.
 			*/
 			mirrorOf(snapshot) {
 				const sessionDefaultPermission = snapshot.sessionDefaultPermission ?? this.hostState?.sessionDefaultPermission;
 				const maxSubtaskDepth = snapshot.maxSubtaskDepth ?? this.hostState?.maxSubtaskDepth;
-				const teamRunAvailable = snapshot.teamRunAvailable ?? this.hostState?.teamRunAvailable;
 				const goalRunEnabled = snapshot.goalRunEnabled ?? this.hostState?.goalRunEnabled;
+				const cardDefaults = snapshot.cardDefaults;
 				const extensions = snapshot.extensions ?? this.hostState?.extensions;
+				const attachmentLimits = snapshot.attachmentLimits ?? this.hostState?.attachmentLimits;
 				return {
 					revision: snapshot.revision,
 					scheduler: snapshot.scheduler,
 					power: snapshot.power,
 					...sessionDefaultPermission === void 0 ? {} : { sessionDefaultPermission },
 					...maxSubtaskDepth === void 0 ? {} : { maxSubtaskDepth },
-					...teamRunAvailable === void 0 ? {} : { teamRunAvailable },
 					...goalRunEnabled === void 0 ? {} : { goalRunEnabled },
-					...extensions === void 0 ? {} : { extensions }
+					...cardDefaults === void 0 ? {} : { cardDefaults },
+					...extensions === void 0 ? {} : { extensions },
+					...attachmentLimits === void 0 ? {} : { attachmentLimits }
 				};
 			}
 			async refreshRemote(preserveError) {
@@ -2064,6 +2472,208 @@ window.__ModuleLoader__.load({
 			}
 		};
 		//#endregion
+		//#region src/client/board/model-options.ts
+		/** A plain JSON object, or undefined for anything else (including arrays). */
+		function record(value) {
+			return typeof value === "object" && value !== null && !Array.isArray(value) ? value : void 0;
+		}
+		/** A non-empty string, or undefined. */
+		function text(value) {
+			return typeof value === "string" && value !== "" ? value : void 0;
+		}
+		/** The effort ids an adapter published for one model, in catalog order. */
+		function effortIdsOf(reasoning) {
+			const efforts = [];
+			for (const entry of Array.isArray(reasoning.efforts) ? reasoning.efforts : []) {
+				const id = text(record(entry)?.id);
+				if (id !== void 0 && !efforts.includes(id)) efforts.push(id);
+			}
+			return efforts;
+		}
+		/**
+		* What the catalog declares about one model's reasoning: a published
+		* `reasoning` block is what "this route reasons" means, and a model published
+		* without one is declared to have none. A model the reply never described at
+		* all is a different state, expressed by the row carrying no capability.
+		*/
+		function reasoningOf(model) {
+			const reasoning = record(model.reasoning);
+			if (reasoning === void 0) return { supported: false };
+			const efforts = effortIdsOf(reasoning);
+			return {
+				supported: true,
+				...efforts.length === 0 ? {} : { efforts }
+			};
+		}
+		/**
+		* One picker row, or undefined when the entry carries no usable id.
+		* @param withCapability - whether this reply declares reasoning metadata at
+		* all; the flat discovery list does not, so its rows stay silent about it.
+		*/
+		function rowOf(model, provider, withCapability) {
+			const id = text(model.id);
+			if (id === void 0) return void 0;
+			const reasoning = withCapability ? reasoningOf(model) : void 0;
+			return {
+				id: provider === void 0 ? id : `${provider}/${id}`,
+				name: text(model.name) ?? id,
+				...provider === void 0 ? {} : { provider },
+				...reasoning === void 0 ? {} : { reasoning }
+			};
+		}
+		/**
+		* Normalize a `session/modelCatalog` reply into picker rows: one row per model
+		* of every provider group, keyed by the qualified route an execution pins.
+		* @param value - the raw catalog reply.
+		* @returns the rows, empty when the reply is unreadable.
+		*/
+		function modelOptionsFromCatalog(value) {
+			const options = [];
+			const groups = record(value)?.groups;
+			for (const entry of Array.isArray(groups) ? groups : []) {
+				const group = record(entry);
+				if (group === void 0) continue;
+				const provider = text(group.id) ?? text(group.provider);
+				for (const item of Array.isArray(group.models) ? group.models : []) {
+					const model = record(item);
+					if (model === void 0) continue;
+					const row = rowOf(model, provider, true);
+					if (row !== void 0) options.push(row);
+				}
+			}
+			return options;
+		}
+		/**
+		* Normalize the flat `llm/discoverModels` list into picker rows. That reply
+		* names models only, so every row leaves the reasoning capability unknown.
+		* @param value - the raw discovery list.
+		* @returns the rows, empty when the list is unreadable.
+		*/
+		function modelOptionsFromDiscoveredModels(value) {
+			const options = [];
+			for (const item of Array.isArray(value) ? value : []) {
+				const model = record(item);
+				if (model === void 0) continue;
+				const row = rowOf(model, void 0, false);
+				if (row !== void 0) options.push(row);
+			}
+			return options;
+		}
+		/**
+		* The display form of one model row: the model name first, then the provider
+		* that publishes it, joined by " · ".
+		*
+		* Two providers publishing one model name are two different routes, so the
+		* provider belongs in the label — otherwise the picker offers two identical
+		* rows and the operator cannot tell which route a card would pin. A row
+		* without a provider (the flat discovery fallback names models only) keeps
+		* its bare name, and a row that carries no name of its own shows the model
+		* part of its own qualified route, so the provider is never printed twice.
+		* @param model - the roster row.
+		* @returns the label every model picker row and every collapsed summary shows.
+		*/
+		function modelDisplayLabel(model) {
+			const provider = model.provider === void 0 || model.provider === "" ? void 0 : model.provider;
+			const name = model.name !== void 0 && model.name !== "" ? model.name : provider !== void 0 && model.id.startsWith(provider + "/") ? model.id.slice(provider.length + 1) : model.id;
+			if (provider === void 0) return name;
+			return name + " · " + provider;
+		}
+		/**
+		* The picker rows of a model roster: the qualified `provider/model` route as
+		* the value a pin stores, and the shared display form as the label, so two
+		* providers offering one model name stay distinguishable.
+		* @param models - the roster rows.
+		* @returns the choice rows, in roster order.
+		*/
+		function modelChoiceRows(models) {
+			return models.map((model) => ({
+				value: model.id,
+				label: modelDisplayLabel(model)
+			}));
+		}
+		/**
+		* The capability row the roster publishes for one model route.
+		* @returns undefined when no model is pinned, or the roster does not describe
+		* the pinned one — an unknown model is not the same as a model without
+		* reasoning.
+		*/
+		function reasoningOfModel(models, modelId) {
+			if (modelId === "") return void 0;
+			return models.find((item) => item.id === modelId)?.reasoning;
+		}
+		/**
+		* The effort ids the picker offers for a model, in catalog order.
+		* @returns an empty list when the model is unpinned, unknown, declares no
+		* reasoning, or publishes no selectable level.
+		*/
+		function reasoningEffortsFor(models, modelId) {
+			const reasoning = reasoningOfModel(models, modelId);
+			return reasoning?.supported === true ? [...reasoning.efforts ?? []] : [];
+		}
+		/** Whether the effort picker may be operated: a pinned model with declared, selectable levels. */
+		function reasoningPickerEnabled(models, modelId) {
+			return reasoningEffortsFor(models, modelId).length > 0;
+		}
+		/**
+		* The effort to keep when the picked model changes. Only a model that declares
+		* its levels can invalidate one: a model the roster cannot describe keeps the
+		* stored value, because the roster has no grounds to call it invalid.
+		* @param effort - the effort currently stored/selected ('' = follow the default).
+		* @returns the effort to keep.
+		*/
+		function reconcileReasoningEffort(models, modelId, effort) {
+			if (effort === "") return "";
+			const reasoning = reasoningOfModel(models, modelId);
+			if (reasoning === void 0) return modelId === "" ? "" : effort;
+			return reasoning.efforts?.includes(effort) === true ? effort : "";
+		}
+		/**
+		* The copy explaining why the picker is in its current state. One lookup for
+		* both editors, so the create dialog and the detail page never drift apart.
+		*/
+		function reasoningHintKey(models, modelId) {
+			if (modelId === "") return "exec.reasoning.hint.pickModel";
+			if (reasoningOfModel(models, modelId) === void 0) return "exec.reasoning.hint.unknownModel";
+			return reasoningPickerEnabled(models, modelId) ? "exec.reasoning.hint.inherit" : "exec.reasoning.hint.noEfforts";
+		}
+		//#endregion
+		//#region src/client/board/preset-roster.ts
+		/**
+		* Read the agent-preset roster of one deployment. The caller passes the
+		* namespace resolved inside its scoped inject, so a host that serves no such
+		* namespace never reaches here; a host that serves it answers `ok: false`
+		* instead, which leaves the caller's options untouched.
+		* @param remote - the `remote.agentPresets` namespace.
+		* @returns the roster, or a failed read the caller ignores.
+		*/
+		async function readPresetRoster(remote) {
+			const response = await remote.list();
+			if (!response.ok) return {
+				ok: false,
+				presets: []
+			};
+			return {
+				ok: true,
+				presets: response.value.presets
+			};
+		}
+		/**
+		* Normalize one roster into the picker rows the UI consumes. A preset that
+		* cannot compose a session keeps its `broken` reason: the pickers show it and
+		* disable it, so a missing preset never looks like a missing roster.
+		* @param presets - the roster rows.
+		* @returns the picker options.
+		*/
+		function presetOptionsFromRoster(presets) {
+			return presets.map((preset) => ({
+				id: preset.id,
+				name: preset.name,
+				description: preset.description,
+				broken: preset.broken,
+				isDefault: preset.isDefault
+			}));
+		}
+		//#endregion
 		//#region src/client/main-session.ts
 		/**
 		* Resolve the Session the main view currently shows.
@@ -2077,6 +2687,52 @@ window.__ModuleLoader__.load({
 		function mainViewSessionId(byId) {
 			if (byId === void 0 || byId === null) return void 0;
 			for (const row of Object.values(byId)) if (row !== void 0 && (row.retainedBy?.mainView ?? 0) > 0) return row.id;
+		}
+		//#endregion
+		//#region src/core/execution-summary.ts
+		/**
+		* What one execution left behind: the text of its last assistant message,
+		* recorded on the execution record next to the verdict it belongs to.
+		*
+		* A settled execution used to carry only a verdict, so a parent card could see
+		* that a subtask succeeded without ever seeing what it produced, and had to
+		* guess or redo the work. The card's own content cannot answer that: card
+		* content is the plan and freezes at the first execution
+		* (`canEditTaskContent`), so the closing words of a run are recorded on the
+		* execution record instead.
+		*
+		* Pure (no cordis, no runtime imports) so the settlement path is unit-testable
+		* without a session, and so a text-less run degrades to "no field" rather than
+		* to an empty string.
+		*/
+		/**
+		* Bound one summary, keeping its tail: the closing paragraphs carry the
+		* conclusion a reader is after, and the omitted opening is announced instead of
+		* silently dropped. Mirrors the evidence reader's tail bound.
+		*/
+		function truncateExecutionSummary(text, limit = EXECUTION_SUMMARY_LIMIT) {
+			if (text.length <= limit) return text;
+			const notice = "[truncated " + String(text.length - limit) + " chars] ";
+			return notice.length >= limit ? text.slice(-limit) : notice + text.slice(-(limit - notice.length));
+		}
+		/**
+		* Repair one persisted or reported summary.
+		*
+		* A summary is informational, so an unreadable one is dropped on its own rather
+		* than costing the execution (or the task row) it hangs on. A hand-edited
+		* overlong text is bounded on the way in, so no reader ever holds more than the
+		* limit.
+		*/
+		function normalizeExecutionSummary(value) {
+			if (typeof value !== "object" || value === null) return void 0;
+			const row = value;
+			if (typeof row.text !== "string" || typeof row.seq !== "number" || !Number.isFinite(row.seq)) return void 0;
+			const text = row.text.trim();
+			if (text === "") return void 0;
+			return {
+				text: truncateExecutionSummary(text),
+				seq: row.seq
+			};
 		}
 		/** Marker replacing every sensitive match. */
 		const REDACTED_MARKER = "[REDACTED]";
@@ -2813,9 +3469,11 @@ window.__ModuleLoader__.load({
 			if (record.parentId !== void 0 && typeof record.parentId !== "string") return false;
 			if (record.workspaceId !== void 0 && typeof record.workspaceId !== "string") return false;
 			if (record.mode !== void 0 && typeof record.mode !== "string") return false;
+			if (record.reasoningEffort !== void 0 && typeof record.reasoningEffort !== "string") return false;
 			if (record.permission !== void 0 && typeof record.permission !== "string") return false;
 			if (record.integrations !== void 0 && (typeof record.integrations !== "object" || record.integrations === null || Array.isArray(record.integrations))) return false;
 			if (record.hidden !== void 0 && typeof record.hidden !== "boolean") return false;
+			if (record.attachments !== void 0 && !Array.isArray(record.attachments)) return false;
 			if (record.reuseSession !== void 0 && typeof record.reuseSession !== "boolean") return false;
 			if (record.goalRun !== void 0 && typeof record.goalRun !== "boolean") return false;
 			if (record.skipVerification !== void 0 && typeof record.skipVerification !== "boolean") return false;
@@ -2973,11 +3631,14 @@ window.__ModuleLoader__.load({
 					runGroupId: normalizeTargetId(execution.runGroupId),
 					ownResult: isExecutionOutcome(execution.ownResult) ? execution.ownResult : void 0,
 					ownError: typeof execution.ownError === "string" ? execution.ownError : void 0,
+					summary: normalizeExecutionSummary(execution.summary),
 					verification: normalizeVerification(execution.verification),
+					rework: normalizeExecutionRework(execution.rework),
 					external: execution.external === true ? true : void 0
 				}));
 				task.workspaceId = normalizeTargetId(row.workspaceId);
 				task.mode = normalizeTargetId(row.mode);
+				task.reasoningEffort = normalizeTargetId(row.reasoningEffort);
 				task.archivedAt = typeof row.archivedAt === "number" && Number.isFinite(row.archivedAt) ? row.archivedAt : void 0;
 				task.permission = isTaskPermission(row.permission) ? row.permission : void 0;
 				task.reuseSession = row.reuseSession === true ? true : void 0;
@@ -2988,6 +3649,7 @@ window.__ModuleLoader__.load({
 				task.tags = normalizeTags(row.tags);
 				task.permissionConfirmedAt = typeof row.permissionConfirmedAt === "number" && Number.isFinite(row.permissionConfirmedAt) ? row.permissionConfirmedAt : void 0;
 				task.integrations = normalizeTaskIntegrations(row.integrations);
+				task.attachments = normalizeAttachments(row.attachments);
 				task.hidden = row.hidden === true ? true : void 0;
 				tasks.push(task);
 			}
@@ -3133,12 +3795,14 @@ window.__ModuleLoader__.load({
 			"new.section.parse": "AI 解析",
 			"new.section.content": "任务内容",
 			"new.section.labels": "标签",
+			"new.section.attachments": "附件",
 			"new.section.execution": "执行设置",
 			"new.section.run": "运行方式",
 			"new.section.handover": "交接与续跑",
 			"new.section.schedule": "定时运行",
 			"new.summary.none": "未设置",
 			"new.summary.labelCount": "{count} 个标签",
+			"new.summary.attachmentCount": "{count} 个附件",
 			"new.summary.filled": "已填写",
 			"new.summary.scheduleOff": "未启用",
 			"new.summary.multiRound": "多轮 /goal",
@@ -3176,6 +3840,20 @@ window.__ModuleLoader__.load({
 			"new.tagPromptPlaceholder": "例如：产物归档到 02-工作/",
 			"new.tagAdd": "添加标签",
 			"new.tagRemove": "移除标签 {name}",
+			"new.attachments": "附件",
+			"new.attachmentsHint": "拖放、粘贴或选择文件；文件在保存卡片时才上传。图片会随执行一起送给模型，普通文件以只读路径交给执行会话。",
+			"new.attachments.drop": "把文件拖到这里，或直接粘贴",
+			"new.attachments.pick": "选择文件",
+			"new.attachments.remove": "移除附件 {name}",
+			"new.attachments.limitCount": "每张卡片最多 {count} 个附件",
+			"new.attachments.limitImages": "这个部署每条消息最多接收 {count} 张图片",
+			"new.attachments.limitImageBytes": "图片总大小超过部署上限 {size}",
+			"new.attachments.limitSize": "{name} 超过单个附件上限 {size}",
+			"new.attachments.limitTotal": "附件总大小超过上限 {size}",
+			"new.attachments.unavailable": "这个部署没有提供附件存储，无法上传附件",
+			"new.attachments.uploading": "上传中",
+			"detail.attachments": "附件",
+			"detail.attachments.removeHint": "移除附件只会删掉卡片上的引用；Host 存储里的文件不会被物理删除。",
 			"board.tagFilter": "按标签筛选",
 			"board.tagFilterClear": "清除标签筛选",
 			"board.tagEmpty": "没有同时带这些标签的任务",
@@ -3194,6 +3872,15 @@ window.__ModuleLoader__.load({
 			"tags.mergeHint": "将合并进已有标签「{name}」",
 			"tags.renameFailed": "重命名未被接受。",
 			"tags.deleteFailed": "删除未被接受。",
+			"tags.cleanupHint": "任务数少于阈值、且携带它的任务全部处于已完成或已失败时，这些标签会一次清理掉。删除不可撤销，任务本身不受影响。",
+			"tags.help": "标签管理说明",
+			"tags.cleanupThreshold": "任务数少于",
+			"tags.cleanup": "清理",
+			"tags.cleanupEmpty": "没有符合条件的标签。",
+			"tags.cleanupTitle": "清理标签",
+			"tags.cleanupConfirm": "将清除 {count} 个标签：{names}（括号内是携带该标签的任务数）。这些标签的执行提示会一并移除；删除不可撤销，任务本身不受影响。",
+			"tags.cleanupOk": "清理",
+			"tags.cleanupFailed": "{count} 个标签未能清除。",
 			"tags.done": "完成",
 			"detail.permissionPending": "权限待确认：本卡有效权限（{permission}）高于会话默认，手动执行与定时调度都会被拒绝，需人工确认后才能运行。",
 			"detail.permissionConfirm": "确认权限绑定",
@@ -3203,6 +3890,8 @@ window.__ModuleLoader__.load({
 			"detail.editTags": "编辑标签",
 			"detail.duplicate": "复制为新任务",
 			"detail.duplicateAndEdit": "修改并新建副本",
+			"detail.more": "更多操作",
+			"detail.moveTo": "移动到…",
 			"detail.close": "关闭",
 			"edit.title": "编辑任务",
 			"edit.save": "保存",
@@ -3213,6 +3902,8 @@ window.__ModuleLoader__.load({
 			"detail.expand": "展开全文",
 			"detail.collapse": "收起",
 			"detail.execution": "执行记录",
+			"detail.execution.showAll": "显示全部 {count} 条",
+			"detail.execution.summary": "{count} 次 · 最近 {time} · {result}",
 			"detail.noExecution": "尚未执行",
 			"detail.run": "执行",
 			"detail.rerun": "重新执行",
@@ -3239,7 +3930,8 @@ window.__ModuleLoader__.load({
 			"status.move.running": "移到进行中",
 			"status.move.done": "移到已完成",
 			"status.move.failed": "移到已失败",
-			"exec.error.noWorkspace": "没有可用工作区，无法执行任务",
+			"exec.error.noWorkspace": "这张卡没有指定工作区，请先在卡片上选择工作区",
+			"exec.error.legacyAgentTeams": "这张卡有未完成的子任务，需按梁神模式的派发方式执行，但当前部署运行的是 legacy Agent Teams，无法编排；请关闭该 runtime 并重启 Host，或先完成子任务再执行",
 			"exec.error.promptRejected": "Prompt 被拒绝",
 			"run.failed": "执行失败：{error}",
 			"time.justNow": "刚刚",
@@ -3284,6 +3976,11 @@ window.__ModuleLoader__.load({
 			"detail.schedule.runsUnlimited": "已执行 {done} 次",
 			"detail.schedule.remaining": "剩余 {count} 次",
 			"detail.schedule.cancel": "关闭调度",
+			"detail.schedule.summary.off": "未启用",
+			"detail.schedule.summary.on": "已启用 · 下次 {next}",
+			"detail.schedule.summary.onFull": "已启用 · {plan} · 下次 {next}",
+			"detail.schedule.summary.planOnce": "单次 {time}",
+			"detail.schedule.summary.planCron": "循环 {cron}",
 			"detail.schedule.ended": "调度已结束：{reason}",
 			"detail.schedule.skipped": "上次跳过：{reason}",
 			"detail.schedule.stop.fired": "单次计划已执行",
@@ -3318,65 +4015,96 @@ window.__ModuleLoader__.load({
 			"exec.permission.danger-full-access": "完全访问",
 			"exec.model.default": "宿主默认（agent-default-model）",
 			"exec.model.unknown": "（未知模型/回退默认）",
+			"exec.reasoning": "思考档位",
+			"exec.reasoning.inherit": "沿用模型/宿主默认",
+			"exec.reasoning.unknown": "（未知档位）",
+			"exec.reasoning.hint.pickModel": "先选择要钉住的模型，才能设置它的思考档位。",
+			"exec.reasoning.hint.unknownModel": "无法从当前名册确认该模型的可选档位；已保存的值原样保留。",
+			"exec.reasoning.hint.noEfforts": "该模型没有可选的思考档位，始终沿用模型/宿主的默认值。",
+			"exec.reasoning.hint.inherit": "留空即沿用该模型/宿主的默认档位。",
 			"exec.reuseSession": "在同一对话继续",
-			"exec.teamRun": "用 Agent Team 执行（Leader/teammate）",
-			"exec.teamRunHint": "开启后：执行本任务只启动一个 Leader 会话，每个子任务由它派生为 teammate 并在该会话内并行工作（子任务自身的权限钉住不适用）。关闭则每个成员各开独立会话。",
-			"exec.teamRunUnavailable": "当前部署未提供 Agent Teams 服务，无法启用。",
 			"exec.reuseSessionHint": "开启后，本任务的后续执行在上一次会话里继续（该会话空闲且仍存在时），不再每次新建对话；每次复用时都会重新应用上面钉住的权限与模型。",
+			"exec.reuseSessionHint.short": "后续执行复用上一次的空闲会话",
 			"exec.goalRun": "以 dsh 内置的 /goal 开始执行任务",
 			"exec.goalRunHint": "默认关闭：勾选后执行时把任务目标作为持久目标交给 dsh 内置的 /goal，会话会自动续跑多轮，直到 agent 标记目标完成；看板在该目标真正结束后才结算本次执行。不勾选则只执行一轮普通对话。",
+			"exec.goalRunHint.short": "多轮续跑，目标结束后才结算本次执行",
+			"exec.goalRunGlobalOff": "全局总开关已关闭，勾选暂不生效",
 			"exec.skipVerification": "跳过本任务的验收",
 			"exec.skipVerificationHint": "默认关闭：勾选后本任务以 goal 形式执行时不再拦截 update_goal 标记完成，也不要求通过验收；执行记录会标注「该卡片跳过验收」。仅对之后新开的执行生效，验收总开关关闭时本项无意义。",
+			"exec.skipVerificationHint.short": "本卡执行不做验收判定",
 			"detail.executionSettings": "执行设置",
+			"detail.settings.advanced": "高级设置",
+			"detail.settings.summary.none": "全部关闭",
+			"detail.settings.summary.reuseSession": "同一对话继续",
+			"detail.settings.summary.goal": "/goal 执行",
+			"detail.settings.summary.skipVerification": "跳过验收",
 			"exec.hint": "执行时生效：工作区决定执行会话落在哪个工作区；Agent 预设决定会话的组合（工具面与提示词段）；权限经 /permission 命令应用到会话。留空则继承部署默认。",
+			"exec.hint.short": "留空继承部署默认，执行时生效",
 			"settings.title": "任务看板",
 			"settings.description": "任务编排、agent 播报与目标验收。",
-			"settings.enabled": "启用任务看板",
-			"settings.enabledCardHint": "总开关、播报、睡眠保护与子任务层级。",
+			"settings.enabled": "总开关",
+			"settings.enabledCardHint": "播报、睡眠保护与子任务层级。",
 			"settings.enabledHint": "关闭后隐藏侧边栏入口与看板视图，并注销 task_board_* agent 工具；开启时任何会话都可以通过这些工具读写看板、子任务与定时计划。",
-			"settings.announceToAgent": "向 agent 播报任务看板",
+			"settings.enabledHintBrief": "关掉后隐藏入口与看板视图，并注销 task_board_* 工具。",
+			"settings.announceToAgent": "播报给 agent",
 			"settings.announceToAgentHint": "开启：每条 agent 系统提示都会包含本看板的说明；关闭：不播报，agent 仅在用户主动提及时了解看板。",
+			"settings.announceToAgentHintBrief": "每条系统提示都带上本看板说明。",
 			"settings.preventIdleSleep": "阻止系统空闲睡眠",
 			"settings.preventIdleSleepHint": "默认关闭。开启后，只要存在运行中的 DSH 会话、已启用的定时任务或会话状态尚未确认，Host 就阻止整机因空闲睡眠；屏幕仍可自动关闭。",
-			"settings.powerStatus": "平台：{platform}；保护状态：{phase}；运行会话：{running}；已启用计划：{schedules}",
-			"settings.powerBoundary": "这可能增加电池消耗。合盖、手动睡眠、休眠、关机、低电量或企业策略不在保证范围内，也不会唤醒已经睡眠的机器。",
-			"settings.powerUnknown": "未知",
+			"settings.preventIdleSleepHintBrief": "有会话在跑或计划已启用时，阻止整机空闲睡眠。",
+			"settings.trustForwardedProxy": "信任反代转发的请求",
+			"settings.trustForwardedProxyHint": "默认关闭。关闭时行为与没有这项设置完全一致：带 CF-Connecting-IP 或 X-Forwarded-For 的请求一律不当作本机请求。只有反代或隧道由你自己（运维）运行、并且它拨的是本机回环上游（127.0.0.1:<端口>）时才打开：此时这类请求仍必须带浏览器同源标记，显式跨站请求照旧拒绝。第三方托管的反向代理不要打开——它可以替你伪造这些标记。",
+			"settings.trustForwardedProxyHintBrief": "只在自己的反代指向本机回环时开启。",
+			"settings.powerBoundary": "合盖、休眠、关机或低电量不在保证范围内。",
 			"settings.powerError": "最近一次电源保护错误：{error}",
+			"settings.powerPhase": "保护状态",
+			"settings.powerPlatform": "平台",
+			"settings.powerRunning": "运行会话",
+			"settings.powerSchedules": "已启用计划",
+			"settings.powerUnknown": "未知",
 			"settings.inherit": "继承",
 			"settings.on": "开",
 			"settings.off": "关",
-			"settings.overridden": "已覆盖",
+			"settings.overridden": "已修改",
 			"settings.reset": "恢复默认",
-			"settings.notExposed": "当前 DSH 版本未向设置页暴露本插件的配置命名空间，表单不可用。可编辑 ~/.dsh/settings.yaml 直接配置，或将本命名空间加入 Host 设置白名单后重启。",
-			"settings.readOnly": "当前部署的设置只读。",
+			"settings.notExposed": "这个版本的 DSH 没有开放任务看板的设置。",
+			"settings.readOnly": "设置只读。",
 			"settings.expand": "展开设置",
 			"settings.collapse": "收起设置",
-			"settings.save": "保存",
-			"settings.saving": "保存中…",
-			"settings.discard": "放弃",
-			"settings.unsaved": "未保存",
-			"settings.saveFailed": "部署未接受这些值，已保留供你修改。",
-			"settings.invalidNumber": "请输入数字，留空则使用默认值。",
+			"settings.saveFailed": "没有保存成功。",
+			"settings.invalidNumber": "填一个数字，留空用默认值。",
 			"settings.sessionPollSeconds": "会话轮询间隔（秒）",
 			"settings.sessionPollSecondsHint": "默认 5 秒。仅在看板有需要核对的事情——运行中的卡片或未结算的执行——时才读取会话名册；两者都没有时不再轮询，Host 不会持续扫描持久化会话目录。取值 1–300 秒：间隔越短结算越快、Host 负载越高。",
+			"settings.sessionPollSecondsHintBrief": "多久核对一次会话，越短结算越快。",
 			"settings.maxSubtaskDepth": "子任务深度上限",
-			"settings.maxSubtaskDepthHint": "默认 1：一个任务只允许一层子任务，子任务不能再创建或关联子任务。最大 3。执行父任务会并发执行它的整棵子任务树，层级越深，一次执行开启的会话越多。",
+			"settings.maxSubtaskDepthHint": "默认 1：一个任务只允许一层子任务，子任务不能再创建或关联子任务。最大 3。它只决定一张卡下面能挂多深的子任务：执行一张卡始终只开它自己的一个会话，子任务由它自己按依赖顺序派发，所以层级深浅不改变一次执行开几个会话。",
+			"settings.maxSubtaskDepthHintBrief": "子任务最多挂几层。",
 			"settings.maxSubtaskDepthOption": "{depth} 层",
+			"settings.runLaunchWidth": "并发启动上限",
+			"settings.runLaunchWidthHint": "默认 3。多张卡片同时要执行时（手动执行、重新执行与到点定时一样），同一刻最多有这么多个执行被准入、创建会话并入队 Prompt，其余排队等待；每张卡的一次执行只开它自己一个会话，所以这个值不改变单卡的执行形态。默认值取自本仓「重型实施子代理并发 ≤ 3」的实测纪律。取值 1–16：越大启动越快，Host 的内存与 swap 压力越高。执行中修改只影响尚未入列的启动。",
+			"settings.runLaunchWidthHintBrief": "同时最多几个执行开始建会话，其余排队。",
+			"settings.spendBudgetTokens": "每日 token 上限",
+			"settings.spendBudgetTokensHint": "默认 0，表示不设闸，行为与没有这项设置时完全一致（不读账本、不计数）。设为正整数后，今日已用 token 达到该值时：手动执行与重新执行被拒绝，调用方看到的拒绝文本就是原因；到点的定时执行把原因写进调度错误并跳过本次触发，不消耗计划次数，因此调高上限或跨过本地零点后下一次触发照常执行。计量单位是 token 而不是金额：使用账本只对 DeepSeek 官方路由计价，其他路由恒为 0。今日已用取自该账本按本地日期分桶的输入、缓存读写与输出之和，与「使用统计」面板的口径一致。",
+			"settings.spendBudgetTokensHintBrief": "今日用量到顶后，手动执行被拒绝，定时触发跳过。",
 			"settings.runBehaviorTitle": "运行行为",
 			"settings.runBehaviorCardHint": "全局原生 /goal 执行开关（总开关，默认关闭）。",
-			"settings.goalRunGlobal": "全局启用 DSH 原生 /goal 执行",
+			"settings.goalRunGlobal": "原生 /goal 执行",
 			"settings.goalRunGlobalHint": "默认关闭。关闭时所有任务都按普通单回合执行，不调用 dsh 内置的 /goal；只有这里开启、且任务级「以 /goal 开始执行」被勾选时，才执行原生 /goal。任务级勾选始终可操作、也不会被这里的开关改写，总开关只决定它是否生效。开关按执行启动时冻结，只影响之后新开的执行。",
+			"settings.goalRunGlobalHintBrief": "开启后执行才使用原生 /goal。",
 			"settings.goalRunGlobalDisabledTaskOption": "全局「原生 /goal 执行」总开关已关闭：任务级选项仍可随时勾选或取消，但暂不生效，你保存的偏好也不会被改写；开启总开关后即按该偏好执行。本次执行按普通单回合进行，未执行 goal 验收。",
 			"settings.goalVerificationTitle": "任务验收",
-			"settings.goalVerification": "启用任务验收",
+			"settings.goalVerification": "任务验收",
 			"settings.goalVerificationCardHint": "验收开关、裁判模型与判据阈值。",
 			"settings.goalVerificationHint": "默认打开：以 goal 形式执行的任务在 update_goal 标记完成前必须先通过一次验收（三项 coding 判据（本分区面向工程任务）、阈值 0.65、每项两轮且交换 A/B 位置，实际工作须胜过空工作基线）。首次不通过会把总分、逐项分数与可定位问题反馈给 agent 修复，同一执行最多两次验收；第二次仍不通过则本次执行判失败。仅作用于本插件以 goal 形式执行的任务，不影响普通聊天，也不影响显式 goalRun:false 的单回合任务。每次验收都会真实调用裁判模型并消耗额度。",
+			"settings.goalVerificationHintBrief": "每项判据两轮，每次验收都会调用裁判模型。",
 			"settings.goalVerificationModel": "验收模型",
 			"settings.goalVerificationModelHint": "留空即继承宿主：使用宿主模型目录的默认路由，而不是任务卡钉住的执行模型。",
+			"settings.goalVerificationModelHintBrief": "留空继承宿主默认路由，不跟随卡片钉住的执行模型。",
 			"settings.goalVerificationModelInherit": "继承宿主（{model}）",
 			"settings.goalVerificationModelInheritUnknown": "继承宿主（宿主未提供模型目录）",
 			"settings.goalVerificationEffort": "推理强度",
 			"settings.goalVerificationEffortHint": "留空即继承宿主默认档位。目标模型不支持所选档位时不会盲传：验收改用该模型自己的默认档位，并在下方标注回退。",
+			"settings.goalVerificationEffortHintBrief": "留空继承宿主默认档位。目标模型不支持的档位会自动回退。",
 			"settings.goalVerificationEffortInherit": "继承宿主（{effort}）",
 			"settings.goalVerificationEffortInheritUnknown": "继承宿主（模型默认档位）",
 			"settings.goalVerificationResolved": "实际解析后的验收配置",
@@ -3391,6 +4119,15 @@ window.__ModuleLoader__.load({
 			"settings.goalVerificationEffortFallback": "所选推理强度 {requested} 不被目标模型支持，已回退为 {resolved}。",
 			"settings.goalVerificationEffortFallbackNone": "所选推理强度 {requested} 不被目标模型支持，已回退为该模型默认档位（不显式传参）。",
 			"settings.goalVerificationModelInvalid": "配置的验收模型不是 provider/model 形式，已回退宿主默认。",
+			"settings.cardDefaultsTitle": "新建卡片默认值",
+			"settings.cardDefaultsCardHint": "新建对话框打开时预填的 Agent 预设、权限、模型与思考档位；留空即不设置，创建卡片的行为与未配置时完全一致。它们只是预填，不改变任何既有语义，新建的卡片仍可随时修改；思考档位默认值只在卡片最终钉住的模型就是这里的默认模型时才生效。",
+			"settings.cardDefaultsCardBrief": "新建卡片预填的预设、权限、模型与思考档位。",
+			"settings.cardDefaultModeHint": "留空不钉住任何值，新建卡片照旧继承部署默认预设。取值优先级为：新建对话框里的显式选择 > 复制源卡或父任务已钉住的值 > 这里的默认值；子任务沿用父卡已钉住的值。",
+			"settings.cardDefaultModeHintBrief": "留空不预填，新建卡片照旧跟随部署默认预设。",
+			"settings.cardDefaultPermissionHint": "留空为不设置（用会话默认）。高于会话默认权限基线的默认值仍只是预填：卡片执行前照旧需要人工确认。子任务从不沿用父卡的权限，只在父卡未钉住、且这里设置了默认值时才预填。",
+			"settings.cardDefaultPermissionHintBrief": "留空为不设置。高于会话基线的默认值执行前仍需人工确认。",
+			"settings.cardDefaultModelHint": "留空为宿主默认（agent-default-model）。对话框里的显式选择优先于源卡/父卡已钉住的值，后者优先于这里的默认值；自己选了模型的调用方不借用任何默认档位。",
+			"settings.cardDefaultModelHintBrief": "留空即宿主默认模型，对话框里的显式选择始终优先。",
 			"running.executing": "执行中",
 			"running.verifying": "验收中",
 			"running.repairing": "验收未通过修复中",
@@ -3464,7 +4201,8 @@ window.__ModuleLoader__.load({
 			"detail.subtasks.link": "关联现有任务",
 			"detail.subtasks.detach": "解除关联",
 			"detail.subtasks.runningLock": "子任务正在执行，结算后才能解除关联或改挂父任务",
-			"detail.subtasks.runHint": "执行本任务会同时并发执行它的 {count} 个子任务；子任务失败不影响其它子任务继续执行。",
+			"detail.subtasks.runHint": "执行本卡只会开本卡一个会话：它自己读取下面 {count} 个还没做完的子任务，按依赖顺序派发，完工后把子卡结论回填。还有未完成子任务时，执行会用梁神模式（liangshen）；预设缺失会直接拒绝执行。",
+			"detail.subtasks.runHintSettled": "子任务都已做完，本次执行只会开本卡一个会话，不会再跑它们；想让哪张子卡再跑一次，把它移回待办列或单独执行。",
 			"detail.subtasks.waiting": "等待子任务结算",
 			"detail.subtasks.depthLimit": "当前子任务深度上限为 {depth} 层，子任务不能再创建或关联子任务。",
 			"detail.subtasks.hostOnly": "连接 Host 后才能创建或关联子任务。",
@@ -3493,6 +4231,7 @@ window.__ModuleLoader__.load({
 			"card.time.updated": "更新于 {time}",
 			"board.density.compact": "切换为紧凑卡片",
 			"board.density.comfortable": "切换为完整卡片",
+			"board.source.local": "本地任务",
 			"board.group.today": "今天",
 			"board.group.week": "近 7 天",
 			"board.group.earlier": "更早",
@@ -3500,7 +4239,8 @@ window.__ModuleLoader__.load({
 			"board.group.collapse": "收起",
 			"board.hideSubtasks": "隐藏子任务",
 			"board.showSubtasks": "显示子任务",
-			"board.subtaskFilterHint": "看板默认只显示父任务；搜索或按标签筛选时会自动展开子任务。"
+			"board.subtaskFilterHint": "看板默认只显示父任务；搜索或按标签筛选时会自动展开子任务。",
+			"settings.enabledTopic": "基础"
 		};
 		/** en dictionary, complete against the zh key set. */
 		const en = {
@@ -3557,12 +4297,14 @@ window.__ModuleLoader__.load({
 			"new.section.parse": "AI Parse",
 			"new.section.content": "Task Content",
 			"new.section.labels": "Tags",
+			"new.section.attachments": "Attachments",
 			"new.section.execution": "Execution Settings",
 			"new.section.run": "Run Mode",
 			"new.section.handover": "Handover",
 			"new.section.schedule": "Scheduled Runs",
 			"new.summary.none": "Not set",
 			"new.summary.labelCount": "{count} tags",
+			"new.summary.attachmentCount": "{count} attachments",
 			"new.summary.filled": "Filled",
 			"new.summary.scheduleOff": "Off",
 			"new.summary.multiRound": "multi-round /goal",
@@ -3600,6 +4342,20 @@ window.__ModuleLoader__.load({
 			"new.tagPromptPlaceholder": "e.g. Archive artefacts under 02-work/",
 			"new.tagAdd": "Add tag",
 			"new.tagRemove": "Remove tag {name}",
+			"new.attachments": "Attachments",
+			"new.attachmentsHint": "Drag, paste, or pick files; they are uploaded when the card is saved. Images travel with the execution, plain files reach the session as read-only paths.",
+			"new.attachments.drop": "Drop files here, or paste them",
+			"new.attachments.pick": "Choose files",
+			"new.attachments.remove": "Remove attachment {name}",
+			"new.attachments.limitCount": "A card carries at most {count} attachments",
+			"new.attachments.limitImages": "This deployment admits at most {count} images per message",
+			"new.attachments.limitImageBytes": "The images exceed the deployment limit of {size}",
+			"new.attachments.limitSize": "{name} exceeds the per-attachment limit of {size}",
+			"new.attachments.limitTotal": "The attachments exceed the total limit of {size}",
+			"new.attachments.unavailable": "This deployment serves no attachment storage, so nothing can be uploaded",
+			"new.attachments.uploading": "uploading",
+			"detail.attachments": "Attachments",
+			"detail.attachments.removeHint": "Removing an attachment drops the reference on the card; the stored file itself is not physically deleted.",
 			"board.tagFilter": "Filter by tag",
 			"board.tagFilterClear": "Clear tag filter",
 			"board.tagEmpty": "No task carries all of these tags",
@@ -3618,6 +4374,15 @@ window.__ModuleLoader__.load({
 			"tags.mergeHint": "Merges into the existing label \"{name}\"",
 			"tags.renameFailed": "The rename was not accepted.",
 			"tags.deleteFailed": "The deletion was not accepted.",
+			"tags.cleanupHint": "Labels carried by fewer tasks than the threshold, where every one of those tasks is done or failed, are cleared in one pass. Deletion cannot be undone; the tasks themselves are unaffected.",
+			"tags.help": "Label manager help",
+			"tags.cleanupThreshold": "Fewer than",
+			"tags.cleanup": "Clear",
+			"tags.cleanupEmpty": "No label matches.",
+			"tags.cleanupTitle": "Clear labels",
+			"tags.cleanupConfirm": "Clear {count} label(s): {names} (the number in brackets is how many tasks carry that label). Their execution hints are removed with them; deletion cannot be undone, and the tasks themselves are unaffected.",
+			"tags.cleanupOk": "Clear",
+			"tags.cleanupFailed": "{count} label(s) were not cleared.",
 			"tags.done": "Done",
 			"detail.permissionPending": "Permission pending confirmation: this card's effective permission ({permission}) is above the session default; manual runs and cron are refused until a human confirms.",
 			"detail.permissionConfirm": "Confirm permission binding",
@@ -3627,6 +4392,8 @@ window.__ModuleLoader__.load({
 			"detail.editTags": "Edit tags",
 			"detail.duplicate": "Duplicate Task",
 			"detail.duplicateAndEdit": "Edit as New Copy",
+			"detail.more": "More actions",
+			"detail.moveTo": "Move to…",
 			"detail.close": "Close",
 			"edit.title": "Edit Task",
 			"edit.save": "Save",
@@ -3637,6 +4404,8 @@ window.__ModuleLoader__.load({
 			"detail.expand": "Show more",
 			"detail.collapse": "Show less",
 			"detail.execution": "Execution History",
+			"detail.execution.showAll": "Show all {count}",
+			"detail.execution.summary": "{count} runs · latest {time} · {result}",
 			"detail.noExecution": "Not executed yet",
 			"detail.run": "Run",
 			"detail.rerun": "Run Again",
@@ -3663,7 +4432,8 @@ window.__ModuleLoader__.load({
 			"status.move.running": "Move to Running",
 			"status.move.done": "Move to Done",
 			"status.move.failed": "Move to Failed",
-			"exec.error.noWorkspace": "No workspace is available to run the task",
+			"exec.error.noWorkspace": "This card has no workspace pinned; choose one on the card before it can run",
+			"exec.error.legacyAgentTeams": "This card has unfinished subtasks, which run through the LiangShen dispatcher preset, but this deployment runs the legacy Agent Teams runtime and cannot orchestrate; disable that runtime and restart the Host, or finish the subtasks before running",
 			"exec.error.promptRejected": "Prompt rejected",
 			"run.failed": "Run failed: {error}",
 			"time.justNow": "just now",
@@ -3708,6 +4478,11 @@ window.__ModuleLoader__.load({
 			"detail.schedule.runsUnlimited": "Ran {done}",
 			"detail.schedule.remaining": "{count} left",
 			"detail.schedule.cancel": "Cancel schedule",
+			"detail.schedule.summary.off": "Off",
+			"detail.schedule.summary.on": "On · next {next}",
+			"detail.schedule.summary.onFull": "On · {plan} · next {next}",
+			"detail.schedule.summary.planOnce": "once at {time}",
+			"detail.schedule.summary.planCron": "recurring {cron}",
 			"detail.schedule.ended": "Schedule ended: {reason}",
 			"detail.schedule.skipped": "Last skip: {reason}",
 			"detail.schedule.stop.fired": "the one-shot ran",
@@ -3742,65 +4517,96 @@ window.__ModuleLoader__.load({
 			"exec.permission.danger-full-access": "Full Access",
 			"exec.model.default": "Host default (agent-default-model)",
 			"exec.model.unknown": " (unknown / fallback to default)",
+			"exec.reasoning": "Reasoning effort",
+			"exec.reasoning.inherit": "Model or Host default",
+			"exec.reasoning.unknown": " (unknown effort)",
+			"exec.reasoning.hint.pickModel": "Pin a model first, then choose its reasoning effort.",
+			"exec.reasoning.hint.unknownModel": "The current roster cannot confirm this model's effort levels; the stored value is kept as it is.",
+			"exec.reasoning.hint.noEfforts": "This model offers no selectable reasoning effort, so the model or Host default always applies.",
+			"exec.reasoning.hint.inherit": "Leave it empty to follow the model or Host default.",
 			"exec.reuseSession": "Continue in the same conversation",
-			"exec.teamRun": "Run with an Agent Team (Lead + teammates)",
-			"exec.teamRunHint": "On: running this task starts one Lead session and spawns a teammate per subtask inside it, working in parallel (a subtask permission pin does not apply). Off: every member gets its own independent session.",
-			"exec.teamRunUnavailable": "This deployment serves no Agent Teams service, so team runs cannot be enabled.",
 			"exec.reuseSessionHint": "When on, later runs continue in the previous session (when that session is idle and still exists) instead of starting a new conversation each time; the pinned permission and model above are re-applied on every reuse.",
+			"exec.reuseSessionHint.short": "Later runs reuse the previous idle session",
 			"exec.goalRun": "Start the run with dsh's built-in /goal",
 			"exec.goalRunHint": "Off by default: when checked, the run arms dsh built-in /goal with the task objective, so the session keeps working automatic continuation rounds until the agent marks the goal complete, and the board settles the execution only when that goal really ends. Unchecked: one plain turn.",
+			"exec.goalRunHint.short": "Automatic rounds; the execution settles when the goal ends",
+			"exec.goalRunGlobalOff": "The global switch is off, so checking it has no effect yet",
 			"exec.skipVerification": "Skip acceptance for this task",
 			"exec.skipVerificationHint": "Off by default: when checked, a goal-form run of this task no longer gates update_goal on a passing acceptance, and the execution record is marked as skipped. It applies only to executions started afterwards, and means nothing while the board-wide acceptance switch is off.",
+			"exec.skipVerificationHint.short": "This card runs without an acceptance verdict",
 			"detail.executionSettings": "Execution Settings",
+			"detail.settings.advanced": "Advanced settings",
+			"detail.settings.summary.none": "All off",
+			"detail.settings.summary.reuseSession": "Same conversation",
+			"detail.settings.summary.goal": "/goal run",
+			"detail.settings.summary.skipVerification": "Acceptance skipped",
 			"exec.hint": "Applied when the task runs: the workspace decides where the execution session lands; the agent preset composes the session (tool face and prompt sections); the permission is applied through the /permission command. Blank inherits the deployment default.",
+			"exec.hint.short": "Blank inherits the deployment default; applied at run time",
 			"settings.title": "Task Board",
 			"settings.description": "Task orchestration, agent announcement and goal acceptance.",
-			"settings.enabled": "Enable the task board",
-			"settings.enabledCardHint": "Master switch, announcement, sleep protection and subtask depth.",
+			"settings.enabled": "Master switch",
+			"settings.enabledCardHint": "Announcement, sleep protection and subtask depth.",
 			"settings.enabledHint": "When off, the sidebar entry and board view are hidden and the task_board_* agent tools are unregistered; while on, any session can read and drive the board, its subtasks and its schedules through those tools.",
-			"settings.announceToAgent": "Announce the task board to agents",
+			"settings.enabledHintBrief": "Off hides the entry and board view and unregisters the task_board_* tools.",
+			"settings.announceToAgent": "Announce to agents",
 			"settings.announceToAgentHint": "On: every agent system prompt includes a note about this board. Off: no announcement; agents learn about the board only when you mention it.",
+			"settings.announceToAgentHintBrief": "Every system prompt carries a note about this board.",
 			"settings.preventIdleSleep": "Prevent idle system sleep",
 			"settings.preventIdleSleepHint": "Off by default. When enabled, the Host prevents idle system sleep while any DSH session runs, any schedule is enabled, or session state is not yet known. The display may still turn off.",
-			"settings.powerStatus": "Platform: {platform}; protection: {phase}; running sessions: {running}; enabled schedules: {schedules}",
-			"settings.powerBoundary": "This may use more battery. Lid close, manual sleep, hibernation, shutdown, low-battery actions, and enterprise policy are outside the guarantee; an already sleeping computer is not woken.",
-			"settings.powerUnknown": "unknown",
+			"settings.preventIdleSleepHintBrief": "Blocks idle system sleep while a session runs or a schedule is enabled.",
+			"settings.trustForwardedProxy": "Trust forwarded requests",
+			"settings.trustForwardedProxyHint": "Off by default. While it is off the fence behaves exactly as if the setting did not exist: a request carrying CF-Connecting-IP or X-Forwarded-For is never treated as local. Turn it on only when the reverse proxy or tunnel is one you (the operator) run yourself and it dials this machine loopback upstream (127.0.0.1:<port>): even then such a request must still carry a browser same-origin marker, and an explicit cross-site request stays refused. Do not enable it for a reverse proxy hosted by a third party, which can forge those markers on your behalf.",
+			"settings.trustForwardedProxyHintBrief": "On only for a proxy of your own that dials this machine loopback.",
+			"settings.powerBoundary": "Closing the lid, hibernate, shutdown or a low battery is outside the guarantee.",
 			"settings.powerError": "Latest power-protection error: {error}",
+			"settings.powerPhase": "Protection",
+			"settings.powerPlatform": "Platform",
+			"settings.powerRunning": "Running sessions",
+			"settings.powerSchedules": "Enabled schedules",
+			"settings.powerUnknown": "unknown",
 			"settings.inherit": "Inherit",
 			"settings.on": "On",
 			"settings.off": "Off",
-			"settings.overridden": "Overridden",
+			"settings.overridden": "Changed",
 			"settings.reset": "Reset to default",
-			"settings.notExposed": "This DSH version does not expose this plugin's settings namespace to the configuration page, so the form is unavailable. Edit ~/.dsh/settings.yaml directly, or add the namespace to the Host settings allowlist and restart.",
-			"settings.readOnly": "This deployment stores settings read-only.",
+			"settings.notExposed": "This DSH version does not open the task board settings.",
+			"settings.readOnly": "Settings are read-only.",
 			"settings.expand": "Show settings",
 			"settings.collapse": "Hide settings",
-			"settings.save": "Save",
-			"settings.saving": "Saving…",
-			"settings.discard": "Discard",
-			"settings.unsaved": "Unsaved",
-			"settings.saveFailed": "The deployment did not accept these values; they were left for you to correct.",
-			"settings.invalidNumber": "Enter a number, or leave blank to use the default.",
+			"settings.saveFailed": "Not saved.",
+			"settings.invalidNumber": "Enter a number, or leave it empty for the default.",
 			"settings.sessionPollSeconds": "Session poll interval (seconds)",
 			"settings.sessionPollSecondsHint": "Default 5. The Host reads the DSH session roster only while the board has something to reconcile: a running card or an open execution. With neither it stops polling and never re-scans the persisted session directory. Range 1 to 300 seconds: a shorter interval settles runs sooner and costs the Host more.",
+			"settings.sessionPollSecondsHintBrief": "How often sessions are checked; shorter settles sooner.",
 			"settings.maxSubtaskDepth": "Subtask depth limit",
-			"settings.maxSubtaskDepthHint": "Default 1: a task may carry one level of subtasks, and a subtask cannot create or link further subtasks. Maximum 3. Running a task also runs its whole subtask tree concurrently, and every extra level opens more sessions per run.",
+			"settings.maxSubtaskDepthHint": "Default 1: a task may carry one level of subtasks, and a subtask cannot create or link further subtasks. Maximum 3. The limit only decides how deep the tree under one card can go: a run still opens that card's own single session and dispatches its subtasks itself, so the depth never changes how many sessions a run opens.",
+			"settings.maxSubtaskDepthHintBrief": "How deep subtasks may go.",
 			"settings.maxSubtaskDepthOption": "{depth} levels",
+			"settings.runLaunchWidth": "Concurrent run launches",
+			"settings.runLaunchWidthHint": "Default 3. When several cards want to run at the same time, a manual run, a re-run and a due schedule alike, only this many runs are admitted at once: each creates its session and queues its prompt, and the rest wait their turn. Running one card always opens just that card's own session, so this value never changes the shape of a single-card run. The default comes from this repository's measured guidance for heavy implementation subagents (at most three). Range 1 to 16: a larger width starts runs sooner and costs the Host more memory and swap. Edited during a run, it bounds the launches that have not been admitted yet.",
+			"settings.runLaunchWidthHintBrief": "How many runs start at once; the rest wait.",
+			"settings.spendBudgetTokens": "Daily token cap",
+			"settings.spendBudgetTokensHint": "Default 0 means no gate: behavior is exactly what it was before this setting existed, with no ledger read and no counting. With a positive cap, once today's measured spend reaches it a manual run or re-run is refused and the caller sees that message as the refusal, while a due schedule writes the reason to the scheduler error and skips that occurrence without spending a planned run — raising the cap, or the local day rolling over, lets the next trigger run as usual. The unit is tokens rather than money: the usage ledger prices only DeepSeek's own routes and stays 0 on every other route. Today's spend is that ledger's local-date bucket summed over input, cache read/write and output, the same measure the usage panel shows.",
+			"settings.spendBudgetTokensHintBrief": "Past today's cap, manual runs are refused and due schedules skip.",
 			"settings.runBehaviorTitle": "Run behavior",
 			"settings.runBehaviorCardHint": "The global native /goal switch (master control, off by default).",
-			"settings.goalRunGlobal": "Global: run tasks with dsh native /goal",
+			"settings.goalRunGlobal": "Native /goal",
 			"settings.goalRunGlobalHint": "Off by default. While off, every task runs one plain turn and never calls dsh built-in /goal; a run uses native /goal only when this is on AND the task-level option is checked (see the task option below). The task-level checkbox always stays operable and this switch never rewrites it: the master switch only decides whether that choice takes effect. The switch is frozen when an execution starts, so it only affects runs opened afterwards.",
+			"settings.goalRunGlobalHintBrief": "A run uses native /goal only while this is on.",
 			"settings.goalRunGlobalDisabledTaskOption": "The global native /goal switch is off: the task-level option can still be checked or cleared, but it has no effect right now and the preference you save is never rewritten; turning the global switch back on applies it. This execution runs one plain turn and performs no goal acceptance.",
 			"settings.goalVerificationTitle": "Task acceptance",
-			"settings.goalVerification": "Enable task acceptance",
+			"settings.goalVerification": "Task acceptance",
 			"settings.goalVerificationCardHint": "The switch, the judge model and the criteria threshold.",
 			"settings.goalVerificationHint": "On by default: a task executed in goal form must pass one acceptance before update_goal may mark it complete (the three coding criteria, aimed at engineering tasks, a 0.65 threshold, two rounds per criterion with the A/B slots swapped, and the work must beat the empty-work baseline). A first failure returns the total, the per-criterion scores and the located findings to the fixing agent, and one execution may accept at most twice; a second failure fails that execution. It affects only this board goal-form executions, never plain chat and never a task pinned to goalRun: false. Every acceptance really calls the judge model and spends quota.",
+			"settings.goalVerificationHintBrief": "Two rounds per criterion, and each acceptance calls the judge model.",
 			"settings.goalVerificationModel": "Judge model",
 			"settings.goalVerificationModelHint": "Blank inherits the host: the default route of the host model catalog, never the card pinned execution model.",
+			"settings.goalVerificationModelHintBrief": "Blank inherits the host default route, never the model pinned on the card.",
 			"settings.goalVerificationModelInherit": "Inherit host ({model})",
 			"settings.goalVerificationModelInheritUnknown": "Inherit host (no model catalog)",
 			"settings.goalVerificationEffort": "Reasoning effort",
 			"settings.goalVerificationEffortHint": "Blank inherits the host default level. A level the target model does not declare is never sent blindly: the acceptance falls back to that model own default level, and the fallback is reported below.",
+			"settings.goalVerificationEffortHintBrief": "Blank inherits the host default level. A level the model lacks falls back automatically.",
 			"settings.goalVerificationEffortInherit": "Inherit host ({effort})",
 			"settings.goalVerificationEffortInheritUnknown": "Inherit host (model default level)",
 			"settings.goalVerificationResolved": "Resolved acceptance configuration",
@@ -3814,6 +4620,15 @@ window.__ModuleLoader__.load({
 			"settings.goalVerificationRouteMissing": "The host serves no model catalog, so no judge route resolves: with acceptance on, a goal completion claim is refused and recorded as an acceptance anomaly.",
 			"settings.goalVerificationEffortFallback": "The selected reasoning effort {requested} is not supported by the target model; it falls back to {resolved}.",
 			"settings.goalVerificationEffortFallbackNone": "The selected reasoning effort {requested} is not supported by the target model; it falls back to that model default level (not sent explicitly).",
+			"settings.cardDefaultsTitle": "New-card defaults",
+			"settings.cardDefaultsCardHint": "What the new-task dialog opens with: agent preset, permission, model and reasoning effort. Blank sets nothing, so creating a card behaves exactly as it does unconfigured. They are only prefills and change no existing meaning, and every new card stays editable; the default reasoning effort applies only while a card ends up on the configured default model.",
+			"settings.cardDefaultsCardBrief": "What a new card opens with: preset, permission, model and effort.",
+			"settings.cardDefaultModeHint": "Blank pins nothing: a new card keeps following the deployment default preset. A target resolves as the explicit choice in the new-task dialog, then the value carried over from the source card or parent, then this default; a subtask keeps what its parent already pinned.",
+			"settings.cardDefaultModeHintBrief": "Blank prefills nothing, so a new card keeps the deployment default preset.",
+			"settings.cardDefaultPermissionHint": "Blank sets nothing (the session default applies). A default above the session permission baseline is still only a prefill: the card still needs a human confirmation before it may run. A subtask never carries its parent permission; this default fills in only where the parent pinned none.",
+			"settings.cardDefaultPermissionHintBrief": "Blank sets nothing. A default above the session baseline still needs a human confirmation.",
+			"settings.cardDefaultModelHint": "Blank is the host default (agent-default-model). An explicit choice in the dialog wins over the value carried over from the source card or parent, which wins over this default; a caller that pins a model of its own borrows no default reasoning level.",
+			"settings.cardDefaultModelHintBrief": "Blank is the host default model, and an explicit dialog choice always wins over it.",
 			"settings.goalVerificationModelInvalid": "The configured judge model is not a provider/model route; the host default is used instead.",
 			"running.executing": "Executing",
 			"running.verifying": "Verifying",
@@ -3888,7 +4703,8 @@ window.__ModuleLoader__.load({
 			"detail.subtasks.link": "Link existing task",
 			"detail.subtasks.detach": "Detach",
 			"detail.subtasks.runningLock": "This subtask is running; it can be detached or re-linked once it settles",
-			"detail.subtasks.runHint": "Running this task also runs its {count} subtasks concurrently; one subtask failing does not stop the others.",
+			"detail.subtasks.runHint": "Running this card opens one session, this card's own: it reads the {count} unfinished subtasks below, dispatches them in dependency order, and writes each subtask conclusion back once they finish. While any subtask is still unfinished, the run uses the liangshen preset; if that preset is missing, the run is refused outright.",
+			"detail.subtasks.runHintSettled": "Every subtask already sits in the done column, so this run opens only this card's own session and leaves them alone. To run one again, move it back to the todo column or run it on its own.",
 			"detail.subtasks.waiting": "Waiting for subtasks",
 			"detail.subtasks.depthLimit": "The subtask depth limit is {depth}; a subtask cannot create or link further subtasks.",
 			"detail.subtasks.hostOnly": "Connect to the Host to create or link subtasks.",
@@ -3917,6 +4733,7 @@ window.__ModuleLoader__.load({
 			"card.time.updated": "Updated {time}",
 			"board.density.compact": "Switch to compact cards",
 			"board.density.comfortable": "Switch to full cards",
+			"board.source.local": "Local tasks",
 			"board.group.today": "Today",
 			"board.group.week": "Last 7 days",
 			"board.group.earlier": "Earlier",
@@ -3924,7 +4741,8 @@ window.__ModuleLoader__.load({
 			"board.group.collapse": "Collapse",
 			"board.hideSubtasks": "Hide subtasks",
 			"board.showSubtasks": "Show subtasks",
-			"board.subtaskFilterHint": "The board shows parent tasks only; a text or label filter reveals the subtasks automatically."
+			"board.subtaskFilterHint": "The board shows parent tasks only; a text or label filter reveals the subtasks automatically.",
+			"settings.enabledTopic": "Basics"
 		};
 		/** Active dictionary, picked by the document language at call time. */
 		function dictionary() {
@@ -3951,7 +4769,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-css:packages/dsh-client-ui-task-board-fish/src/client/board.module.css.mjs
-		const css$3 = "[data-dsh-taskboard-view]{box-sizing:border-box;background:var(--dsw-alias-bg-base);flex-direction:column;width:100%;min-width:0;height:100%;min-height:0;display:flex;container:_3ggl3q_task-board-view/inline-size}._3ggl3q_board{--dsh-tb-control-h:30px;--dsh-tb-control-radius:8px;--dsh-tb-control-gap:8px;--dsh-tb-icon-size:30px;--dsh-tb-hit-size:44px;--dsh-tb-motion-enter:.16s;--dsh-tb-motion-close:.14s;--dsh-tb-ease:cubic-bezier(.2, 0, 0, 1);box-sizing:border-box;background:var(--dsw-alias-bg-base);min-width:0;height:100%;min-height:0;color:var(--dsw-alias-label-primary);font-family:var(--dsw-font-family);flex-direction:column;gap:12px;padding:14px 16px 16px;display:flex}._3ggl3q_boardHeader{flex:none;align-items:center;gap:10px;display:flex}._3ggl3q_boardTools{align-items:center;gap:var(--dsh-tb-control-gap);flex:auto;justify-content:flex-end;min-width:0;margin-left:auto;display:flex}._3ggl3q_boardTitle{color:var(--dsw-alias-label-primary);white-space:nowrap;margin:0;font-size:16px;font-weight:700}._3ggl3q_backButton{align-items:center;gap:4px;display:inline-flex}._3ggl3q_search{box-sizing:border-box;min-width:120px;height:var(--dsh-tb-control-h);color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsh-tb-control-radius);outline:none;flex:0 260px;padding:0 10px;font-size:13px}._3ggl3q_search::placeholder{color:var(--dsw-alias-label-tertiary)}._3ggl3q_columns{overscroll-behavior-inline:contain;scrollbar-color:var(--dsw-alias-border-l3) var(--dsw-alias-interactive-bg-hover);scrollbar-width:thin;flex:1;grid-auto-columns:minmax(220px,1fr);grid-auto-flow:column;gap:12px;min-height:0;padding-bottom:6px;display:grid;overflow:auto hidden}._3ggl3q_columns::-webkit-scrollbar{height:10px}._3ggl3q_columns::-webkit-scrollbar-track{background:var(--dsw-alias-interactive-bg-hover);border-radius:999px}._3ggl3q_columns::-webkit-scrollbar-thumb{background:var(--dsw-alias-border-l3);background-clip:content-box;border:2px solid #0000;border-radius:999px}._3ggl3q_columns::-webkit-scrollbar-thumb:hover{background:var(--dsw-alias-border-l4);background-clip:content-box}._3ggl3q_column{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:12px;flex-direction:column;min-height:0;display:flex;overflow:hidden}._3ggl3q_columnHeader{flex:none;align-items:center;gap:6px;padding:10px 12px;display:flex}._3ggl3q_columnTitle{color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;flex:1;margin:0;font-size:13px;font-weight:700;overflow:hidden}._3ggl3q_columnCount{min-width:0;color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;flex:none;padding:1px 8px;font-size:12px}._3ggl3q_statusDot{border-radius:50%;flex:none;width:8px;height:8px}._3ggl3q_statusDot[data-status=backlog]{background:var(--dsw-alias-label-tertiary)}._3ggl3q_statusDot[data-status=todo]{background:var(--dsw-alias-state-business-primary)}._3ggl3q_statusDot[data-status=running]{background:var(--dsw-alias-state-warn-primary)}._3ggl3q_statusDot[data-status=done]{background:var(--dsw-alias-state-success-primary)}._3ggl3q_statusDot[data-status=failed]{background:var(--dsw-alias-state-error-primary)}._3ggl3q_cards{flex-direction:column;flex:1;gap:8px;min-height:0;padding:2px 8px 10px;display:flex;overflow-y:auto}._3ggl3q_columnEmpty{text-align:center;color:var(--dsw-alias-label-tertiary);padding:24px 8px;font-size:12px}._3ggl3q_card{text-align:left;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);cursor:pointer;color:var(--dsw-alias-label-primary);border-radius:10px;flex-direction:column;flex:none;gap:6px;padding:10px 12px 10px 14px;font-family:inherit;transition:box-shadow .12s,border-color .12s,transform .12s;display:flex;position:relative;overflow:hidden}._3ggl3q_card>:not(._3ggl3q_cardOpen){z-index:1;position:relative}._3ggl3q_card:before{content:\"\";pointer-events:none;background:0 0;width:3px;position:absolute;inset:0 auto 0 0}._3ggl3q_card[data-tone=running]:before{background:var(--dsw-alias-state-warn-primary)}._3ggl3q_card[data-tone=succeeded]:before{background:var(--dsw-alias-state-success-primary)}._3ggl3q_card[data-tone=failed]:before{background:var(--dsw-alias-state-error-primary)}._3ggl3q_card[data-tone=cancelled]:before{background:var(--dsw-alias-label-tertiary)}._3ggl3q_card:hover{box-shadow:var(--dsw-shadow-lv2);border-color:var(--dsw-alias-border-l3);transform:translateY(-1px)}._3ggl3q_card[data-compact]:hover{box-shadow:none;transform:none}._3ggl3q_card[data-status=running]{border-color:var(--dsw-alias-state-warn-primary)}._3ggl3q_cardOpen{z-index:0;border-radius:inherit;cursor:pointer;background:0 0;border:0;margin:0;padding:0;position:absolute;inset:0}._3ggl3q_cardOpen:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:-2px}._3ggl3q_cardTitleRow{align-items:flex-start;gap:6px;min-width:0;display:flex}._3ggl3q_cardKind{white-space:nowrap;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover);border-radius:4px;flex:none;margin-top:1px;padding:0 6px;font-size:10px;font-weight:600;line-height:16px}._3ggl3q_cardTitle{-webkit-line-clamp:2;-webkit-box-orient:vertical;min-width:0;font-size:13px;font-weight:600;line-height:1.35;display:-webkit-box;overflow:hidden}._3ggl3q_card[data-compact]{gap:2px;padding-top:6px;padding-bottom:6px}._3ggl3q_card[data-compact] ._3ggl3q_cardTitle{-webkit-line-clamp:1;font-size:12px;font-weight:500}._3ggl3q_cardDecoration{flex:none;align-items:center;gap:4px;display:inline-flex}._3ggl3q_cardDecoration:empty{display:none}._3ggl3q_cardExcerpt{color:var(--dsw-alias-label-secondary);-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:12px;line-height:1.4;display:-webkit-box;overflow:hidden}._3ggl3q_cardMeta{color:var(--dsw-alias-label-tertiary);flex-wrap:wrap;align-items:center;gap:4px 8px;font-size:11px;display:flex}._3ggl3q_cardTime{text-overflow:ellipsis;white-space:nowrap;flex:auto;min-width:max-content;overflow:hidden}._3ggl3q_cardSchedule{white-space:nowrap;min-width:0;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;flex:none;align-items:center;gap:4px;padding:2px 6px;font-size:12px;line-height:1;display:inline-flex}._3ggl3q_cardRun{flex:none}._3ggl3q_cardRun[data-declared]{text-underline-offset:2px;text-decoration:underline dotted}._3ggl3q_cardRun[data-result=failed]{color:var(--dsw-alias-state-error-primary)}._3ggl3q_cardRun[data-result=succeeded]{color:var(--dsw-alias-state-success-primary)}._3ggl3q_cardSession{color:var(--dsw-alias-state-business-primary);flex:none;align-items:center;display:inline-flex}._3ggl3q_cardAction{cursor:pointer;background:0 0;border:0;border-radius:6px;justify-content:center;width:22px;height:22px;margin:-4px -4px -4px 0;padding:0;font-family:inherit}._3ggl3q_cardAction:hover{background:var(--dsw-alias-interactive-bg-hover)}._3ggl3q_cardAction:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px}._3ggl3q_cardGroup{flex-direction:column;gap:6px;display:flex}._3ggl3q_cardGroupHeader{color:var(--dsw-alias-label-tertiary);align-items:center;gap:6px;padding:4px 2px 0;font-size:11px;font-weight:600;display:flex}._3ggl3q_cardGroupCount{font-weight:400}._3ggl3q_cardGroupHeader ._3ggl3q_linkButton{margin-left:auto;font-size:11px}._3ggl3q_densityToggle{width:22px;height:22px;color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:0;border-radius:6px;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex}._3ggl3q_densityToggle:hover,._3ggl3q_densityToggle[data-active=true]{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}._3ggl3q_densityToggle:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:1px}._3ggl3q_cardRunningLabel{color:var(--dsw-alias-state-warn-primary);font-size:11px}._3ggl3q_cardSpinner{border:2px solid var(--dsw-alias-state-warn-primary);border-top-color:#0000;border-radius:50%;flex:none;width:10px;height:10px;animation:.8s linear infinite _3ggl3q_dshTbSpin}@keyframes _3ggl3q_dshTbSpin{to{transform:rotate(360deg)}}._3ggl3q_primaryButton,._3ggl3q_ghostButton,._3ggl3q_dangerButton,._3ggl3q_iconButton{box-sizing:border-box;height:var(--dsh-tb-control-h);border-radius:var(--dsh-tb-control-radius);cursor:pointer;white-space:nowrap;justify-content:center;align-items:center;gap:6px;font-family:inherit;display:inline-flex}._3ggl3q_primaryButton,._3ggl3q_dangerButton{padding:0 14px;font-size:13px;font-weight:600}._3ggl3q_primaryButton{color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-button-primary-fill);border:1px solid #0000}._3ggl3q_dangerButton{color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-state-error-primary);border:1px solid #0000}._3ggl3q_ghostButton{color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);background:0 0;padding:0 12px;font-size:13px}._3ggl3q_ghostButton[data-active=true]{color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-button-primary-fill);border-color:#0000}._3ggl3q_primaryButton:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}._3ggl3q_ghostButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}._3ggl3q_ghostButton[data-active=true]:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}._3ggl3q_dangerButton:hover:not(:disabled){filter:brightness(1.08)}._3ggl3q_dangerButton:active:not(:disabled){filter:brightness(.94)}._3ggl3q_primaryButton:disabled,._3ggl3q_dangerButton:disabled{opacity:.5;cursor:default}._3ggl3q_ghostButton:disabled{opacity:.45;cursor:default}._3ggl3q_iconButton{width:var(--dsh-tb-icon-size);color:var(--dsw-alias-label-secondary);background:0 0;border:1px solid #0000;padding:0;position:relative}._3ggl3q_iconButton:after{content:\"\";width:var(--dsh-tb-hit-size);height:var(--dsh-tb-hit-size);position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}._3ggl3q_iconButton:disabled{opacity:.45;cursor:default}._3ggl3q_linkButton{color:var(--dsw-alias-state-business-primary);cursor:pointer;white-space:nowrap;background:0 0;border:none;padding:0;font-size:12px}._3ggl3q_linkButton:hover{text-decoration:underline}._3ggl3q_modalBackdrop{z-index:1300;background:var(--dsw-alias-bg-mask-1);animation:_3ggl3q_dshTbBackdropIn var(--dsh-tb-motion-enter) var(--dsh-tb-ease) both;justify-content:center;align-items:center;display:flex;position:fixed;inset:0}._3ggl3q_modalBackdrop[data-state=closing]{animation:_3ggl3q_dshTbBackdropOut var(--dsh-tb-motion-close) var(--dsh-tb-ease) both}._3ggl3q_modal,._3ggl3q_detail{animation:_3ggl3q_dshTbSurfaceIn var(--dsh-tb-motion-enter) var(--dsh-tb-ease) both}._3ggl3q_modalBackdrop[data-state=closing] ._3ggl3q_modal,._3ggl3q_modalBackdrop[data-state=closing] ._3ggl3q_detail{animation:_3ggl3q_dshTbSurfaceOut var(--dsh-tb-motion-close) var(--dsh-tb-ease) both}@keyframes _3ggl3q_dshTbBackdropIn{0%{opacity:0}to{opacity:1}}@keyframes _3ggl3q_dshTbBackdropOut{0%{opacity:1}to{opacity:0}}@keyframes _3ggl3q_dshTbSurfaceIn{0%{opacity:0;transform:translateY(8px)scale(.98)}to{opacity:1;transform:none}}@keyframes _3ggl3q_dshTbSurfaceOut{0%{opacity:1;transform:none}to{opacity:0;transform:translateY(8px)scale(.98)}}._3ggl3q_modal{background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);width:min(520px,100vw - 48px);max-height:calc(100vh - 96px);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);border-radius:14px;flex-direction:column;gap:10px;padding:18px;display:flex;overflow:hidden}._3ggl3q_modalTitle{margin:0;font-size:15px;font-weight:700}._3ggl3q_confirmMessage{color:var(--dsw-alias-label-secondary);white-space:pre-wrap;overflow-wrap:anywhere;margin:0;font-size:13px;line-height:1.5}._3ggl3q_modalFooter{justify-content:flex-end;gap:10px;margin-top:4px;display:flex}._3ggl3q_modalHeader{align-items:center;gap:10px;display:flex}._3ggl3q_modalHeader>._3ggl3q_modalTitle{flex:1;min-width:0}._3ggl3q_tagManageList{flex-direction:column;gap:6px;margin:0;padding:0;list-style:none;display:flex}._3ggl3q_tagManageRow{border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsh-tb-control-radius);flex-wrap:wrap;align-items:center;gap:8px;padding:6px 8px;display:flex}._3ggl3q_tagManageName{text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--dsw-alias-label-primary);flex:auto;font-size:13px;overflow:hidden}._3ggl3q_tagManageCount{color:var(--dsw-alias-label-tertiary);flex:none;font-size:11px}._3ggl3q_tagManageInput{flex:auto;min-width:0}._3ggl3q_tagManageMerge{color:var(--dsw-alias-label-tertiary);flex:1 0 100%;font-size:11px}._3ggl3q_modalBody{flex-direction:column;gap:8px;min-height:0;display:flex;overflow-y:auto}._3ggl3q_modalBody>*{flex:none}._3ggl3q_formSection{border:1px solid var(--dsw-alias-separator-primary);border-radius:10px;flex-direction:column;display:flex;overflow:hidden}._3ggl3q_formSectionHeader{width:100%;color:var(--dsw-alias-label-primary);text-align:left;cursor:pointer;background:0 0;border:0;align-items:center;gap:8px;padding:7px 10px;font-family:inherit;font-size:12.5px;font-weight:600;display:flex}._3ggl3q_formSectionHeader:hover{background:var(--dsw-alias-bg-mask-1)}._3ggl3q_formSectionChevron{border-top:4px solid #0000;border-bottom:4px solid #0000;border-left:5px solid var(--dsw-alias-label-tertiary);flex:none;width:0;height:0;margin-left:1px;transition:transform .12s}._3ggl3q_formSection[data-open=true] ._3ggl3q_formSectionChevron{transform:rotate(90deg)}._3ggl3q_formSectionTitle{flex:none}._3ggl3q_formSectionSummary{min-width:0;color:var(--dsw-alias-label-tertiary);text-align:right;text-overflow:ellipsis;white-space:nowrap;flex:auto;font-weight:400;overflow:hidden}._3ggl3q_formSectionBody{border-top:1px solid var(--dsw-alias-separator-primary);flex-direction:column;gap:8px;padding:8px 10px 10px;display:flex}._3ggl3q_field{flex-direction:column;gap:5px;display:flex}._3ggl3q_fieldLabel{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600}._3ggl3q_input{box-sizing:border-box;min-height:var(--dsh-tb-control-h);color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsh-tb-control-radius);resize:vertical;outline:none;padding:6px 10px;font-family:inherit;font-size:13px}._3ggl3q_input:focus{border-color:var(--dsw-alias-state-business-primary)}._3ggl3q_select{box-sizing:border-box;height:var(--dsh-tb-control-h);color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsh-tb-control-radius);outline:none;max-width:100%;padding:0 10px;font-family:inherit;font-size:13px}._3ggl3q_input::placeholder{color:var(--dsw-alias-label-tertiary)}._3ggl3q_formError{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px}._3ggl3q_detail{background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);width:min(640px,100vw - 48px);max-height:calc(100vh - 80px);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);border-radius:14px;flex-direction:column;display:flex;overflow:hidden}._3ggl3q_detailHeader{border-bottom:1px solid var(--dsw-alias-separator-primary);flex:none;align-items:center;gap:10px;padding:14px 18px;display:flex}._3ggl3q_detailTitle{overflow-wrap:anywhere;flex:1;margin:0;font-size:15px;font-weight:700}._3ggl3q_statusBadge{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:2px 10px;font-size:12px}._3ggl3q_statusBadge[data-status=running]{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}._3ggl3q_statusBadge[data-status=done]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}._3ggl3q_statusBadge[data-status=failed]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}._3ggl3q_detailBody{flex-direction:column;flex:1;gap:16px;padding:14px 18px;display:flex;overflow-y:auto}._3ggl3q_detailSection{flex-direction:column;gap:6px;display:flex}._3ggl3q_detailSection h4{color:var(--dsw-alias-label-tertiary);text-transform:none;margin:0;font-size:12px;font-weight:700}._3ggl3q_detailText{color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere;margin:0;font-size:13px;line-height:1.55}._3ggl3q_scheduleToggle{color:var(--dsw-alias-label-primary);cursor:pointer;user-select:none;align-items:center;gap:8px;font-size:13px;display:flex}._3ggl3q_scheduleToggle input{accent-color:var(--dsw-alias-state-business-primary)}._3ggl3q_scheduleRow{align-items:center;gap:8px;display:flex}._3ggl3q_scheduleInput{min-width:0;font-family:var(--dsw-font-markdown-code-block-small);flex:1;font-size:12.5px}._3ggl3q_scheduleInputInvalid,._3ggl3q_scheduleInputInvalid:focus{border-color:var(--dsw-alias-state-error-primary)}._3ggl3q_schedulePreset{box-sizing:border-box;height:var(--dsh-tb-control-h);color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsh-tb-control-radius);outline:none;flex:none;padding:0 8px;font-size:12.5px}._3ggl3q_scheduleZone{color:var(--dsw-alias-label-secondary);align-items:center;gap:8px;font-size:12.5px;display:flex}._3ggl3q_scheduleZone select{flex:1;min-width:0}._3ggl3q_scheduleMeta{color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere;margin:0;font-size:12px}._3ggl3q_promptBlock{font-size:12.5px;line-height:1.5;font-family:var(--dsw-font-markdown-code-block-small);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-markdown-code-block);border:1px solid var(--dsw-alias-border-l1);white-space:pre-wrap;overflow-wrap:anywhere;border-radius:8px;max-height:240px;margin:0;padding:10px 12px;overflow-y:auto}._3ggl3q_clampBody{position:relative}._3ggl3q_clampBody[data-clamped=true]{max-height:160px;overflow:hidden}._3ggl3q_clampBody[data-clamped=true]:after{content:\"\";pointer-events:none;background:linear-gradient(to bottom, transparent, var(--dsw-alias-bg-base));height:44px;position:absolute;bottom:0;left:0;right:0}._3ggl3q_clampToggle{align-self:flex-start}._3ggl3q_executionList{flex-direction:column;gap:8px;margin:0;padding:0;list-style:none;display:flex}._3ggl3q_executionRow{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;flex-wrap:wrap;align-items:center;gap:10px;padding:8px 10px;display:flex}._3ggl3q_executionBadge{color:var(--dsw-alias-state-warn-primary);background:var(--dsw-alias-state-warn-secondary);border-radius:999px;flex:none;padding:1px 8px;font-size:11px;font-weight:600}._3ggl3q_executionBadge[data-result=succeeded]{color:var(--dsw-alias-state-success-primary);background:0 0}._3ggl3q_executionBadge[data-result=failed]{color:var(--dsw-alias-state-error-primary);background:0 0}._3ggl3q_executionBadge[data-result=cancelled]{color:var(--dsw-alias-label-tertiary);background:0 0}._3ggl3q_executionTimes{color:var(--dsw-alias-label-secondary);font-size:12px}._3ggl3q_executionError{width:100%;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere;font-size:12px}._3ggl3q_moveRow{flex-wrap:wrap;gap:8px;display:flex}._3ggl3q_detailFooter{border-top:1px solid var(--dsw-alias-separator-primary);flex:none;align-items:center;gap:10px;padding:12px 18px;display:flex}._3ggl3q_detailMeta{color:var(--dsw-alias-label-tertiary);margin-left:auto;font-size:11px}@container _3ggl3q_task-board-view (width<=768px){._3ggl3q_board{gap:10px;padding:10px}._3ggl3q_boardHeader{flex-wrap:wrap;align-items:center;gap:8px}._3ggl3q_backButton{flex:none}._3ggl3q_boardTitle{flex:auto}._3ggl3q_boardHeader>._3ggl3q_detailMeta{flex:1 0 100%;margin-left:0}._3ggl3q_boardTools{flex-wrap:wrap;flex:1 0 100%;justify-content:flex-start;margin-left:0}._3ggl3q_boardTools>._3ggl3q_search{flex:1 0 100%;min-width:0}._3ggl3q_boardTools>._3ggl3q_projectFilter{flex:auto;min-width:0}._3ggl3q_boardTools>button{flex:1 1 0;min-width:0}._3ggl3q_columns{scroll-snap-type:inline mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch;grid-auto-columns:86cqw;gap:10px;padding-inline:2px 14cqw;scroll-padding-inline:2px}._3ggl3q_columns::-webkit-scrollbar{display:none}._3ggl3q_column{scroll-snap-align:start;scroll-snap-stop:always}}@container _3ggl3q_task-board-view (width<=720px){._3ggl3q_boardHeader>._3ggl3q_detailMeta{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}}@container _3ggl3q_task-board-view (width<=600px){._3ggl3q_board{padding-inline:8px}}@media (width<=768px){[data-dsh-taskboard-view]{height:100dvh}._3ggl3q_card,._3ggl3q_primaryButton,._3ggl3q_ghostButton,._3ggl3q_dangerButton,._3ggl3q_iconButton,._3ggl3q_linkButton,._3ggl3q_search,._3ggl3q_input,._3ggl3q_select,._3ggl3q_schedulePreset,._3ggl3q_scheduleToggle{min-height:44px}._3ggl3q_search,._3ggl3q_input,._3ggl3q_select,._3ggl3q_schedulePreset{box-sizing:border-box;font-size:16px}._3ggl3q_modalBackdrop{justify-content:stretch;align-items:stretch;width:100vw;height:100dvh}._3ggl3q_modal,._3ggl3q_detail{box-sizing:border-box;border:0;border-radius:0;width:100vw;height:100dvh;max-height:none}._3ggl3q_modal{padding-top:max(16px, env(safe-area-inset-top));padding-right:max(16px, env(safe-area-inset-right));padding-bottom:max(16px, env(safe-area-inset-bottom));padding-left:max(16px, env(safe-area-inset-left))}._3ggl3q_modalFooter{z-index:1;background:var(--dsw-alias-bg-base);flex-wrap:wrap;padding-top:8px;position:sticky;bottom:0}._3ggl3q_modalFooter>button{flex:120px}._3ggl3q_detailHeader{padding-top:max(12px, env(safe-area-inset-top));padding-right:max(14px, env(safe-area-inset-right));padding-left:max(14px, env(safe-area-inset-left));flex-wrap:wrap}._3ggl3q_detailTitle{min-width:0}._3ggl3q_detailBody{overscroll-behavior-y:contain;padding-right:max(14px, env(safe-area-inset-right));padding-left:max(14px, env(safe-area-inset-left))}._3ggl3q_detailFooter{padding-right:max(14px, env(safe-area-inset-right));padding-bottom:max(12px, env(safe-area-inset-bottom));padding-left:max(14px, env(safe-area-inset-left));flex-wrap:wrap}._3ggl3q_detailFooter>button{flex:96px}._3ggl3q_detailFooter>._3ggl3q_detailMeta{text-align:end;flex:1 0 100%;margin-left:0}._3ggl3q_scheduleRow{flex-direction:column;align-items:stretch}._3ggl3q_schedulePreset{width:100%}}._3ggl3q_primaryButton:focus-visible,._3ggl3q_ghostButton:focus-visible,._3ggl3q_dangerButton:focus-visible,._3ggl3q_iconButton:focus-visible,._3ggl3q_linkButton:focus-visible,._3ggl3q_search:focus-visible,._3ggl3q_input:focus-visible,._3ggl3q_select:focus-visible,._3ggl3q_schedulePreset:focus-visible,._3ggl3q_scheduleToggle input:focus-visible,._3ggl3q_formSectionHeader:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}._3ggl3q_primaryButton,._3ggl3q_ghostButton,._3ggl3q_dangerButton,._3ggl3q_iconButton,._3ggl3q_linkButton,._3ggl3q_search,._3ggl3q_input,._3ggl3q_select,._3ggl3q_schedulePreset,._3ggl3q_scheduleToggle input,._3ggl3q_formSectionHeader,._3ggl3q_formSectionChevron{transition:background-color .12s,color .12s,border-color .12s,outline-color .12s,box-shadow .12s,transform .12s}._3ggl3q_card:active{box-shadow:var(--dsw-shadow-lv1);transform:translateY(0)}._3ggl3q_primaryButton:active:not(:disabled),._3ggl3q_ghostButton:active:not(:disabled),._3ggl3q_dangerButton:active:not(:disabled),._3ggl3q_iconButton:active:not(:disabled),._3ggl3q_linkButton:active:not(:disabled){transform:translateY(1px)}._3ggl3q_iconButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}._3ggl3q_linkButton:hover:not(:disabled){text-decoration:underline}._3ggl3q_iconButton:disabled,._3ggl3q_linkButton:disabled{opacity:.45;cursor:default}._3ggl3q_search:focus,._3ggl3q_select:focus,._3ggl3q_schedulePreset:focus{border-color:var(--dsw-alias-state-business-primary)}._3ggl3q_scheduleToggle input{margin:0}@media (prefers-reduced-motion:reduce){._3ggl3q_card,._3ggl3q_primaryButton,._3ggl3q_ghostButton,._3ggl3q_dangerButton,._3ggl3q_iconButton,._3ggl3q_linkButton,._3ggl3q_search,._3ggl3q_input,._3ggl3q_select,._3ggl3q_schedulePreset,._3ggl3q_scheduleToggle input,._3ggl3q_formSectionHeader,._3ggl3q_formSectionChevron{transition:none}._3ggl3q_cardSpinner{animation:none}._3ggl3q_modalBackdrop,._3ggl3q_modal,._3ggl3q_detail{animation:_3ggl3q_dshTbBackdropIn var(--dsh-tb-motion-close) linear both}._3ggl3q_modalBackdrop[data-state=closing],._3ggl3q_modalBackdrop[data-state=closing] ._3ggl3q_modal,._3ggl3q_modalBackdrop[data-state=closing] ._3ggl3q_detail{animation:_3ggl3q_dshTbBackdropOut var(--dsh-tb-motion-close) linear both}}._3ggl3q_cardTags{flex-wrap:wrap;gap:4px;display:flex}._3ggl3q_cardTag{border:1px solid var(--dsh-task-tag-border);background:var(--dsh-task-tag-fill);max-width:100%;color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;border-radius:999px;padding:0 7px;font-size:10px;line-height:16px;overflow:hidden}._3ggl3q_tagFilter{flex-wrap:wrap;flex:none;align-items:center;gap:6px;margin:0;display:flex}._3ggl3q_tagFilterLabel{color:var(--dsw-alias-label-tertiary);font-size:11px}._3ggl3q_tagChip{border:1px solid var(--dsh-task-tag-border);color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border-radius:999px;padding:1px 9px;font-family:inherit;font-size:11px;line-height:18px}._3ggl3q_tagChip[data-active=true]{background:var(--dsh-task-tag-fill);color:var(--dsw-alias-label-primary)}._3ggl3q_cardTag[data-tag-tone=\"0\"],._3ggl3q_tagChip[data-tag-tone=\"0\"]{--dsh-task-tag-fill:#4e93e82e;--dsh-task-tag-border:#4e93e866}._3ggl3q_cardTag[data-tag-tone=\"1\"],._3ggl3q_tagChip[data-tag-tone=\"1\"]{--dsh-task-tag-fill:#2ea36a2e;--dsh-task-tag-border:#2ea36a66}._3ggl3q_cardTag[data-tag-tone=\"2\"],._3ggl3q_tagChip[data-tag-tone=\"2\"]{--dsh-task-tag-fill:#d08a2a2e;--dsh-task-tag-border:#d08a2a66}._3ggl3q_cardTag[data-tag-tone=\"3\"],._3ggl3q_tagChip[data-tag-tone=\"3\"]{--dsh-task-tag-fill:#b456c82e;--dsh-task-tag-border:#b456c866}._3ggl3q_cardTag[data-tag-tone=\"4\"],._3ggl3q_tagChip[data-tag-tone=\"4\"]{--dsh-task-tag-fill:#cf5f7a2e;--dsh-task-tag-border:#cf5f7a66}._3ggl3q_cardTag[data-tag-tone=\"5\"],._3ggl3q_tagChip[data-tag-tone=\"5\"]{--dsh-task-tag-fill:#4a9fb52e;--dsh-task-tag-border:#4a9fb566}._3ggl3q_fieldHint{color:var(--dsw-alias-label-tertiary);font-size:11px;line-height:1.4}._3ggl3q_tagRow{align-items:center;gap:6px;display:flex}._3ggl3q_tagRow ._3ggl3q_input{flex:1 1 0;min-width:0}._3ggl3q_tagRow ._3ggl3q_ghostButton{flex:none}._3ggl3q_tagAddButton{align-self:flex-start}._3ggl3q_projectFilter{flex:none;align-items:center;gap:6px;display:flex}._3ggl3q_projectFilterLabel{color:var(--dsw-alias-label-secondary);white-space:nowrap;font-size:12px}._3ggl3q_projectDialog{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;flex-direction:column;flex:none;gap:8px;margin-bottom:8px;padding:10px 12px;display:flex}._3ggl3q_projectDialogActions{justify-content:flex-end;gap:8px;display:flex}._3ggl3q_aiParse{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;flex-direction:column;gap:6px;padding:10px 12px;display:flex}._3ggl3q_aiParseRow{align-items:center;gap:8px;display:flex}._3ggl3q_aiParseRow ._3ggl3q_select{flex:1 1 0;min-width:0}._3ggl3q_aiParseRow ._3ggl3q_ghostButton,._3ggl3q_aiParseRow ._3ggl3q_primaryButton{flex:none}._3ggl3q_cardSubtask{border:1px solid var(--dsw-alias-border-l2);max-width:100%;color:var(--dsw-alias-label-secondary);text-overflow:ellipsis;white-space:nowrap;background:0 0;border-radius:999px;padding:0 7px;font-size:10px;line-height:16px;overflow:hidden}._3ggl3q_cardSubtask[data-tone=failed]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}._3ggl3q_cardSubtask[data-tone=running]{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}._3ggl3q_cardSubtask[data-tone=done]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}._3ggl3q_subtaskList{flex-direction:column;gap:6px;margin:0;padding:0;list-style:none;display:flex}._3ggl3q_subtaskRow{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;flex-wrap:wrap;align-items:center;gap:10px;padding:6px 10px;display:flex}._3ggl3q_subtaskRow ._3ggl3q_linkButton:first-child{text-align:left;overflow-wrap:anywhere;flex:auto;min-width:0}._3ggl3q_subtaskAddRow{flex-wrap:wrap;gap:8px;display:flex}._3ggl3q_pickList{flex-direction:column;gap:6px;max-height:320px;margin:0;padding:0;list-style:none;display:flex;overflow-y:auto}._3ggl3q_pickRow{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;align-items:center;gap:10px;padding:6px 10px;display:flex}._3ggl3q_pickTitle{min-width:0;color:var(--dsw-alias-label-primary);overflow-wrap:anywhere;flex:auto;font-size:13px}";
+		const css$3 = "[data-dsh-taskboard-view]{box-sizing:border-box;background:var(--dsw-alias-bg-base);flex-direction:column;width:100%;min-width:0;height:100%;min-height:0;display:flex;container:_3ggl3q_task-board-view/inline-size}._3ggl3q_board{--dsh-tb-control-h:30px;--dsh-tb-control-radius:8px;--dsh-tb-control-gap:8px;--dsh-tb-icon-size:30px;--dsh-tb-hit-size:44px;--dsh-tb-motion-enter:.16s;--dsh-tb-motion-close:.14s;--dsh-tb-ease:cubic-bezier(.2, 0, 0, 1);--dsh-tb-rail:12px;--dsh-tb-card-stripe:3px;--dsh-tb-card-inset:8px;--dsh-tb-card-row:18px;--dsh-tb-card-gap:6px;box-sizing:border-box;background:var(--dsw-alias-bg-base);min-width:0;height:100%;min-height:0;color:var(--dsw-alias-label-primary);font-family:var(--dsw-font-family);flex-direction:column;gap:12px;padding:14px 16px 16px;display:flex}._3ggl3q_boardHeader{flex:none;align-items:center;gap:10px;display:flex}._3ggl3q_boardTools{align-items:center;gap:var(--dsh-tb-control-gap);flex:auto;justify-content:flex-end;min-width:0;margin-left:auto;display:flex}._3ggl3q_boardTitle{color:var(--dsw-alias-label-primary);white-space:nowrap;margin:0;font-size:15px;font-weight:700}._3ggl3q_backButton{align-items:center;gap:4px;display:inline-flex}._3ggl3q_search{box-sizing:border-box;min-width:120px;height:var(--dsh-tb-control-h);color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsh-tb-control-radius);outline:none;flex:0 260px;padding:0 10px;font-size:13px}._3ggl3q_search::placeholder{color:var(--dsw-alias-label-tertiary)}._3ggl3q_columns{overscroll-behavior-inline:contain;scrollbar-color:var(--dsw-alias-border-l3) var(--dsw-alias-interactive-bg-hover);scrollbar-width:thin;flex:1;grid-auto-columns:minmax(220px,1fr);grid-auto-flow:column;gap:12px;min-height:0;padding-bottom:6px;display:grid;overflow:auto hidden}._3ggl3q_columns::-webkit-scrollbar{height:10px}._3ggl3q_columns::-webkit-scrollbar-track{background:var(--dsw-alias-interactive-bg-hover);border-radius:999px}._3ggl3q_columns::-webkit-scrollbar-thumb{background:var(--dsw-alias-border-l3);background-clip:content-box;border:2px solid #0000;border-radius:999px}._3ggl3q_columns::-webkit-scrollbar-thumb:hover{background:var(--dsw-alias-border-l4);background-clip:content-box}._3ggl3q_column{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:12px;flex-direction:column;min-height:0;display:flex;overflow:hidden}._3ggl3q_columnHeader{padding:8px var(--dsh-tb-rail);min-height:calc(var(--dsh-tb-card-row) + 18px);flex:none;align-items:center;gap:8px;display:flex}._3ggl3q_columnTitle{color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;flex:1;margin:0;font-size:13px;font-weight:700;overflow:hidden}._3ggl3q_columnCount{min-width:0;font-size:12px;line-height:var(--dsh-tb-card-row);color:var(--dsw-alias-label-tertiary);background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;flex:none;padding:0 8px}._3ggl3q_statusDot{border-radius:50%;flex:none;width:8px;height:8px}._3ggl3q_statusDot[data-status=backlog]{background:var(--dsw-alias-label-tertiary)}._3ggl3q_statusDot[data-status=todo]{background:var(--dsw-alias-state-business-primary)}._3ggl3q_statusDot[data-status=running]{background:var(--dsw-alias-state-warn-primary)}._3ggl3q_statusDot[data-status=done]{background:var(--dsw-alias-state-success-primary)}._3ggl3q_statusDot[data-status=failed]{background:var(--dsw-alias-state-error-primary)}._3ggl3q_cards{padding:2px var(--dsh-tb-rail) 10px;flex-direction:column;flex:1;gap:8px;min-height:0;display:flex;overflow-y:auto}._3ggl3q_columnEmpty{text-align:center;color:var(--dsw-alias-label-tertiary);padding:24px 0;font-size:12px}._3ggl3q_card{grid-template-columns:var(--dsh-tb-card-stripe) minmax(0, 1fr);column-gap:var(--dsh-tb-card-inset);row-gap:var(--dsh-tb-card-gap);padding:10px calc(var(--dsh-tb-card-stripe) + var(--dsh-tb-card-inset)) 10px 0;text-align:left;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);cursor:pointer;color:var(--dsw-alias-label-primary);border-radius:10px;flex:none;align-content:start;font-family:inherit;transition:box-shadow .12s,border-color .12s,transform .12s;display:grid;position:relative;overflow:hidden}._3ggl3q_card>:not(._3ggl3q_cardOpen){z-index:1;grid-column:2;min-width:0;position:relative}._3ggl3q_card:before{content:\"\";width:var(--dsh-tb-card-stripe);pointer-events:none;background:0 0;position:absolute;top:0;bottom:0;left:0}._3ggl3q_card[data-tone=running]:before{background:var(--dsw-alias-state-warn-primary)}._3ggl3q_card[data-tone=succeeded]:before{background:var(--dsw-alias-state-success-primary)}._3ggl3q_card[data-tone=failed]:before{background:var(--dsw-alias-state-error-primary)}._3ggl3q_card[data-tone=cancelled]:before{background:var(--dsw-alias-label-tertiary)}._3ggl3q_card:hover{box-shadow:var(--dsw-shadow-lv2);border-color:var(--dsw-alias-border-l3);transform:translateY(-1px)}._3ggl3q_card[data-compact]:hover{box-shadow:none;transform:none}._3ggl3q_card[data-status=running]{border-color:var(--dsw-alias-state-warn-primary)}._3ggl3q_cardOpen{z-index:0;border-radius:inherit;cursor:pointer;background:0 0;border:0;margin:0;padding:0;position:absolute;inset:0}._3ggl3q_cardOpen:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:-2px}._3ggl3q_cardTitleRow{align-items:flex-start;gap:6px;min-width:0;display:flex}._3ggl3q_cardKind{font-size:12px;font-weight:600;line-height:var(--dsh-tb-card-row);white-space:nowrap;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;flex:none;padding:0 8px}._3ggl3q_cardTitle{-webkit-line-clamp:2;-webkit-box-orient:vertical;min-width:0;font-size:13px;font-weight:600;line-height:1.4;display:-webkit-box;overflow:hidden}._3ggl3q_card[data-compact]{row-gap:2px;padding-top:6px;padding-bottom:6px}._3ggl3q_card[data-compact] ._3ggl3q_cardTitle{-webkit-line-clamp:1;font-size:12px;font-weight:500}._3ggl3q_cardDecoration{flex:none;align-items:center;gap:4px;display:inline-flex}._3ggl3q_cardDecoration:empty{display:none}._3ggl3q_cardExcerpt{color:var(--dsw-alias-label-secondary);-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:12px;line-height:1.4;display:-webkit-box;overflow:hidden}._3ggl3q_cardMeta{min-height:var(--dsh-tb-card-row);font-size:12px;line-height:var(--dsh-tb-card-row);color:var(--dsw-alias-label-tertiary);flex-wrap:wrap;align-items:center;gap:4px 8px;display:flex}._3ggl3q_cardTime{text-overflow:ellipsis;white-space:nowrap;font-variant-numeric:tabular-nums;flex:auto;min-width:max-content;overflow:hidden}._3ggl3q_cardSchedule{min-width:0;height:var(--dsh-tb-card-row);white-space:nowrap;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover);border-radius:999px;flex:none;align-items:center;gap:4px;padding:0 8px;font-size:12px;line-height:1;display:inline-flex}._3ggl3q_cardRun{height:var(--dsh-tb-card-row);font-size:12px;line-height:var(--dsh-tb-card-row);color:var(--dsw-alias-label-tertiary);flex:none;align-items:center;gap:6px;display:inline-flex}._3ggl3q_cardRun[data-declared]{text-underline-offset:2px;text-decoration:underline dotted}._3ggl3q_cardResult{font-size:12px;font-weight:600;line-height:var(--dsh-tb-card-row);color:var(--dsw-alias-state-warn-primary);background:var(--dsw-alias-state-warn-secondary);border-radius:999px;flex:none;padding:0 8px}._3ggl3q_cardResult[data-result=succeeded]{color:var(--dsw-alias-state-success-primary);background:var(--dsw-alias-state-success-secondary)}._3ggl3q_cardResult[data-result=failed]{color:var(--dsw-alias-state-error-primary);background:var(--dsw-alias-state-error-secondary)}._3ggl3q_cardResult[data-result=cancelled]{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover)}._3ggl3q_cardSession{width:var(--dsh-tb-card-row);height:var(--dsh-tb-card-row);color:var(--dsw-alias-state-business-primary);flex:none;justify-content:center;align-items:center;display:inline-flex}._3ggl3q_cardAction{cursor:pointer;background:0 0;border:0;border-radius:6px;padding:0;font-family:inherit;position:relative}._3ggl3q_cardAction:after{content:\"\";width:var(--dsh-tb-hit-size);height:var(--dsh-tb-hit-size);position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}._3ggl3q_cardAction:hover{background:var(--dsw-alias-interactive-bg-hover)}._3ggl3q_cardAction:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}._3ggl3q_cardGroup{flex-direction:column;gap:6px;display:flex}._3ggl3q_cardGroupHeader{min-height:var(--dsh-tb-card-row);color:var(--dsw-alias-label-tertiary);align-items:center;gap:6px;padding:4px 0 0;font-size:12px;font-weight:600;display:flex}._3ggl3q_cardGroupCount{font-weight:400}._3ggl3q_cardGroupHeader ._3ggl3q_linkButton{margin-left:auto;font-size:12px}._3ggl3q_sourceGroup{gap:8px}._3ggl3q_sourceGroupHeader{color:var(--dsw-alias-label-secondary)}._3ggl3q_sourceGroupLabel{overflow-wrap:anywhere;flex:auto;min-width:0}._3ggl3q_densityToggle{width:var(--dsh-tb-card-row);height:var(--dsh-tb-card-row);color:var(--dsw-alias-label-tertiary);cursor:pointer;background:0 0;border:0;border-radius:6px;flex:none;justify-content:center;align-items:center;padding:0;display:inline-flex;position:relative}._3ggl3q_densityToggle:after{content:\"\";width:var(--dsh-tb-hit-size);height:var(--dsh-tb-hit-size);position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}._3ggl3q_densityToggle:hover,._3ggl3q_densityToggle[data-active=true]{color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}._3ggl3q_densityToggle:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}._3ggl3q_cardStatus{min-height:var(--dsh-tb-card-row);font-size:12px;line-height:var(--dsh-tb-card-row);color:var(--dsw-alias-label-tertiary);align-items:center;gap:8px;display:flex}._3ggl3q_cardStatusText{flex:0 auto;align-items:center;gap:8px;min-width:0;display:flex}._3ggl3q_cardStatusTrail{flex:none;align-items:center;gap:8px;display:flex}._3ggl3q_cardRuns{font-variant-numeric:tabular-nums;white-space:nowrap}._3ggl3q_cardRunningLabel{text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--dsw-alias-state-warn-primary);flex:0 auto;font-size:12px;overflow:hidden}._3ggl3q_cardSpinnerSlot{width:var(--dsh-tb-card-row);height:var(--dsh-tb-card-row);flex:none;justify-content:center;align-items:center;display:inline-flex}._3ggl3q_cardSpinner{border:2px solid var(--dsw-alias-state-warn-primary);border-top-color:#0000;border-radius:50%;flex:none;width:12px;height:12px;animation:.8s linear infinite _3ggl3q_dshTbSpin}@keyframes _3ggl3q_dshTbSpin{to{transform:rotate(360deg)}}._3ggl3q_primaryButton,._3ggl3q_ghostButton,._3ggl3q_dangerButton,._3ggl3q_iconButton{box-sizing:border-box;height:var(--dsh-tb-control-h);border-radius:var(--dsh-tb-control-radius);cursor:pointer;white-space:nowrap;justify-content:center;align-items:center;gap:6px;font-family:inherit;display:inline-flex}._3ggl3q_primaryButton,._3ggl3q_dangerButton{padding:0 14px;font-size:13px;font-weight:600}._3ggl3q_primaryButton{color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-button-primary-fill);border:1px solid #0000}._3ggl3q_dangerButton{color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-state-error-primary);border:1px solid #0000}._3ggl3q_ghostButton{color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l2);background:0 0;padding:0 12px;font-size:13px}._3ggl3q_ghostButton[data-active=true]{color:var(--dsw-alias-label-primary-foreground);background:var(--dsw-alias-button-primary-fill);border-color:#0000}._3ggl3q_primaryButton:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}._3ggl3q_ghostButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}._3ggl3q_ghostButton[data-active=true]:hover:not(:disabled){background:var(--dsw-alias-button-primary-hover)}._3ggl3q_dangerButton:hover:not(:disabled){filter:brightness(1.08)}._3ggl3q_dangerButton:active:not(:disabled){filter:brightness(.94)}._3ggl3q_primaryButton:disabled,._3ggl3q_dangerButton:disabled{opacity:.5;cursor:default}._3ggl3q_ghostButton:disabled{opacity:.45;cursor:default}._3ggl3q_iconButton{width:var(--dsh-tb-icon-size);color:var(--dsw-alias-label-secondary);background:0 0;border:1px solid #0000;padding:0;position:relative}._3ggl3q_iconButton:after{content:\"\";width:var(--dsh-tb-hit-size);height:var(--dsh-tb-hit-size);position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}._3ggl3q_iconButton:disabled{opacity:.45;cursor:default}._3ggl3q_linkButton{color:var(--dsw-alias-state-business-primary);cursor:pointer;white-space:nowrap;background:0 0;border:none;padding:0;font-size:12px}._3ggl3q_linkButton:hover{text-decoration:underline}._3ggl3q_modalBackdrop{z-index:1300;background:var(--dsw-alias-bg-mask-1);animation:_3ggl3q_dshTbBackdropIn var(--dsh-tb-motion-enter) var(--dsh-tb-ease) both;justify-content:center;align-items:center;display:flex;position:fixed;inset:0}._3ggl3q_modalBackdrop[data-state=closing]{animation:_3ggl3q_dshTbBackdropOut var(--dsh-tb-motion-close) var(--dsh-tb-ease) both}._3ggl3q_modal,._3ggl3q_detail{animation:_3ggl3q_dshTbSurfaceIn var(--dsh-tb-motion-enter) var(--dsh-tb-ease) both}._3ggl3q_modalBackdrop[data-state=closing] ._3ggl3q_modal,._3ggl3q_modalBackdrop[data-state=closing] ._3ggl3q_detail{animation:_3ggl3q_dshTbSurfaceOut var(--dsh-tb-motion-close) var(--dsh-tb-ease) both}@keyframes _3ggl3q_dshTbBackdropIn{0%{opacity:0}to{opacity:1}}@keyframes _3ggl3q_dshTbBackdropOut{0%{opacity:1}to{opacity:0}}@keyframes _3ggl3q_dshTbSurfaceIn{0%{opacity:0;transform:translateY(8px)scale(.98)}to{opacity:1;transform:none}}@keyframes _3ggl3q_dshTbSurfaceOut{0%{opacity:1;transform:none}to{opacity:0;transform:translateY(8px)scale(.98)}}._3ggl3q_modal{background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);width:min(520px,100vw - 48px);max-height:calc(100vh - 96px);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);border-radius:14px;flex-direction:column;gap:10px;padding:18px;display:flex;overflow:hidden}._3ggl3q_modalTitle{margin:0;font-size:16px;font-weight:700}._3ggl3q_confirmMessage{color:var(--dsw-alias-label-secondary);white-space:pre-wrap;overflow-wrap:anywhere;margin:0;font-size:13px;line-height:1.5}._3ggl3q_modalFooter{justify-content:flex-end;gap:10px;margin-top:4px;display:flex}._3ggl3q_modalHeader{align-items:center;gap:10px;display:flex}._3ggl3q_modalHeader>._3ggl3q_modalTitle{text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;overflow:hidden}._3ggl3q_tagManageList{flex-direction:column;gap:6px;margin:0;padding:0;list-style:none;display:flex}._3ggl3q_tagManageRow{border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsh-tb-control-radius);flex-wrap:wrap;align-items:center;gap:8px;padding:6px 8px;display:flex}._3ggl3q_tagManageName{text-overflow:ellipsis;white-space:nowrap;min-width:0;color:var(--dsw-alias-label-primary);flex:auto;font-size:13px;overflow:hidden}._3ggl3q_tagManageCount{color:var(--dsw-alias-label-tertiary);flex:none;font-size:12px}._3ggl3q_tagManageInput{flex:auto;min-width:0}._3ggl3q_tagManageMerge{color:var(--dsw-alias-label-tertiary);flex:1 0 100%;font-size:12px}._3ggl3q_tagCleanup{align-items:center;gap:var(--dsh-tb-control-gap);flex:none;display:flex}._3ggl3q_tagCleanup ._3ggl3q_ghostButton{flex:none}._3ggl3q_helpButton{box-sizing:border-box;width:var(--dsh-tb-control-h);height:var(--dsh-tb-control-h);border:1px solid var(--dsw-alias-border-l1);color:var(--dsw-alias-label-secondary);cursor:help;background:0 0;border-radius:50%;flex:none;justify-content:center;align-items:center;padding:0;font-family:inherit;font-size:12px;font-weight:600;line-height:1;display:inline-flex}._3ggl3q_helpButton:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}._3ggl3q_helpTipWrap{flex:none;display:inline-flex;position:relative}._3ggl3q_helpTip{z-index:4;box-sizing:border-box;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);width:max-content;max-width:240px;box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);text-align:left;white-space:pre-line;opacity:0;visibility:hidden;pointer-events:none;border-radius:10px;padding:10px 12px;font-size:12px;font-weight:400;line-height:1.5;transition:opacity .12s;position:absolute;top:calc(100% + 8px);left:0}._3ggl3q_helpTipWrap:hover ._3ggl3q_helpTip,._3ggl3q_helpTipWrap:focus-within ._3ggl3q_helpTip{opacity:1;visibility:visible}._3ggl3q_tagCleanupInput{flex:none;width:64px}._3ggl3q_tagCleanupNotice{color:var(--dsw-alias-label-secondary);margin:0;font-size:12px;line-height:1.4}._3ggl3q_modalBody{flex-direction:column;gap:8px;min-height:0;display:flex;overflow-y:auto}._3ggl3q_modalBody>*{flex:none}._3ggl3q_formSection{border:1px solid var(--dsw-alias-separator-primary);border-radius:10px;flex-direction:column;display:flex;overflow:visible}._3ggl3q_formSectionHeader{box-sizing:border-box;width:100%;min-height:28px;color:var(--dsw-alias-label-primary);text-align:left;cursor:pointer;background:0 0;border:0;border-radius:9px;align-items:center;gap:8px;padding:6px 10px;font-family:inherit;font-size:12px;font-weight:600;line-height:16px;display:flex;position:relative}._3ggl3q_formSectionHeader:hover{background:var(--dsw-alias-bg-mask-1)}._3ggl3q_formSection[data-open=true] ._3ggl3q_formSectionHeader{border-radius:9px 9px 0 0}._3ggl3q_formSectionHeader:after{content:\"\";width:var(--dsh-tb-hit-size);height:var(--dsh-tb-hit-size);position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}._3ggl3q_formSectionChevron{border-top:4px solid #0000;border-bottom:4px solid #0000;border-left:5px solid var(--dsw-alias-label-tertiary);flex:none;width:0;height:0;margin-left:1px;transition:transform .12s}._3ggl3q_formSection[data-open=true] ._3ggl3q_formSectionChevron{transform:rotate(90deg)}._3ggl3q_formSectionTitle{text-overflow:ellipsis;white-space:nowrap;flex:0 auto;min-width:0;overflow:hidden}._3ggl3q_formSectionSummary{min-width:0;color:var(--dsw-alias-label-tertiary);text-align:right;text-overflow:ellipsis;white-space:nowrap;flex:0 auto;margin-left:auto;font-weight:400;overflow:hidden}._3ggl3q_formSectionBody{border-top:1px solid var(--dsw-alias-separator-primary);flex-direction:column;gap:8px;padding:8px 10px 10px;display:flex}._3ggl3q_field{flex-direction:column;gap:5px;display:flex}._3ggl3q_fieldLabel{color:var(--dsw-alias-label-secondary);font-size:12px;font-weight:600}._3ggl3q_input{box-sizing:border-box;min-height:var(--dsh-tb-control-h);color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsh-tb-control-radius);resize:vertical;outline:none;padding:6px 10px;font-family:inherit;font-size:13px}._3ggl3q_input:focus{border-color:var(--dsw-alias-state-business-primary)}._3ggl3q_select{box-sizing:border-box;height:var(--dsh-tb-control-h);color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsh-tb-control-radius);outline:none;max-width:100%;padding:0 10px;font-family:inherit;font-size:13px}._3ggl3q_input::placeholder{color:var(--dsw-alias-label-tertiary)}._3ggl3q_formError{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px}._3ggl3q_detail{background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);width:min(960px,100vw - 48px);max-height:calc(100vh - 80px);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-primary);border-radius:14px;flex-direction:column;display:flex;overflow:hidden}._3ggl3q_detailHeader{z-index:1;border-bottom:1px solid var(--dsw-alias-separator-primary);flex:none;align-items:center;gap:8px;padding:16px 24px;display:flex;position:relative}._3ggl3q_detailTitle{overflow-wrap:anywhere;flex:1;min-width:0;margin:0;font-size:15px;font-weight:700;line-height:1.4}._3ggl3q_statusBadge{border:1px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:2px 10px;font-size:12px}._3ggl3q_statusBadge[data-status=running]{color:var(--dsw-alias-state-warn-primary);border-color:var(--dsw-alias-state-warn-primary)}._3ggl3q_statusBadge[data-status=done]{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}._3ggl3q_statusBadge[data-status=failed]{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-primary)}._3ggl3q_detailBody{flex-direction:column;flex:1;gap:16px;min-height:0;padding:16px 24px 24px;display:flex;overflow-y:auto}._3ggl3q_detailColumns{grid-template-columns:minmax(0,1fr);align-items:start;gap:24px;display:grid}._3ggl3q_detailColumn{flex-direction:column;gap:16px;min-width:0;display:flex}._3ggl3q_detailFolds{flex-direction:column;gap:8px;min-width:0;display:flex}@media (width>=1024px){._3ggl3q_detailColumns{grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr)}}._3ggl3q_detailSection{flex-direction:column;gap:8px;min-width:0;display:flex}._3ggl3q_detailSection h4{color:var(--dsw-alias-label-secondary);margin:0;font-size:12px;font-weight:700}._3ggl3q_detailText{color:var(--dsw-alias-label-primary);white-space:pre-wrap;overflow-wrap:anywhere;margin:0;font-size:13px;line-height:1.55}._3ggl3q_detailBody ._3ggl3q_scheduleInput,._3ggl3q_detailBody ._3ggl3q_schedulePreset,._3ggl3q_detailBody ._3ggl3q_promptBlock{font-size:13px}._3ggl3q_detailBody ._3ggl3q_scheduleZone,._3ggl3q_detailBody ._3ggl3q_scheduleMeta,._3ggl3q_detailBody ._3ggl3q_cardTag{font-size:12px}._3ggl3q_scheduleToggle{color:var(--dsw-alias-label-primary);cursor:pointer;user-select:none;align-items:center;gap:8px;font-size:13px;display:flex}._3ggl3q_scheduleToggle input{accent-color:var(--dsw-alias-state-business-primary)}._3ggl3q_scheduleRow{align-items:center;gap:8px;display:flex}._3ggl3q_scheduleInput{min-width:0;font-family:var(--dsw-font-markdown-code-block-small);flex:1}._3ggl3q_scheduleInputInvalid,._3ggl3q_scheduleInputInvalid:focus{border-color:var(--dsw-alias-state-error-primary)}._3ggl3q_schedulePreset{box-sizing:border-box;height:var(--dsh-tb-control-h);color:var(--dsw-alias-label-primary);background:var(--dsw-specific-input-major);border:1px solid var(--dsw-alias-border-l2);border-radius:var(--dsh-tb-control-radius);outline:none;flex:none;padding:0 8px}._3ggl3q_scheduleZone{color:var(--dsw-alias-label-secondary);align-items:center;gap:8px;display:flex}._3ggl3q_scheduleZone select{flex:1;min-width:0}._3ggl3q_scheduleMeta{color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere;margin:0}._3ggl3q_promptBlock{line-height:1.5;font-family:var(--dsw-font-markdown-code-block-small);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-markdown-code-block);border:1px solid var(--dsw-alias-border-l1);white-space:pre-wrap;overflow-wrap:anywhere;border-radius:8px;max-height:240px;margin:0;padding:10px 12px;overflow-y:auto}._3ggl3q_clampBody{position:relative}._3ggl3q_clampBody[data-clamped=true]{max-height:160px;overflow:hidden}._3ggl3q_clampBody[data-clamped=true]:after{content:\"\";pointer-events:none;background:linear-gradient(to bottom, transparent, var(--dsw-alias-bg-base));height:44px;position:absolute;bottom:0;left:0;right:0}._3ggl3q_clampToggle{align-self:flex-start}._3ggl3q_executionLog{flex-direction:column;gap:8px;min-width:0;display:flex}._3ggl3q_executionList{flex-direction:column;gap:8px;min-width:0;margin:0;padding:0;list-style:none;display:flex}._3ggl3q_executionExtra{flex-direction:column;gap:8px;min-width:0;display:flex}._3ggl3q_executionRow{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;flex-direction:column;gap:8px;min-width:0;padding:10px 12px;display:flex}._3ggl3q_executionRowHead{flex-wrap:wrap;align-items:center;gap:8px;min-width:0;display:flex}._3ggl3q_executionRowEvidence{flex-direction:column;gap:6px;min-width:0;display:flex}._3ggl3q_executionBadge{color:var(--dsw-alias-state-warn-primary);background:var(--dsw-alias-state-warn-secondary);border-radius:999px;flex:none;padding:1px 8px;font-size:12px;font-weight:600;line-height:18px}._3ggl3q_executionBadge[data-result=succeeded]{color:var(--dsw-alias-state-success-primary);background:var(--dsw-alias-state-success-secondary)}._3ggl3q_executionBadge[data-result=failed]{color:var(--dsw-alias-state-error-primary);background:var(--dsw-alias-state-error-secondary)}._3ggl3q_executionBadge[data-result=cancelled]{color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover)}._3ggl3q_executionTimes{color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere;font-size:12px;line-height:1.5}._3ggl3q_executionError{color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere;font-size:12px;line-height:1.5}._3ggl3q_executionSession{color:var(--dsw-alias-state-business-primary);cursor:pointer;white-space:nowrap;background:0 0;border:none;align-items:center;gap:4px;margin-left:auto;padding:0 2px;font-family:inherit;font-size:12px;display:inline-flex;position:relative}._3ggl3q_executionSession:after{content:\"\";width:100%;height:var(--dsh-tb-hit-size);position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}._3ggl3q_executionSession:hover{text-decoration:underline}._3ggl3q_executionDisclosure{align-self:flex-start;align-items:center;gap:6px;display:inline-flex}._3ggl3q_disclosureChevron{width:5px;height:5px;transition:transform .12s var(--dsh-tb-ease);border-bottom:1.5px solid;border-right:1.5px solid;flex:none;transform:rotate(45deg)}._3ggl3q_disclosureChevron[data-open=true]{transform:rotate(225deg)}._3ggl3q_verifyReport{flex-direction:column;gap:8px;min-width:0;display:flex}._3ggl3q_verifyBadge{max-width:100%;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-interactive-bg-hover);border:1px solid var(--dsw-alias-border-l2);cursor:pointer;border-radius:999px;align-self:flex-start;align-items:center;gap:6px;padding:2px 10px;font-family:inherit;font-size:12px;font-weight:600;line-height:18px;display:inline-flex;position:relative}._3ggl3q_verifyBadge:after{content:\"\";height:var(--dsh-tb-hit-size);position:absolute;top:50%;left:0;right:0;transform:translateY(-50%)}._3ggl3q_verifyBadge[data-tone=warn]{color:var(--dsw-alias-state-warn-primary);background:var(--dsw-alias-state-warn-secondary);border-color:#0000}._3ggl3q_verifyBadge[data-tone=success]{color:var(--dsw-alias-state-success-primary);background:var(--dsw-alias-state-success-secondary);border-color:#0000}._3ggl3q_verifyBadge[data-tone=error]{color:var(--dsw-alias-state-error-primary);background:var(--dsw-alias-state-error-secondary);border-color:#0000}._3ggl3q_verifyVerdict{overflow-wrap:anywhere;font-weight:700}._3ggl3q_verifyPanel{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l1);border-radius:8px;flex-direction:column;gap:8px;min-width:0;padding:10px 12px;display:flex}._3ggl3q_attemptRow{background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l1);border-radius:8px;flex-direction:column;gap:6px;min-width:0;padding:8px 10px;display:flex}._3ggl3q_attemptHead{flex-wrap:wrap;align-items:center;gap:8px;min-width:0;display:flex}._3ggl3q_referenceList{flex-direction:column;gap:6px;min-width:0;margin:0;padding:0;list-style:none;display:flex}._3ggl3q_referenceRow{color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere;font-size:12px}._3ggl3q_menuRoot{flex:none;display:inline-flex;position:relative}._3ggl3q_menuChevron{width:5px;height:5px;transition:transform .12s var(--dsh-tb-ease);border-bottom:1.5px solid;border-right:1.5px solid;flex:none;margin-top:-3px;transform:rotate(45deg)}._3ggl3q_menuChevron[data-open=true]{margin-top:0;transform:rotate(225deg)}._3ggl3q_menuPanel{z-index:20;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);min-width:180px;box-shadow:var(--dsw-shadow-lv2);border-radius:10px;flex-direction:column;padding:4px;display:flex;position:absolute;top:calc(100% + 4px);left:0}._3ggl3q_detailHeader ._3ggl3q_menuPanel{left:auto;right:0}._3ggl3q_menuItem{min-height:var(--dsh-tb-hit-size);color:var(--dsw-alias-label-primary);cursor:pointer;text-align:left;white-space:nowrap;background:0 0;border:none;border-radius:8px;align-items:center;padding:0 10px;font-family:inherit;font-size:13px;display:flex}._3ggl3q_menuItem:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}._3ggl3q_menuItem:disabled{opacity:.45;cursor:default}._3ggl3q_detailFooter{border-top:1px solid var(--dsw-alias-separator-primary);flex:none;align-items:center;gap:8px;padding:16px 24px;display:flex}._3ggl3q_detailMeta{color:var(--dsw-alias-label-tertiary);overflow-wrap:anywhere;font-size:12px}._3ggl3q_detailFooter>._3ggl3q_detailMeta{margin-left:0}._3ggl3q_detailStamp{text-align:end;margin-left:auto}._3ggl3q_executionExtra,._3ggl3q_verifyPanel,._3ggl3q_detailBody ._3ggl3q_formSectionBody{animation:_3ggl3q_dshTbRowsIn var(--dsh-tb-motion-enter) var(--dsh-tb-ease) both}._3ggl3q_executionExtra[data-execution-fold=closing],._3ggl3q_verifyPanel[data-state=closing],._3ggl3q_detailBody ._3ggl3q_formSectionBody[data-state=closing]{animation:_3ggl3q_dshTbRowsOut var(--dsh-tb-motion-close) var(--dsh-tb-ease) both}._3ggl3q_formSectionBody{animation:_3ggl3q_dshTbRowsIn var(--dsh-tb-motion-enter) var(--dsh-tb-ease) both}._3ggl3q_formSectionBody[data-state=closing]{animation:_3ggl3q_dshTbRowsOut var(--dsh-tb-motion-close) var(--dsh-tb-ease) both}@keyframes _3ggl3q_dshTbRowsIn{0%{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}@keyframes _3ggl3q_dshTbRowsOut{0%{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-6px)}}@keyframes _3ggl3q_dshTbFadeIn{0%{opacity:0}to{opacity:1}}@keyframes _3ggl3q_dshTbFadeOut{0%{opacity:1}to{opacity:0}}@media (prefers-reduced-motion:reduce){._3ggl3q_executionExtra,._3ggl3q_verifyPanel,._3ggl3q_detailBody ._3ggl3q_formSectionBody{animation:_3ggl3q_dshTbFadeIn var(--dsh-tb-motion-close) linear both}._3ggl3q_executionExtra[data-execution-fold=closing],._3ggl3q_verifyPanel[data-state=closing],._3ggl3q_detailBody ._3ggl3q_formSectionBody[data-state=closing]{animation:_3ggl3q_dshTbFadeOut var(--dsh-tb-motion-close) linear both}._3ggl3q_formSectionBody{animation:_3ggl3q_dshTbFadeIn var(--dsh-tb-motion-close) linear both}._3ggl3q_formSectionBody[data-state=closing]{animation:_3ggl3q_dshTbFadeOut var(--dsh-tb-motion-close) linear both}}._3ggl3q_detailBody ._3ggl3q_formSection{min-width:0;overflow:visible}._3ggl3q_detailBody ._3ggl3q_formSectionHeader{box-sizing:border-box;border-radius:9px;min-height:28px;padding:4px 10px;font-size:12px;line-height:16px;position:relative}._3ggl3q_detailBody ._3ggl3q_formSection[data-open=true] ._3ggl3q_formSectionHeader{border-radius:9px 9px 0 0}._3ggl3q_detailBody ._3ggl3q_formSectionHeader:after{content:\"\";width:var(--dsh-tb-hit-size);height:var(--dsh-tb-hit-size);position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}._3ggl3q_detailBody ._3ggl3q_formSectionTitle{text-overflow:ellipsis;white-space:nowrap;flex:0 auto;min-width:0;overflow:hidden}._3ggl3q_detailBody ._3ggl3q_formSectionSummary{flex:0 auto;min-width:0;margin-left:auto}._3ggl3q_detailBody ._3ggl3q_formSectionBody{gap:8px}@container _3ggl3q_task-board-view (width<=768px){._3ggl3q_board{gap:10px;padding:10px}._3ggl3q_boardHeader{flex-wrap:wrap;align-items:center;gap:8px}._3ggl3q_backButton{flex:none}._3ggl3q_boardTitle{flex:auto}._3ggl3q_boardHeader>._3ggl3q_detailMeta{flex:1 0 100%;margin-left:0}._3ggl3q_boardTools{flex-wrap:wrap;flex:1 0 100%;justify-content:flex-start;margin-left:0}._3ggl3q_boardTools>._3ggl3q_search{flex:1 0 100%;min-width:0}._3ggl3q_boardTools>._3ggl3q_projectFilter{flex:auto;min-width:0}._3ggl3q_boardTools>button{flex:1 1 0;min-width:0}._3ggl3q_columns{scroll-snap-type:inline mandatory;scrollbar-width:none;-webkit-overflow-scrolling:touch;grid-auto-columns:86cqw;gap:10px;padding-inline:2px 14cqw;scroll-padding-inline:2px}._3ggl3q_columns::-webkit-scrollbar{display:none}._3ggl3q_column{scroll-snap-align:start;scroll-snap-stop:always}}@container _3ggl3q_task-board-view (width<=720px){._3ggl3q_boardHeader>._3ggl3q_detailMeta{text-overflow:ellipsis;white-space:nowrap;overflow:hidden}}@container _3ggl3q_task-board-view (width<=600px){._3ggl3q_board{padding-inline:8px}}@media (width<=768px){[data-dsh-taskboard-view]{height:100dvh}._3ggl3q_card,._3ggl3q_primaryButton,._3ggl3q_ghostButton,._3ggl3q_dangerButton,._3ggl3q_iconButton,._3ggl3q_linkButton,._3ggl3q_search,._3ggl3q_input,._3ggl3q_select,._3ggl3q_schedulePreset,._3ggl3q_scheduleToggle{min-height:44px}._3ggl3q_search,._3ggl3q_input,._3ggl3q_select,._3ggl3q_schedulePreset{box-sizing:border-box;font-size:16px}._3ggl3q_modalBackdrop{justify-content:stretch;align-items:stretch;width:100vw;height:100dvh}._3ggl3q_modal,._3ggl3q_detail{box-sizing:border-box;border:0;border-radius:0;width:100vw;height:100dvh;max-height:none}._3ggl3q_modal{padding-top:max(16px, env(safe-area-inset-top));padding-right:max(16px, env(safe-area-inset-right));padding-bottom:max(16px, env(safe-area-inset-bottom));padding-left:max(16px, env(safe-area-inset-left))}._3ggl3q_modalFooter{z-index:1;background:var(--dsw-alias-bg-base);flex-wrap:wrap;padding-top:8px;position:sticky;bottom:0}._3ggl3q_modalFooter>button{flex:120px}._3ggl3q_detailHeader{padding-top:max(16px, env(safe-area-inset-top));padding-right:max(16px, env(safe-area-inset-right));padding-left:max(16px, env(safe-area-inset-left));flex-wrap:wrap}._3ggl3q_detailTitle{min-width:0}._3ggl3q_detailColumns{grid-template-columns:minmax(0,1fr);gap:16px}._3ggl3q_detailColumn{gap:16px}._3ggl3q_detailBody{overscroll-behavior-y:contain;padding-right:max(16px, env(safe-area-inset-right));padding-left:max(16px, env(safe-area-inset-left))}._3ggl3q_detailFooter{padding-right:max(16px, env(safe-area-inset-right));padding-bottom:max(16px, env(safe-area-inset-bottom));padding-left:max(16px, env(safe-area-inset-left));flex-wrap:wrap}._3ggl3q_menuPanel{min-width:200px}._3ggl3q_detailFooter>button{flex:96px}._3ggl3q_detailFooter>._3ggl3q_detailMeta{text-align:end;flex:1 0 100%;margin-left:0}._3ggl3q_scheduleRow{flex-direction:column;align-items:stretch}._3ggl3q_schedulePreset{width:100%}}._3ggl3q_primaryButton:focus-visible,._3ggl3q_ghostButton:focus-visible,._3ggl3q_dangerButton:focus-visible,._3ggl3q_iconButton:focus-visible,._3ggl3q_linkButton:focus-visible,._3ggl3q_menuItem:focus-visible,._3ggl3q_verifyBadge:focus-visible,._3ggl3q_executionSession:focus-visible,._3ggl3q_search:focus-visible,._3ggl3q_input:focus-visible,._3ggl3q_select:focus-visible,._3ggl3q_schedulePreset:focus-visible,._3ggl3q_scheduleToggle input:focus-visible,._3ggl3q_formSectionHeader:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}._3ggl3q_primaryButton,._3ggl3q_ghostButton,._3ggl3q_dangerButton,._3ggl3q_iconButton,._3ggl3q_linkButton,._3ggl3q_menuItem,._3ggl3q_verifyBadge,._3ggl3q_executionSession,._3ggl3q_search,._3ggl3q_input,._3ggl3q_select,._3ggl3q_schedulePreset,._3ggl3q_scheduleToggle input,._3ggl3q_formSectionHeader,._3ggl3q_formSectionChevron{transition:background-color .12s,color .12s,border-color .12s,outline-color .12s,box-shadow .12s,transform .12s}._3ggl3q_card:active{box-shadow:var(--dsw-shadow-lv1);transform:translateY(0)}._3ggl3q_primaryButton:active:not(:disabled),._3ggl3q_ghostButton:active:not(:disabled),._3ggl3q_dangerButton:active:not(:disabled),._3ggl3q_iconButton:active:not(:disabled),._3ggl3q_linkButton:active:not(:disabled){transform:translateY(1px)}._3ggl3q_iconButton:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}._3ggl3q_linkButton:hover:not(:disabled){text-decoration:underline}._3ggl3q_iconButton:disabled,._3ggl3q_linkButton:disabled{opacity:.45;cursor:default}._3ggl3q_search:focus,._3ggl3q_select:focus,._3ggl3q_schedulePreset:focus{border-color:var(--dsw-alias-state-business-primary)}._3ggl3q_scheduleToggle input{margin:0}@media (prefers-reduced-motion:reduce){._3ggl3q_card,._3ggl3q_primaryButton,._3ggl3q_ghostButton,._3ggl3q_dangerButton,._3ggl3q_iconButton,._3ggl3q_linkButton,._3ggl3q_menuItem,._3ggl3q_verifyBadge,._3ggl3q_executionSession,._3ggl3q_disclosureChevron,._3ggl3q_menuChevron,._3ggl3q_search,._3ggl3q_input,._3ggl3q_select,._3ggl3q_schedulePreset,._3ggl3q_scheduleToggle input,._3ggl3q_formSectionHeader,._3ggl3q_formSectionChevron{transition:none}._3ggl3q_cardSpinner{animation:none}._3ggl3q_modalBackdrop,._3ggl3q_modal,._3ggl3q_detail{animation:_3ggl3q_dshTbBackdropIn var(--dsh-tb-motion-close) linear both}._3ggl3q_modalBackdrop[data-state=closing],._3ggl3q_modalBackdrop[data-state=closing] ._3ggl3q_modal,._3ggl3q_modalBackdrop[data-state=closing] ._3ggl3q_detail{animation:_3ggl3q_dshTbBackdropOut var(--dsh-tb-motion-close) linear both}}._3ggl3q_cardTags{flex-wrap:wrap;gap:4px;display:flex}._3ggl3q_cardTags:empty{display:none}._3ggl3q_cardTag{border:1px solid var(--dsh-task-tag-border);background:var(--dsh-task-tag-fill);max-width:100%;color:var(--dsw-alias-label-primary);text-overflow:ellipsis;white-space:nowrap;border-radius:999px;padding:0 8px;font-size:12px;line-height:1.5;overflow:hidden}._3ggl3q_tagFilter{flex-wrap:wrap;flex:none;align-items:center;gap:8px;margin:0;display:flex}._3ggl3q_tagFilterLabel{color:var(--dsw-alias-label-tertiary);font-size:12px}._3ggl3q_tagChip{border:1px solid var(--dsh-task-tag-border);color:var(--dsw-alias-label-secondary);cursor:pointer;font-family:inherit;font-size:12px;line-height:var(--dsh-tb-card-row);background:0 0;border-radius:999px;padding:1px 9px;position:relative}._3ggl3q_tagChip:after{content:\"\";width:var(--dsh-tb-hit-size);height:var(--dsh-tb-hit-size);position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}._3ggl3q_tagChip:focus-visible{outline:2px solid var(--dsw-alias-state-business-primary);outline-offset:2px}._3ggl3q_tagChip[data-active=true]{background:var(--dsh-task-tag-fill);color:var(--dsw-alias-label-primary)}._3ggl3q_cardTag[data-tag-tone=\"0\"],._3ggl3q_tagChip[data-tag-tone=\"0\"]{--dsh-task-tag-fill:#4e93e82e;--dsh-task-tag-border:#4e93e866}._3ggl3q_cardTag[data-tag-tone=\"1\"],._3ggl3q_tagChip[data-tag-tone=\"1\"]{--dsh-task-tag-fill:#2ea36a2e;--dsh-task-tag-border:#2ea36a66}._3ggl3q_cardTag[data-tag-tone=\"2\"],._3ggl3q_tagChip[data-tag-tone=\"2\"]{--dsh-task-tag-fill:#d08a2a2e;--dsh-task-tag-border:#d08a2a66}._3ggl3q_cardTag[data-tag-tone=\"3\"],._3ggl3q_tagChip[data-tag-tone=\"3\"]{--dsh-task-tag-fill:#b456c82e;--dsh-task-tag-border:#b456c866}._3ggl3q_cardTag[data-tag-tone=\"4\"],._3ggl3q_tagChip[data-tag-tone=\"4\"]{--dsh-task-tag-fill:#cf5f7a2e;--dsh-task-tag-border:#cf5f7a66}._3ggl3q_cardTag[data-tag-tone=\"5\"],._3ggl3q_tagChip[data-tag-tone=\"5\"]{--dsh-task-tag-fill:#4a9fb52e;--dsh-task-tag-border:#4a9fb566}._3ggl3q_fieldHint{color:var(--dsw-alias-label-tertiary);margin:0;font-size:12px;line-height:1.4}._3ggl3q_tagRow{align-items:center;gap:6px;display:flex}._3ggl3q_tagRow ._3ggl3q_input{flex:1 1 0;min-width:0}._3ggl3q_tagRow ._3ggl3q_ghostButton{flex:none}._3ggl3q_tagAddButton{align-self:flex-start}._3ggl3q_attachmentDrop{border:1px dashed var(--dsw-alias-border-secondary);border-radius:8px;flex-wrap:wrap;align-items:center;gap:8px;margin-top:6px;padding:10px 12px;display:flex}._3ggl3q_attachmentDrop[data-state=active]{border-color:var(--dsw-alias-border-focus);background:var(--dsw-alias-surface-raised)}._3ggl3q_attachmentDropHint{min-width:0;color:var(--dsw-alias-label-tertiary);flex:12em;font-size:12px;line-height:1.4}._3ggl3q_attachmentList{flex-direction:column;gap:6px;margin:8px 0 0;padding:0;list-style:none;display:flex}._3ggl3q_attachmentRow{border:1px solid var(--dsw-alias-border-subtle);border-radius:6px;align-items:center;gap:8px;padding:4px 6px;display:flex}._3ggl3q_attachmentThumb{object-fit:cover;background:var(--dsw-alias-surface-raised);border-radius:4px;flex:none;width:40px;height:40px}._3ggl3q_attachmentName{overflow-wrap:anywhere;flex:1 1 0;min-width:0;font-size:13px;line-height:1.4}._3ggl3q_attachmentMeta{color:var(--dsw-alias-label-tertiary);font-size:12px}._3ggl3q_projectFilter{flex:none;align-items:center;gap:6px;display:flex}._3ggl3q_projectFilterLabel{color:var(--dsw-alias-label-secondary);white-space:nowrap;font-size:12px}._3ggl3q_projectDialog{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;flex-direction:column;flex:none;gap:8px;margin-bottom:8px;padding:10px 12px;display:flex}._3ggl3q_projectDialogActions{justify-content:flex-end;gap:8px;display:flex}._3ggl3q_aiParse{background:var(--dsw-alias-bg-layer-2);border:1px solid var(--dsw-alias-border-l2);border-radius:10px;flex-direction:column;gap:6px;padding:10px 12px;display:flex}._3ggl3q_aiParseRow{align-items:center;gap:8px;display:flex}._3ggl3q_aiParseRow ._3ggl3q_select{flex:1 1 0;min-width:0}._3ggl3q_aiParseRow ._3ggl3q_ghostButton,._3ggl3q_aiParseRow ._3ggl3q_primaryButton{flex:none}._3ggl3q_cardSubtask{background:var(--dsw-alias-interactive-bg-hover);max-width:100%;color:var(--dsw-alias-label-secondary);font-size:12px;line-height:var(--dsh-tb-card-row);text-overflow:ellipsis;white-space:nowrap;border-radius:999px;padding:0 8px;overflow:hidden}._3ggl3q_cardSubtask[data-tone=failed]{color:var(--dsw-alias-state-error-primary);background:var(--dsw-alias-state-error-secondary)}._3ggl3q_cardSubtask[data-tone=running]{color:var(--dsw-alias-state-warn-primary);background:var(--dsw-alias-state-warn-secondary)}._3ggl3q_cardSubtask[data-tone=done]{color:var(--dsw-alias-state-success-primary);background:var(--dsw-alias-state-success-secondary)}._3ggl3q_subtaskList{flex-direction:column;gap:6px;margin:0;padding:0;list-style:none;display:flex}._3ggl3q_subtaskRow{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;flex-wrap:wrap;align-items:center;gap:10px;padding:6px 10px;display:flex}._3ggl3q_subtaskRow ._3ggl3q_linkButton:first-child{text-align:left;overflow-wrap:anywhere;flex:auto;min-width:0}._3ggl3q_subtaskAddRow{flex-wrap:wrap;gap:8px;display:flex}._3ggl3q_pickList{flex-direction:column;gap:6px;max-height:320px;margin:0;padding:0;list-style:none;display:flex;overflow-y:auto}._3ggl3q_pickRow{border:1px solid var(--dsw-alias-border-l1);border-radius:8px;align-items:center;gap:10px;padding:6px 10px;display:flex}._3ggl3q_pickTitle{min-width:0;color:var(--dsw-alias-label-primary);overflow-wrap:anywhere;flex:auto;font-size:13px}";
 		const tagId$3 = "@fish-under-sea/dsh-client-ui-task-board-fish/packages/dsh-client-ui-task-board-fish/src/client/board.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$3) + "]") === null) {
 			const tag = document.createElement("style");
@@ -3963,6 +4781,15 @@ window.__ModuleLoader__.load({
 		var board_module_css_default = {
 			"aiParse": "_3ggl3q_aiParse",
 			"aiParseRow": "_3ggl3q_aiParseRow",
+			"attachmentDrop": "_3ggl3q_attachmentDrop",
+			"attachmentDropHint": "_3ggl3q_attachmentDropHint",
+			"attachmentList": "_3ggl3q_attachmentList",
+			"attachmentMeta": "_3ggl3q_attachmentMeta",
+			"attachmentName": "_3ggl3q_attachmentName",
+			"attachmentRow": "_3ggl3q_attachmentRow",
+			"attachmentThumb": "_3ggl3q_attachmentThumb",
+			"attemptHead": "_3ggl3q_attemptHead",
+			"attemptRow": "_3ggl3q_attemptRow",
 			"backButton": "_3ggl3q_backButton",
 			"board": "_3ggl3q_board",
 			"boardHeader": "_3ggl3q_boardHeader",
@@ -3978,11 +4805,17 @@ window.__ModuleLoader__.load({
 			"cardKind": "_3ggl3q_cardKind",
 			"cardMeta": "_3ggl3q_cardMeta",
 			"cardOpen": "_3ggl3q_cardOpen",
+			"cardResult": "_3ggl3q_cardResult",
 			"cardRun": "_3ggl3q_cardRun",
 			"cardRunningLabel": "_3ggl3q_cardRunningLabel",
+			"cardRuns": "_3ggl3q_cardRuns",
 			"cardSchedule": "_3ggl3q_cardSchedule",
 			"cardSession": "_3ggl3q_cardSession",
 			"cardSpinner": "_3ggl3q_cardSpinner",
+			"cardSpinnerSlot": "_3ggl3q_cardSpinnerSlot",
+			"cardStatus": "_3ggl3q_cardStatus",
+			"cardStatusText": "_3ggl3q_cardStatusText",
+			"cardStatusTrail": "_3ggl3q_cardStatusTrail",
 			"cardSubtask": "_3ggl3q_cardSubtask",
 			"cardTag": "_3ggl3q_cardTag",
 			"cardTags": "_3ggl3q_cardTags",
@@ -4003,21 +4836,36 @@ window.__ModuleLoader__.load({
 			"densityToggle": "_3ggl3q_densityToggle",
 			"detail": "_3ggl3q_detail",
 			"detailBody": "_3ggl3q_detailBody",
+			"detailColumn": "_3ggl3q_detailColumn",
+			"detailColumns": "_3ggl3q_detailColumns",
+			"detailFolds": "_3ggl3q_detailFolds",
 			"detailFooter": "_3ggl3q_detailFooter",
 			"detailHeader": "_3ggl3q_detailHeader",
 			"detailMeta": "_3ggl3q_detailMeta",
 			"detailSection": "_3ggl3q_detailSection",
+			"detailStamp": "_3ggl3q_detailStamp",
 			"detailText": "_3ggl3q_detailText",
 			"detailTitle": "_3ggl3q_detailTitle",
+			"disclosureChevron": "_3ggl3q_disclosureChevron",
 			"dshTbBackdropIn": "_3ggl3q_dshTbBackdropIn",
 			"dshTbBackdropOut": "_3ggl3q_dshTbBackdropOut",
+			"dshTbFadeIn": "_3ggl3q_dshTbFadeIn",
+			"dshTbFadeOut": "_3ggl3q_dshTbFadeOut",
+			"dshTbRowsIn": "_3ggl3q_dshTbRowsIn",
+			"dshTbRowsOut": "_3ggl3q_dshTbRowsOut",
 			"dshTbSpin": "_3ggl3q_dshTbSpin",
 			"dshTbSurfaceIn": "_3ggl3q_dshTbSurfaceIn",
 			"dshTbSurfaceOut": "_3ggl3q_dshTbSurfaceOut",
 			"executionBadge": "_3ggl3q_executionBadge",
+			"executionDisclosure": "_3ggl3q_executionDisclosure",
 			"executionError": "_3ggl3q_executionError",
+			"executionExtra": "_3ggl3q_executionExtra",
 			"executionList": "_3ggl3q_executionList",
+			"executionLog": "_3ggl3q_executionLog",
 			"executionRow": "_3ggl3q_executionRow",
+			"executionRowEvidence": "_3ggl3q_executionRowEvidence",
+			"executionRowHead": "_3ggl3q_executionRowHead",
+			"executionSession": "_3ggl3q_executionSession",
 			"executionTimes": "_3ggl3q_executionTimes",
 			"field": "_3ggl3q_field",
 			"fieldHint": "_3ggl3q_fieldHint",
@@ -4030,16 +4878,22 @@ window.__ModuleLoader__.load({
 			"formSectionSummary": "_3ggl3q_formSectionSummary",
 			"formSectionTitle": "_3ggl3q_formSectionTitle",
 			"ghostButton": "_3ggl3q_ghostButton",
+			"helpButton": "_3ggl3q_helpButton",
+			"helpTip": "_3ggl3q_helpTip",
+			"helpTipWrap": "_3ggl3q_helpTipWrap",
 			"iconButton": "_3ggl3q_iconButton",
 			"input": "_3ggl3q_input",
 			"linkButton": "_3ggl3q_linkButton",
+			"menuChevron": "_3ggl3q_menuChevron",
+			"menuItem": "_3ggl3q_menuItem",
+			"menuPanel": "_3ggl3q_menuPanel",
+			"menuRoot": "_3ggl3q_menuRoot",
 			"modal": "_3ggl3q_modal",
 			"modalBackdrop": "_3ggl3q_modalBackdrop",
 			"modalBody": "_3ggl3q_modalBody",
 			"modalFooter": "_3ggl3q_modalFooter",
 			"modalHeader": "_3ggl3q_modalHeader",
 			"modalTitle": "_3ggl3q_modalTitle",
-			"moveRow": "_3ggl3q_moveRow",
 			"pickList": "_3ggl3q_pickList",
 			"pickRow": "_3ggl3q_pickRow",
 			"pickTitle": "_3ggl3q_pickTitle",
@@ -4049,6 +4903,8 @@ window.__ModuleLoader__.load({
 			"projectFilter": "_3ggl3q_projectFilter",
 			"projectFilterLabel": "_3ggl3q_projectFilterLabel",
 			"promptBlock": "_3ggl3q_promptBlock",
+			"referenceList": "_3ggl3q_referenceList",
+			"referenceRow": "_3ggl3q_referenceRow",
 			"scheduleInput": "_3ggl3q_scheduleInput",
 			"scheduleInputInvalid": "_3ggl3q_scheduleInputInvalid",
 			"scheduleMeta": "_3ggl3q_scheduleMeta",
@@ -4058,6 +4914,9 @@ window.__ModuleLoader__.load({
 			"scheduleZone": "_3ggl3q_scheduleZone",
 			"search": "_3ggl3q_search",
 			"select": "_3ggl3q_select",
+			"sourceGroup": "_3ggl3q_sourceGroup",
+			"sourceGroupHeader": "_3ggl3q_sourceGroupHeader",
+			"sourceGroupLabel": "_3ggl3q_sourceGroupLabel",
 			"statusBadge": "_3ggl3q_statusBadge",
 			"statusDot": "_3ggl3q_statusDot",
 			"subtaskAddRow": "_3ggl3q_subtaskAddRow",
@@ -4065,6 +4924,9 @@ window.__ModuleLoader__.load({
 			"subtaskRow": "_3ggl3q_subtaskRow",
 			"tagAddButton": "_3ggl3q_tagAddButton",
 			"tagChip": "_3ggl3q_tagChip",
+			"tagCleanup": "_3ggl3q_tagCleanup",
+			"tagCleanupInput": "_3ggl3q_tagCleanupInput",
+			"tagCleanupNotice": "_3ggl3q_tagCleanupNotice",
 			"tagFilter": "_3ggl3q_tagFilter",
 			"tagFilterLabel": "_3ggl3q_tagFilterLabel",
 			"tagManageCount": "_3ggl3q_tagManageCount",
@@ -4074,7 +4936,11 @@ window.__ModuleLoader__.load({
 			"tagManageName": "_3ggl3q_tagManageName",
 			"tagManageRow": "_3ggl3q_tagManageRow",
 			"tagRow": "_3ggl3q_tagRow",
-			"task-board-view": "_3ggl3q_task-board-view"
+			"task-board-view": "_3ggl3q_task-board-view",
+			"verifyBadge": "_3ggl3q_verifyBadge",
+			"verifyPanel": "_3ggl3q_verifyPanel",
+			"verifyReport": "_3ggl3q_verifyReport",
+			"verifyVerdict": "_3ggl3q_verifyVerdict"
 		};
 		//#endregion
 		//#region src/client/board/icons.tsx
@@ -4604,10 +5470,17 @@ window.__ModuleLoader__.load({
 		* region keeps a one-line summary of the values it holds, so nothing is hidden
 		* without a trace; a region holding a blocking error is forced open by its
 		* owner (forceOpen) rather than reporting the error out of sight.
+		*
+		* The body is the panel fold's body under another name: it enters and leaves on
+		* the same animation pair, and `usePresence` keeps it mounted through the exit
+		* leg so collapsing never snaps.
 		*/
 		function CollapsibleSection({ title, summary, defaultOpen = false, forceOpen = false, children }) {
 			const [open, setOpen] = (0, react.useState)(defaultOpen);
+			const panelId = (0, react.useId)();
 			const expanded = forceOpen || open;
+			const presence = usePresence(expanded);
+			const fullLine = summary ?? "";
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
 				className: board_module_css_default.formSection,
 				"data-dsh-part": "form-section",
@@ -4616,6 +5489,8 @@ window.__ModuleLoader__.load({
 					type: "button",
 					className: board_module_css_default.formSectionHeader,
 					"aria-expanded": expanded,
+					"aria-controls": panelId,
+					title: fullLine === "" ? void 0 : fullLine,
 					onClick: () => {
 						setOpen((value) => !value);
 					},
@@ -4633,8 +5508,10 @@ window.__ModuleLoader__.load({
 							children: summary
 						})
 					]
-				}), expanded && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				}), presence.mounted && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 					className: board_module_css_default.formSectionBody,
+					id: panelId,
+					"data-state": presence.phase,
 					children
 				})]
 			});
@@ -4739,7 +5616,7 @@ window.__ModuleLoader__.load({
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
-								className: board_module_css_default.ghostButton,
+								className: board_module_css_default.iconButton,
 								"aria-label": t("new.tagRemove", { name: tag.name }),
 								onClick: () => {
 									onChange(tags.filter((_, position) => position !== index));
@@ -4770,6 +5647,706 @@ window.__ModuleLoader__.load({
 		*/
 		function cleanTags(tags) {
 			return normalizeTags(tags) ?? [];
+		}
+		//#endregion
+		//#region src/core/degraded-reason.ts
+		/**
+		* The one degraded record naming `plugin`, or undefined when that row is not
+		* degraded (or the payload does not come from the shell's own shape). A
+		* plugin may appear once: the shell keys the ledger by package name and
+		* refreshes the record on every new failure.
+		* @param body - parsed JSON body of the health route.
+		* @param plugin - the real plugin package name to look for.
+		* @returns the degraded row, or undefined when the ledger does not name it.
+		*/
+		function degradedRowOf(body, plugin) {
+			if (typeof body !== "object" || body === null) return void 0;
+			const ledger = body;
+			if (ledger.ok !== true || !Array.isArray(ledger.degraded)) return void 0;
+			for (const entry of ledger.degraded) {
+				if (typeof entry !== "object" || entry === null) continue;
+				const record = entry;
+				if (record.plugin !== plugin) continue;
+				const stage = record.stage === "import" || record.stage === "shape" || record.stage === "start" ? record.stage : void 0;
+				if (stage === void 0) continue;
+				return {
+					plugin,
+					stage,
+					reason: typeof record.reason === "string" ? record.reason : ""
+				};
+			}
+		}
+		/** The ledger owner pid a task-board lock reason names, when it names one. */
+		const OWNED_BY_PROCESS_RE = /already owned by process\s+(\d+)/;
+		/**
+		* The marker the ledger appends when it could NOT confirm the recorded PID
+		* belongs to the lock's real owner: the PID was reused by an unrelated process
+		* after a crash, and the reason then carries the manual-removal step instead.
+		* That reason must be rendered verbatim — telling the user to close "the other
+		* DSH instance" would send them after a process that never touched the board.
+		*/
+		const UNCONFIRMED_OWNER_MARKER = "reused after a crash";
+		/**
+		* Extract the pid of the LIVE process a ledger-lock failure blames, when the
+		* reason identifies one. The task board's lock refusal is the one degraded
+		* reason that carries an owner the user can act on, so the panel renders the
+		* pid in its own sentence and adds the guidance that actually applies.
+		* @param reason - the shell's one-line failure reason.
+		* @returns the confirmed owner pid, or undefined when the reason names none or
+		*   warns that the PID may have been reused (its own text owns the recovery).
+		*/
+		function ledgerOwnerPid(reason) {
+			if (reason.includes(UNCONFIRMED_OWNER_MARKER)) return void 0;
+			const match = OWNED_BY_PROCESS_RE.exec(reason);
+			if (match === null) return void 0;
+			const pid = Number(match[1]);
+			return Number.isSafeInteger(pid) && pid > 0 ? pid : void 0;
+		}
+		//#endregion
+		//#region src/core/package-name.ts
+		/**
+		* npm identity of this plugin. The dsh-web-all degraded ledger is keyed by the
+		* real plugin package name of a family row, and this plugin's browser half
+		* must name its OWN row there to learn why its Host API is missing (issue
+		* #1730): the served bundle cannot derive the name, because a family row
+		* mounts the package from a versioned profile path. The host half spells the
+		* same name in its single-mount guard (src/index.ts); the two move together.
+		*/
+		const TASK_BOARD_PACKAGE = "@fish-under-sea/dsh-client-ui-task-board-fish";
+		//#endregion
+		//#region src/protocol.ts
+		const TASK_BOARD_API_PREFIX = "/api/task-board";
+		/** Whether a decoded reply carries the three draft strings the form accepts. */
+		function isTaskParseDraft(value) {
+			if (typeof value !== "object" || value === null) return false;
+			const record = value;
+			return typeof record.title === "string" && typeof record.description === "string" && typeof record.prompt === "string";
+		}
+		//#endregion
+		//#region src/client/host-api.ts
+		/**
+		* Client-side base for the board's routes: DOCUMENT-RELATIVE (issue #1707).
+		*
+		* The host registers `TASK_BOARD_API_PREFIX` root-absolute; the page is served
+		* with `<base href="./">`, so the browser half must drop the leading slash or
+		* a sub-path deployment escapes its entry directory. Derived from the shared
+		* constant so host and client cannot drift.
+		*/
+		const CLIENT_API_PREFIX = TASK_BOARD_API_PREFIX.slice(1);
+		const IMPORT_MARKER = "dsh.taskBoard.v2.hostImported";
+		const SOURCE_KEY = "dsh.taskBoard.v2.sourceId";
+		const IMPORT_REQUEST_KEY = "dsh.taskBoard.v2.importRequestId";
+		const REQUEST_TIMEOUT_MS = 15e3;
+		/** An upload moves real bytes, so it gets a wider budget than a JSON call. */
+		const UPLOAD_TIMEOUT_MS = 12e4;
+		/** Re-notify the panel at most this often while the event stream stays broken. */
+		const STREAM_ERROR_NOTIFY_MS = 15e3;
+		/** Mirrors the Host's own parse budget; only used to phrase the timeout. */
+		const TASK_PARSE_TIMEOUT_SECONDS = 45;
+		/** Transport failure carrying a stable class next to its user-facing message. */
+		var HostApiError = class extends Error {
+			failure;
+			status;
+			constructor(failure, message, status) {
+				super(message);
+				this.failure = failure;
+				this.status = status;
+				this.name = "HostApiError";
+			}
+		};
+		/**
+		* Same-origin family health route served by the dsh-web-all shell: the
+		* degraded ledger, in which a family row that failed during apply appears WITH
+		* its reason. DOCUMENT-RELATIVE for the same reason as the board's own routes
+		* (issue #1707). A 404 here means the family shell is absent or older than the
+		* route, which is not itself a failure of the board.
+		*/
+		const FAMILY_DEGRADED_ROUTE = "api/dsh-web-all/degraded";
+		/** Health-route ceiling: an unresponsive family shell must not hold the board's first paint. */
+		const DEGRADED_LOOKUP_TIMEOUT_MS = 2e3;
+		/**
+		* The failure text for a row this browser knows failed during start.
+		*
+		* A ledger lock is the one class with an owner the user can act on, so its
+		* reason is unpacked into the pid plus what to do about it; every other
+		* degraded row is reported with the shell's own reason verbatim. The raw
+		* reason rides along either way, because it is the only text that names the
+		* lock file or the recovery step when the pid is not the whole story.
+		* @param reason - the shell's one-line failure reason (never empty).
+		*/
+		function degradedFailureMessage(reason) {
+			const pid = ledgerOwnerPid(reason);
+			if (pid === void 0) return {
+				failure: "degraded",
+				message: t("board.hostError.degraded", { detail: reason })
+			};
+			return {
+				failure: "ledger-locked",
+				message: t("board.hostError.ledgerLocked", {
+					pid: String(pid),
+					detail: reason
+				})
+			};
+		}
+		/**
+		* The degraded record the family shell holds for THIS board, or undefined when
+		* the row is healthy, the shell is absent, or the answer is unusable. The
+		* lookup is best-effort by contract: any uncertainty keeps the caller's own
+		* failure text instead of replacing it with a weaker one.
+		* @param fetchImpl - fetch implementation (injected for tests).
+		* @returns the ledger's reason for this row, or undefined when it names none.
+		*/
+		async function fetchDegradedReason(fetchImpl) {
+			const controller = new AbortController();
+			const timer = globalThis.setTimeout(() => {
+				controller.abort();
+			}, DEGRADED_LOOKUP_TIMEOUT_MS);
+			try {
+				const response = await fetchImpl(FAMILY_DEGRADED_ROUTE, {
+					signal: controller.signal,
+					headers: { accept: "application/json" },
+					cache: "no-store"
+				});
+				if (!response.ok) return void 0;
+				return degradedRowOf(await response.json(), TASK_BOARD_PACKAGE)?.reason;
+			} catch {
+				return;
+			} finally {
+				globalThis.clearTimeout(timer);
+			}
+		}
+		/**
+		* Name the real reason this board's routes are missing (issue #1730).
+		*
+		* The core webserver answers an unmounted route with a bare 404, which cannot
+		* distinguish "this deployment never loaded the plugin" from "this row
+		* degraded during start" — a second DSH process holding `ledger-v2.lock` is
+		* the case that matters, because the panel's advice ("restart the service")
+		* is then false: the lock belongs to the other process, and restarting cannot
+		* win it. The family health route knows the difference, so the 404 is
+		* disambiguated there before anything is shown.
+		* @param fallback - copy for the plain "routes are not there" failure, which
+		*   is route-specific (the board's state route and the AI-parse route phrase
+		*   their own absence); it is also what is shown when the ledger names nothing.
+		* @param fetchImpl - fetch implementation (injected for tests).
+		* @returns the HostApiError to throw for a missing board route.
+		*/
+		async function missingRouteFailure(fallback = t("board.hostError.notMounted"), fetchImpl = fetch) {
+			const absent = () => new HostApiError("not-mounted", fallback, 404);
+			const reason = await fetchDegradedReason(fetchImpl);
+			if (reason === void 0 || reason === "") return absent();
+			const described = degradedFailureMessage(reason);
+			return new HostApiError(described.failure, described.message, 404);
+		}
+		function uuid() {
+			return globalThis.crypto?.randomUUID?.() ?? `browser-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+		}
+		/**
+		* Read one Host response without ever handing a non-JSON body to JSON.parse:
+		* the core webserver answers an unmounted `/api/*` path with the plain text
+		* "not found", which used to surface as a JavaScript parse error in the panel.
+		*/
+		async function readJson(response) {
+			const text = await response.text();
+			let parsed;
+			let readable = false;
+			if (text.trim() !== "") try {
+				parsed = JSON.parse(text);
+				readable = true;
+			} catch {
+				readable = false;
+			}
+			const hostError = readable && typeof parsed === "object" && parsed !== null && typeof parsed.error === "string" ? parsed.error : void 0;
+			if (response.ok) {
+				if (!readable) throw new HostApiError("unexpected", t("board.hostError.unexpected", { status: String(response.status) }), response.status);
+				return parsed;
+			}
+			if (hostError !== void 0) {
+				if (hostError === "forbidden") throw new HostApiError("forbidden", t("board.hostError.forbidden"), response.status);
+				if (response.status === 503 || /lock/i.test(hostError)) throw new HostApiError("locked", t("board.hostError.locked", { detail: hostError }), response.status);
+				throw new HostApiError("rejected", hostError, response.status);
+			}
+			if (response.status === 404) throw await missingRouteFailure();
+			if (response.status === 403) throw new HostApiError("forbidden", t("board.hostError.forbidden"), 403);
+			if (response.status === 401) throw new HostApiError("unauthorized", t("board.hostError.unauthorized"), 401);
+			throw new HostApiError("unexpected", t("board.hostError.unexpected", { status: String(response.status) }), response.status);
+		}
+		/**
+		* The URL of one stored image. The board serves it only for an id a card of
+		* this board references, so the URL is useless on its own.
+		* @param attachmentId - the stored object's identifier.
+		* @returns the document-relative URL of the image.
+		*/
+		function attachmentImageUrl(attachmentId) {
+			return `${CLIENT_API_PREFIX}/attachments/image?id=${encodeURIComponent(attachmentId)}`;
+		}
+		var HttpTaskBoardHostTransport = class {
+			storage;
+			constructor(storage = globalThis.localStorage) {
+				this.storage = storage;
+			}
+			async bootstrap(legacy) {
+				const initial = await this.state();
+				const ledgerId = initial.scheduler.ledgerId;
+				if (legacy.length > 0 && ledgerId !== void 0 && this.storage?.getItem(IMPORT_MARKER) !== ledgerId) {
+					let sourceId = this.storage?.getItem(SOURCE_KEY);
+					if (sourceId === null || sourceId === void 0 || sourceId === "") {
+						sourceId = uuid();
+						this.storage?.setItem(SOURCE_KEY, sourceId);
+					}
+					let requestId = this.storage?.getItem(IMPORT_REQUEST_KEY);
+					if (requestId === null || requestId === void 0 || requestId === "") {
+						requestId = uuid();
+						this.storage?.setItem(IMPORT_REQUEST_KEY, requestId);
+					}
+					const snapshot = await this.post(requestId, {
+						kind: "import",
+						sourceId,
+						tasks: [...legacy]
+					});
+					this.storage?.setItem(IMPORT_MARKER, snapshot.scheduler.ledgerId ?? ledgerId);
+					return snapshot;
+				}
+				return initial;
+			}
+			async state() {
+				return await this.request(`${CLIENT_API_PREFIX}/state`, { cache: "no-store" });
+			}
+			async action(action, initiator) {
+				return await this.post(uuid(), action, initiator);
+			}
+			async post(requestId, action, initiator) {
+				const envelope = {
+					requestId,
+					action,
+					...initiator === void 0 || initiator === "" ? {} : { initiator }
+				};
+				return await this.request(`${CLIENT_API_PREFIX}/action`, {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify(envelope)
+				});
+			}
+			async request(url, init) {
+				const controller = new AbortController();
+				const timeout = globalThis.setTimeout(() => {
+					controller.abort();
+				}, REQUEST_TIMEOUT_MS);
+				try {
+					return await readJson(await fetch(url, {
+						...init,
+						signal: controller.signal
+					}));
+				} catch (error) {
+					if (error instanceof HostApiError) throw error;
+					if (controller.signal.aborted) throw new HostApiError("timeout", t("board.hostError.timeout", { seconds: String(REQUEST_TIMEOUT_MS / 1e3) }));
+					throw new HostApiError("unreachable", t("board.hostError.unreachable"));
+				} finally {
+					globalThis.clearTimeout(timeout);
+				}
+			}
+			/**
+			* Ask the Host to turn pasted text into task fields. The route answers a
+			* typed failure (no model, timeout, unparseable reply) already phrased for
+			* the form, so the UI never renders a raw status code (issue #1540).
+			*/
+			async parseDraft(request, signal) {
+				let response;
+				try {
+					response = await fetch(`${CLIENT_API_PREFIX}/parse`, {
+						method: "POST",
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify(request),
+						...signal === void 0 ? {} : { signal }
+					});
+				} catch {
+					throw new HostApiError("unreachable", t("board.hostError.unreachable"));
+				}
+				const text = await response.text();
+				let parsed;
+				let readable = false;
+				if (text.trim() !== "") try {
+					parsed = JSON.parse(text);
+					readable = true;
+				} catch {
+					readable = false;
+				}
+				const record = readable && typeof parsed === "object" && parsed !== null ? parsed : void 0;
+				if (response.ok) {
+					if (record !== void 0 && isTaskParseDraft(record.draft)) return record.draft;
+					throw new HostApiError("unexpected", t("new.aiParseFailed", { error: t("board.hostError.unexpected", { status: String(response.status) }) }), response.status);
+				}
+				if (response.status === 404) throw await missingRouteFailure(t("new.aiParseUnavailable"));
+				if (response.status === 403) throw new HostApiError("forbidden", t("board.hostError.forbidden"), 403);
+				if (response.status === 401) throw new HostApiError("unauthorized", t("board.hostError.unauthorized"), 401);
+				const code = typeof record?.code === "string" ? record.code : void 0;
+				if (code === "no-model") throw new HostApiError("rejected", t("new.aiParseNoModel"), response.status);
+				if (code === "timeout") throw new HostApiError("timeout", t("new.aiParseTimeout", { seconds: String(TASK_PARSE_TIMEOUT_SECONDS) }), response.status);
+				throw new HostApiError("rejected", t("new.aiParseFailed", { error: typeof record?.error === "string" && record.error !== "" ? record.error : String(response.status) }), response.status);
+			}
+			/**
+			* Upload one attachment into the Host's attachment storage.
+			*
+			* The bytes travel as the raw request body: the Host measures the ACTUAL
+			* stream, publishes the object and answers with the host-computed metadata
+			* (size, type and digest) that the card will record.
+			* @param file - the picked file.
+			* @param kind - whether the file is stored as an image or verbatim.
+			* @returns the metadata the Host computed for the stored object.
+			*/
+			async uploadAttachment(file, kind) {
+				const controller = new AbortController();
+				const timer = globalThis.setTimeout(() => {
+					controller.abort();
+				}, UPLOAD_TIMEOUT_MS);
+				try {
+					const query = new URLSearchParams({
+						kind,
+						name: file.name,
+						mediaType: file.type
+					});
+					const response = await fetch(`${CLIENT_API_PREFIX}/attachments/upload?${query.toString()}`, {
+						method: "POST",
+						headers: { "content-type": "application/octet-stream" },
+						body: file,
+						signal: controller.signal
+					});
+					const text = await response.text();
+					let parsed;
+					try {
+						parsed = JSON.parse(text);
+					} catch {
+						parsed = void 0;
+					}
+					const record = parsed;
+					if (response.ok) {
+						if (record !== void 0 && isTaskAttachment(record.attachment)) return record.attachment;
+						throw new HostApiError("unexpected", t("board.hostError.unexpected", { status: String(response.status) }), response.status);
+					}
+					throw new HostApiError("rejected", typeof record?.error === "string" && record.error !== "" ? record.error : String(response.status), response.status);
+				} catch (error) {
+					if (error instanceof HostApiError) throw error;
+					if (controller.signal.aborted) throw new HostApiError("timeout", t("board.hostError.timeout", { seconds: String(UPLOAD_TIMEOUT_MS / 1e3) }));
+					throw new HostApiError("unreachable", t("board.hostError.unreachable"));
+				} finally {
+					globalThis.clearTimeout(timer);
+				}
+			}
+			subscribe(listener) {
+				const events = new EventSource(`${CLIENT_API_PREFIX}/events`);
+				let lastStreamErrorNotify = 0;
+				events.onmessage = (message) => {
+					try {
+						const parsed = JSON.parse(message.data);
+						if (parsed === null || typeof parsed !== "object" || typeof parsed.revision !== "number") throw new Error("invalid event frame");
+						listener(parsed);
+					} catch {
+						listener();
+					}
+				};
+				events.onopen = () => {
+					listener();
+				};
+				events.onerror = () => {
+					const now = Date.now();
+					if (now - lastStreamErrorNotify < STREAM_ERROR_NOTIFY_MS) return;
+					lastStreamErrorNotify = now;
+					listener();
+				};
+				const onVisible = () => {
+					if (document.visibilityState === "visible") listener();
+				};
+				document.addEventListener("visibilitychange", onVisible);
+				return () => {
+					document.removeEventListener("visibilitychange", onVisible);
+					events.close();
+				};
+			}
+		};
+		//#endregion
+		//#region src/client/board/AttachmentField.tsx
+		/**
+		* The attachment field of the create and edit forms.
+		*
+		* A file the user picks is STAGED locally first: the form shows a preview,
+		* the name and the size, and nothing leaves the browser until the card is
+		* saved. The upload therefore happens on save, not on selection — a card the
+		* user abandons never leaves a stored object behind.
+		*
+		* Three input modes are supported: drag and drop, paste, and the file picker.
+		* All three end in the same staged list.
+		*/
+		/** The board's own limits, used when the deployment publishes none. */
+		const DEFAULT_ATTACHMENT_LIMITS = {
+			maxAttachments: 8,
+			maxBytes: TASK_ATTACHMENT_MAX_BYTES,
+			maxTotalBytes: TASK_ATTACHMENT_TOTAL_MAX_BYTES,
+			maxImages: 8,
+			maxImageBytes: TASK_ATTACHMENT_MAX_BYTES,
+			maxMessageImageBytes: TASK_ATTACHMENT_TOTAL_MAX_BYTES
+		};
+		/** A human-readable byte size. */
+		function formatAttachmentBytes(bytes) {
+			if (bytes < 1024) return `${bytes} B`;
+			if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+			return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+		}
+		/**
+		* Whether a picked file is uploaded as an image.
+		*
+		* Only the raster types the official image path accepts are images; every
+		* other file is stored verbatim.
+		*/
+		function attachmentKindOf(file) {
+			const type = file.type.toLowerCase();
+			return TASK_ATTACHMENT_IMAGE_MEDIA_TYPES.includes(type) ? "image" : "file";
+		}
+		/** The byte total of a selection: the stored attachments plus the staged files. */
+		function totalBytesOf(selection) {
+			return selection.persisted.reduce((sum, attachment) => sum + attachment.bytes, 0) + selection.staged.reduce((sum, staged) => sum + staged.bytes, 0);
+		}
+		/** The byte total of the IMAGES of a selection. */
+		function imageBytesOf(selection) {
+			return selection.persisted.filter((attachment) => attachment.kind === "image").reduce((sum, attachment) => sum + attachment.bytes, 0) + selection.staged.filter((staged) => staged.kind === "image").reduce((sum, staged) => sum + staged.bytes, 0);
+		}
+		/** The number of IMAGES of a selection. */
+		function imageCountOf(selection) {
+			return selection.persisted.filter((attachment) => attachment.kind === "image").length + selection.staged.filter((staged) => staged.kind === "image").length;
+		}
+		/**
+		* The staged files the form already holds.
+		*
+		* The identity is the File OBJECT, never its metadata: two different files can
+		* share a name, a size, a type and a modification time, and inferring byte
+		* identity from those four would silently discard one of them. The form
+		* therefore stages every distinct File it is handed.
+		*
+		* The content identity that actually matters — the storage identifier the Host
+		* answers with — is applied AFTER the upload, where it is authoritative
+		* (see the core dedupe). The only case the form skips is the very same File
+		* object handed over twice, which is the same row twice.
+		*/
+		function stagedFileSet(staged) {
+			return new Set(staged.map((entry) => entry.file));
+		}
+		/**
+		* The attachment field of a card form.
+		*
+		* The component owns the local staging only: the selection it reports is what
+		* the card will carry, and the parent uploads the staged files on save.
+		*/
+		function AttachmentField({ selection, onChange, limits, disabled = false, onError }) {
+			const effective = limits ?? DEFAULT_ATTACHMENT_LIMITS;
+			const inputRef = (0, react.useRef)(null);
+			const objectUrls = (0, react.useRef)([]);
+			const counter = (0, react.useRef)(0);
+			const [dragging, setDragging] = (0, react.useState)(false);
+			(0, react.useEffect)(() => () => {
+				for (const url of objectUrls.current) URL.revokeObjectURL(url);
+				objectUrls.current = [];
+			}, []);
+			const addFiles = (files) => {
+				if (disabled || files.length === 0) return;
+				const staged = [...selection.staged];
+				const seen = stagedFileSet(staged);
+				let total = totalBytesOf(selection);
+				let imageBytes = imageBytesOf(selection);
+				let imageCount = imageCountOf(selection);
+				let added = 0;
+				for (const file of files) {
+					if (seen.has(file)) continue;
+					if (selection.persisted.length + staged.length >= effective.maxAttachments) {
+						onError?.(t("new.attachments.limitCount", { count: String(effective.maxAttachments) }));
+						break;
+					}
+					const kind = attachmentKindOf(file);
+					const limit = kind === "image" ? Math.min(effective.maxBytes, effective.maxImageBytes ?? effective.maxBytes) : effective.maxBytes;
+					if (file.size > limit) {
+						onError?.(t("new.attachments.limitSize", {
+							name: file.name,
+							size: formatAttachmentBytes(limit)
+						}));
+						continue;
+					}
+					if (total + file.size > effective.maxTotalBytes) {
+						onError?.(t("new.attachments.limitTotal", { size: formatAttachmentBytes(effective.maxTotalBytes) }));
+						break;
+					}
+					if (kind === "image") {
+						if (imageCount + 1 > effective.maxImages) {
+							onError?.(t("new.attachments.limitImages", { count: String(effective.maxImages) }));
+							break;
+						}
+						if (imageBytes + file.size > effective.maxMessageImageBytes) {
+							onError?.(t("new.attachments.limitImageBytes", { size: formatAttachmentBytes(effective.maxMessageImageBytes) }));
+							break;
+						}
+					}
+					const previewUrl = kind === "image" && typeof URL.createObjectURL === "function" ? URL.createObjectURL(file) : void 0;
+					if (previewUrl !== void 0) objectUrls.current.push(previewUrl);
+					counter.current += 1;
+					seen.add(file);
+					staged.push({
+						id: `staged-${counter.current}`,
+						file,
+						kind,
+						name: file.name,
+						bytes: file.size,
+						mediaType: file.type,
+						...previewUrl === void 0 ? {} : { previewUrl }
+					});
+					total += file.size;
+					if (kind === "image") {
+						imageBytes += file.size;
+						imageCount += 1;
+					}
+					added += 1;
+				}
+				if (added > 0) onChange({
+					...selection,
+					staged
+				});
+			};
+			const removeStaged = (id) => {
+				const target = selection.staged.find((staged) => staged.id === id);
+				if (target?.previewUrl !== void 0) {
+					URL.revokeObjectURL(target.previewUrl);
+					objectUrls.current = objectUrls.current.filter((url) => url !== target.previewUrl);
+				}
+				onChange({
+					...selection,
+					staged: selection.staged.filter((staged) => staged.id !== id)
+				});
+			};
+			const removePersisted = (attachmentId) => {
+				onChange({
+					...selection,
+					persisted: selection.persisted.filter((attachment) => attachment.attachmentId !== attachmentId)
+				});
+			};
+			const rows = [...selection.persisted.map((attachment) => ({
+				key: attachment.attachmentId,
+				attachment
+			})), ...selection.staged.map((staged) => ({
+				key: staged.id,
+				staged
+			}))];
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: board_module_css_default.field,
+				"data-dsh-part": "form-section",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: board_module_css_default.fieldLabel,
+						children: t("new.attachments")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: board_module_css_default.fieldHint,
+						children: t("new.attachmentsHint")
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: board_module_css_default.attachmentDrop,
+						"data-state": dragging && !disabled ? "active" : void 0,
+						"data-disabled": disabled ? "true" : void 0,
+						tabIndex: disabled ? -1 : 0,
+						"aria-disabled": disabled ? true : void 0,
+						"aria-label": t("new.attachments.drop"),
+						onKeyDown: (event) => {
+							if (disabled) return;
+							if (event.target !== event.currentTarget) return;
+							if (event.key !== "Enter" && event.key !== " ") return;
+							event.preventDefault();
+							inputRef.current?.click();
+						},
+						onDragOver: (event) => {
+							event.preventDefault();
+							if (disabled) return;
+							setDragging(true);
+						},
+						onDragLeave: () => {
+							if (!disabled) setDragging(false);
+						},
+						onDrop: (event) => {
+							event.preventDefault();
+							setDragging(false);
+							addFiles(Array.from(event.dataTransfer?.files ?? []));
+						},
+						onPaste: (event) => {
+							const files = Array.from(event.clipboardData?.files ?? []);
+							if (files.length === 0) return;
+							event.preventDefault();
+							addFiles(files);
+						},
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: board_module_css_default.attachmentDropHint,
+								children: t("new.attachments.drop")
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								ref: inputRef,
+								type: "file",
+								multiple: true,
+								hidden: true,
+								disabled,
+								onChange: (event) => {
+									addFiles(Array.from(event.target.files ?? []));
+									event.target.value = "";
+								}
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: board_module_css_default.ghostButton,
+								disabled,
+								onClick: () => {
+									if (disabled) return;
+									inputRef.current?.click();
+								},
+								children: t("new.attachments.pick")
+							})
+						]
+					}),
+					rows.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
+						className: board_module_css_default.attachmentList,
+						children: rows.map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
+							className: board_module_css_default.attachmentRow,
+							children: [
+								row.attachment !== void 0 && row.attachment.kind === "image" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
+									className: board_module_css_default.attachmentThumb,
+									src: attachmentImageUrl(row.attachment.attachmentId),
+									alt: row.attachment.name
+								}) : null,
+								row.staged !== void 0 && row.staged.kind === "image" && row.staged.previewUrl !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
+									className: board_module_css_default.attachmentThumb,
+									src: row.staged.previewUrl,
+									alt: row.staged.name
+								}) : null,
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: board_module_css_default.attachmentName,
+									children: [row.attachment?.name ?? row.staged?.name, /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: board_module_css_default.attachmentMeta,
+										children: [
+											" ",
+											formatAttachmentBytes(row.attachment?.bytes ?? row.staged?.bytes ?? 0),
+											row.staged?.pending === true ? ` · ${t("new.attachments.uploading")}` : "",
+											row.staged?.error !== void 0 ? ` · ${row.staged.error}` : ""
+										]
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: board_module_css_default.iconButton,
+									disabled,
+									"aria-label": t("new.attachments.remove", { name: row.attachment?.name ?? row.staged?.name ?? "" }),
+									onClick: () => {
+										if (row.attachment !== void 0) removePersisted(row.attachment.attachmentId);
+										else if (row.staged !== void 0) removeStaged(row.staged.id);
+									},
+									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(IconClose, { size: 14 })
+								})
+							]
+						}, row.key))
+					})
+				]
+			});
 		}
 		//#endregion
 		//#region src/client/seats.tsx
@@ -4866,7 +6443,7 @@ window.__ModuleLoader__.load({
 			};
 		}
 		/** Locale key of the latest settled result shown before the run count. */
-		const RESULT_KEY$1 = {
+		const RESULT_KEY = {
 			succeeded: "card.result.succeeded",
 			failed: "card.result.failed",
 			cancelled: "card.result.cancelled"
@@ -5055,7 +6632,7 @@ window.__ModuleLoader__.load({
 			return VERIFICATION_PHASE_KEY[verificationPhase(verification)];
 		}
 		//#endregion
-		//#region ../../node_modules/.pnpm/marked@18.1.0/node_modules/marked/lib/marked.esm.js
+		//#region ../../node_modules/marked/lib/marked.esm.js
 		/**
 		* marked v18.1.0 - a markdown parser
 		* Copyright (c) 2018-2026, MarkedJS. (MIT License)
@@ -6785,7 +8362,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		const HEADING_COLON = /[:\uFF1A]\s*$/;
 		//#endregion
 		//#region \0dsh-css:packages/dsh-client-ui-task-board-fish/src/client/board/task-markdown.module.css.mjs
-		const css$2 = "._4Po2mW_markdownRoot{color:var(--dsw-alias-label-primary);overflow-wrap:anywhere;font-size:13px;line-height:1.55}._4Po2mW_markdownRoot>:first-child{margin-top:0}._4Po2mW_markdownRoot>:last-child{margin-bottom:0}._4Po2mW_paragraph{margin:0 0 8px;line-height:1.55}._4Po2mW_heading1,._4Po2mW_heading2,._4Po2mW_heading3,._4Po2mW_heading4,._4Po2mW_heading5,._4Po2mW_heading6{color:var(--dsw-alias-label-primary);margin:12px 0 6px;font-weight:600;line-height:1.35}._4Po2mW_heading1{font-size:16px}._4Po2mW_heading2{font-size:15px}._4Po2mW_heading3{font-size:14px}._4Po2mW_heading4{font-size:13px}._4Po2mW_heading5{font-size:12.5px}._4Po2mW_heading6{font-size:12px}._4Po2mW_list{margin:0 0 8px;padding-left:20px}._4Po2mW_listItem{margin:2px 0}._4Po2mW_taskItem{align-items:baseline;gap:6px;margin-left:-18px;list-style-type:none;display:flex}._4Po2mW_taskCheckbox{cursor:default;vertical-align:middle;margin:0}._4Po2mW_codeBlock{font-size:12px;line-height:1.45;font-family:var(--dsw-font-markdown-code-block-small,monospace);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-markdown-code-block,#0000000d);border:1px solid var(--dsw-alias-border-l1,#0000001a);white-space:pre-wrap;overflow-wrap:anywhere;border-radius:6px;margin:8px 0;padding:8px 10px;overflow-x:auto}._4Po2mW_inlineCode{font-size:12px;font-family:var(--dsw-font-markdown-code-block-small,monospace);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-markdown-code-block,#0000000d);border:1px solid var(--dsw-alias-border-l1,#0000001a);border-radius:4px;padding:1px 4px}._4Po2mW_link{color:var(--dsw-alias-brand-primary,#3b82f6);text-underline-offset:2px;text-decoration:underline}._4Po2mW_link:hover{opacity:.85}._4Po2mW_imagePlaceholder{color:var(--dsw-alias-label-secondary,#666);background:var(--dsw-alias-bg-subtle,#0000000a);border:1px dashed var(--dsw-alias-border-l1,#00000026);border-radius:4px;padding:2px 6px;font-size:11px;display:inline-block}._4Po2mW_blockquote{border-left:3px solid var(--dsw-alias-border-l1,#ccc);color:var(--dsw-alias-label-secondary,#666);margin:8px 0;padding-left:10px}._4Po2mW_table{border-collapse:collapse;width:100%;margin:8px 0;font-size:12.5px}._4Po2mW_table th,._4Po2mW_table td{border:1px solid var(--dsw-alias-border-l1,#0000001a);text-align:left;padding:6px 8px}._4Po2mW_table th{background:var(--dsw-alias-bg-subtle,#00000008);font-weight:600}";
+		const css$2 = "._4Po2mW_markdownRoot{color:var(--dsw-alias-label-primary);overflow-wrap:anywhere;font-size:13px;line-height:1.55}._4Po2mW_markdownRoot>:first-child{margin-top:0}._4Po2mW_markdownRoot>:last-child{margin-bottom:0}._4Po2mW_paragraph{margin:0 0 8px;line-height:1.55}._4Po2mW_heading1,._4Po2mW_heading2,._4Po2mW_heading3,._4Po2mW_heading4,._4Po2mW_heading5,._4Po2mW_heading6{color:var(--dsw-alias-label-primary);margin:12px 0 6px;font-weight:600;line-height:1.35}._4Po2mW_heading1{font-size:16px;font-weight:700}._4Po2mW_heading2{font-size:16px;font-weight:600}._4Po2mW_heading3{font-size:13px;font-weight:600}._4Po2mW_heading4{color:var(--dsw-alias-label-secondary);font-size:13px;font-weight:600}._4Po2mW_heading5{color:var(--dsw-alias-label-secondary);font-size:13px;font-weight:500}._4Po2mW_heading6{color:var(--dsw-alias-label-tertiary);font-size:13px;font-weight:500}._4Po2mW_list{margin:0 0 8px;padding-left:20px}._4Po2mW_listItem{margin:2px 0}._4Po2mW_taskItem{align-items:baseline;gap:6px;margin-left:-18px;list-style-type:none;display:flex}._4Po2mW_taskCheckbox{cursor:default;vertical-align:middle;margin:0}._4Po2mW_codeBlock{font-size:12px;line-height:1.45;font-family:var(--dsw-font-markdown-code-block-small,monospace);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-markdown-code-block,#0000000d);border:1px solid var(--dsw-alias-border-l1,#0000001a);white-space:pre-wrap;overflow-wrap:anywhere;border-radius:6px;margin:8px 0;padding:8px 10px;overflow-x:auto}._4Po2mW_inlineCode{font-size:12px;font-family:var(--dsw-font-markdown-code-block-small,monospace);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-markdown-code-block,#0000000d);border:1px solid var(--dsw-alias-border-l1,#0000001a);border-radius:4px;padding:1px 4px}._4Po2mW_link{color:var(--dsw-alias-brand-primary,#3b82f6);text-underline-offset:2px;text-decoration:underline}._4Po2mW_link:hover{opacity:.85}._4Po2mW_imagePlaceholder{color:var(--dsw-alias-label-secondary,#666);background:var(--dsw-alias-bg-subtle,#0000000a);border:1px dashed var(--dsw-alias-border-l1,#00000026);border-radius:4px;padding:2px 6px;font-size:12px;display:inline-block}._4Po2mW_blockquote{border-left:3px solid var(--dsw-alias-border-l1,#ccc);color:var(--dsw-alias-label-secondary,#666);margin:8px 0;padding-left:10px}._4Po2mW_table{border-collapse:collapse;width:100%;margin:8px 0;font-size:12px}._4Po2mW_table th,._4Po2mW_table td{border:1px solid var(--dsw-alias-border-l1,#0000001a);text-align:left;padding:6px 8px}._4Po2mW_table th{background:var(--dsw-alias-bg-subtle,#00000008);font-weight:600}";
 		const tagId$2 = "@fish-under-sea/dsh-client-ui-task-board-fish/packages/dsh-client-ui-task-board-fish/src/client/board/task-markdown.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
 			const tag = document.createElement("style");
@@ -7090,7 +8667,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			const latest = outcome.latest;
 			const runningKey = verificationRunningKey(latest?.verification);
 			const timeline = cardTimeline(task, archived);
-			const resultText = latest?.result !== void 0 ? t(RESULT_KEY$1[latest.result]) : "";
+			const resultText = latest?.result !== void 0 ? t(RESULT_KEY[latest.result]) : "";
 			const sessionId = latest?.sessionId;
 			const tagNames = (task.tags ?? []).map((tag) => tag.name);
 			const ariaLabel = [
@@ -7107,6 +8684,30 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				t(timeline.key, { time: formatHostTimestamp(timeline.at, timeZone) }),
 				outcome.declared ? t("card.declaredHint") : ""
 			].filter(Boolean).join("\n");
+			const runningLabel = !archived && latest !== void 0 && executionLabel(latest) === "running" ? runningKey !== void 0 ? t(runningKey) : latest.ownResult === void 0 ? t("detail.result.running") : t("detail.subtasks.waiting") : "";
+			const settledResult = archived ? void 0 : latest?.result;
+			const resultPrefix = settledResult === void 0 && !busy && resultText !== "" ? `${resultText} · ` : "";
+			const runLine = latest === void 0 ? void 0 : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+				className: board_module_css_default.cardRun,
+				"data-dsh-part": "card-run",
+				"data-result": settledResult,
+				"data-declared": outcome.declared || void 0,
+				title: outcome.declared ? t("card.declaredHint") : void 0,
+				children: [settledResult !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: board_module_css_default.cardResult,
+					"data-result": settledResult,
+					children: resultText
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+					className: board_module_css_default.cardRuns,
+					children: [
+						resultPrefix,
+						runs,
+						" ",
+						t("board.runs"),
+						outcome.declared ? ` · ${t("card.declared")}` : ""
+					]
+				})]
+			});
 			const sessionMark = sessionId !== void 0 && (onOpenSession !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 				type: "button",
 				className: `${board_module_css_default.cardSession} ${board_module_css_default.cardAction}`,
@@ -7173,9 +8774,10 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 						children: [
 							decoration,
 							timeLabel,
-							!archived && (busy || pending) && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: board_module_css_default.cardSpinner,
-								"aria-hidden": "true"
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: board_module_css_default.cardSpinnerSlot,
+								"aria-hidden": "true",
+								children: !archived && (busy || pending) && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: board_module_css_default.cardSpinner })
 							})
 						]
 					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
@@ -7230,35 +8832,32 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 									className: board_module_css_default.cardSchedule,
 									title: task.schedule.nextRunAt !== void 0 ? `${t(task.schedule.mode === "once" ? "card.scheduledOnce" : "card.scheduled")} · ${formatHostTimestamp(task.schedule.nextRunAt, timeZone)}` : t(task.schedule.mode === "once" ? "card.scheduledOnce" : "card.scheduled"),
 									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(IconClock, { size: 12 }), t(task.schedule.mode === "once" ? "card.scheduledOnce" : "card.scheduled")]
-								}),
-								latest !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-									className: board_module_css_default.cardRun,
-									"data-dsh-part": "card-run",
-									"data-result": archived || latest.result === void 0 ? void 0 : latest.result,
-									"data-declared": outcome.declared || void 0,
-									title: outcome.declared ? t("card.declaredHint") : void 0,
-									children: [
-										!busy && resultText !== "" ? `${resultText} · ` : "",
-										runs,
-										" ",
-										t("board.runs"),
-										outcome.declared ? ` · ${t("card.declared")}` : ""
-									]
-								}),
-								sessionMark,
-								!archived && (busy || pending) && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: board_module_css_default.cardSpinner,
-									"aria-hidden": "true"
 								})
 							]
 						}),
-						!archived && pending && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-							className: board_module_css_default.cardRunningLabel,
-							children: [t("board.pending"), "…"]
-						}),
-						!archived && latest !== void 0 && executionLabel(latest) === "running" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-							className: board_module_css_default.cardRunningLabel,
-							children: [runningKey !== void 0 ? t(runningKey) : latest.ownResult === void 0 ? t("detail.result.running") : t("detail.subtasks.waiting"), "…"]
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: board_module_css_default.cardStatus,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: board_module_css_default.cardStatusText,
+								children: [
+									!archived && pending && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: board_module_css_default.cardRunningLabel,
+										children: [t("board.pending"), "…"]
+									}),
+									runningLabel !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: board_module_css_default.cardRunningLabel,
+										children: [runningLabel, "…"]
+									}),
+									runLine
+								]
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: board_module_css_default.cardStatusTrail,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: board_module_css_default.cardSpinnerSlot,
+									"aria-hidden": "true",
+									children: !archived && (busy || pending) && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: board_module_css_default.cardSpinner })
+								}), sessionMark]
+							})]
 						})
 					] })
 				]
@@ -7326,22 +8925,103 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			if (fallback === void 0) return t("exec.mode.inherit");
 			return t("exec.mode.inheritWith", { preset: presetLabel(fallback) });
 		}
+		/**
+		* The picker rows of one roster, split into the built-in and the user presets.
+		* Both pickers render these rows — the create dialog's mode select and the
+		* settings card's default-preset field — so their wording and their
+		* unavailable rows cannot drift apart.
+		* @param presets - the roster options.
+		* @returns one row list per group, in roster order.
+		*/
+		function presetChoiceRows(presets) {
+			const row = (preset) => ({
+				id: preset.id,
+				label: presetLabel(preset) + (preset.isDefault ? t("exec.mode.defaultSuffix") : "") + (preset.broken !== void 0 ? t("exec.mode.brokenSuffix") : ""),
+				disabled: preset.broken !== void 0
+			});
+			return {
+				builtin: presets.filter((preset) => isBuiltinPreset(preset.id)).map(row),
+				custom: presets.filter((preset) => !isBuiltinPreset(preset.id)).map(row)
+			};
+		}
+		//#endregion
+		//#region src/client/board/ReasoningEffortField.tsx
+		/** The controlled reasoning-effort picker. */
+		function ReasoningEffortField({ models, modelId, value, pending, onChange }) {
+			const efforts = reasoningEffortsFor(models, modelId);
+			const unlisted = value !== "" && !efforts.includes(value);
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+				className: board_module_css_default.field,
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: board_module_css_default.fieldLabel,
+					children: t("exec.reasoning")
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+					className: board_module_css_default.select,
+					value,
+					disabled: pending || !reasoningPickerEnabled(models, modelId),
+					onChange: (event) => {
+						onChange(event.target.value);
+					},
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+							value: "",
+							children: t("exec.reasoning.inherit")
+						}),
+						unlisted && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
+							value,
+							disabled: true,
+							children: [value, t("exec.reasoning.unknown")]
+						}),
+						efforts.map((effort) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+							value: effort,
+							children: effort
+						}, effort))
+					]
+				})]
+			}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+				className: board_module_css_default.detailText,
+				children: t(reasoningHintKey(models, modelId))
+			})] });
+		}
 		//#endregion
 		//#region src/client/board/NewTaskModal.tsx
 		/**
 		* New-task modal: title + description + the prompt that execution will send.
 		* Creates through the Host and closes only after the Host confirms it.
 		*/
+		/**
+		* Mark one staged attachment row: the upload state and the failure reason.
+		*/
+		function markStaged$1(selection, id, patch) {
+			return {
+				...selection,
+				staged: selection.staged.map((staged) => staged.id === id ? {
+					...staged,
+					...patch
+				} : staged)
+			};
+		}
 		/** New-task form overlay. */
 		function NewTaskModal({ controller, onClose, initialTask, defaultWorkspaceId, onDuplicateSuccess, parentTask, phase }) {
 			const isDuplicate = initialTask !== void 0;
 			const [title, setTitle] = (0, react.useState)(initialTask?.title ?? "");
 			const [description, setDescription] = (0, react.useState)(initialTask?.description ?? "");
 			const [prompt, setPrompt] = (0, react.useState)(initialTask?.prompt ?? "");
+			const [seed] = (0, react.useState)(() => {
+				const source = parentTask !== void 0 ? {
+					kind: "parent",
+					task: parentTask
+				} : initialTask !== void 0 ? {
+					kind: "duplicate",
+					task: initialTask
+				} : void 0;
+				return resolveCardTargets(controller.getSnapshot().host?.cardDefaults, source);
+			});
 			const [workspaceId, setWorkspaceId] = (0, react.useState)(initialTask?.workspaceId ?? parentTask?.workspaceId ?? defaultWorkspaceId ?? "");
-			const [mode, setMode] = (0, react.useState)(initialTask?.mode ?? parentTask?.mode ?? "");
-			const [permission, setPermission] = (0, react.useState)(initialTask?.permission ?? "");
-			const [model, setModel] = (0, react.useState)(initialTask?.model ?? parentTask?.model ?? "");
+			const [mode, setMode] = (0, react.useState)(seed.mode);
+			const [permission, setPermission] = (0, react.useState)(seed.permission);
+			const [model, setModel] = (0, react.useState)(seed.model);
+			const [reasoningEffort, setReasoningEffort] = (0, react.useState)(seed.reasoningEffort);
 			const inheritedPermission = parentTask === void 0 ? void 0 : effectiveTaskPermission(parentTask);
 			const [reuseSession, setReuseSession] = (0, react.useState)(initialTask?.reuseSession ?? false);
 			const [goalRun, setGoalRun] = (0, react.useState)(initialTask?.goalRun ?? false);
@@ -7358,6 +9038,11 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			const [freezeError, setFreezeError] = (0, react.useState)(void 0);
 			const [handoverText, setHandoverText] = (0, react.useState)(initialTask?.handover?.references !== void 0 ? initialTask.handover.references.join("\n") : "");
 			const [tags, setTags] = (0, react.useState)(initialTask?.tags ?? []);
+			const [attachments, setAttachments] = (0, react.useState)({
+				persisted: initialTask?.attachments ?? [],
+				staged: []
+			});
+			const [attachmentError, setAttachmentError] = (0, react.useState)(void 0);
 			const [archiveOriginal, setArchiveOriginal] = (0, react.useState)(true);
 			const [error, setError] = (0, react.useState)(void 0);
 			const [pending, setPending] = (0, react.useState)(false);
@@ -7369,18 +9054,18 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			const [parsePending, setParsePending] = (0, react.useState)(false);
 			const [parseError, setParseError] = (0, react.useState)(void 0);
 			const parseAbort = (0, react.useRef)(void 0);
-			const parseModels = options.models ?? [];
+			const models = options.models ?? [];
 			const workspaceKnown = workspaceId === "" || options.workspaces.some((item) => item.workspaceId === workspaceId);
 			const modeKnown = mode === "" || options.presets.some((item) => item.id === mode);
-			const modelKnown = model === "" || parseModels.some((item) => item.id === model);
+			const modelKnown = model === "" || models.some((item) => item.id === model);
 			(0, react.useEffect)(() => controller.subscribe(() => {
 				const snapshot = controller.getSnapshot();
 				setOptions(snapshot.executionOptions);
 				setGoalRunEnabled(snapshot.host?.goalRunEnabled === true);
 			}), [controller]);
 			(0, react.useEffect)(() => {
-				if (parseModel === "" || parseModels.length === 0) return;
-				if (parseModels.some((option) => option.id === parseModel)) return;
+				if (parseModel === "" || models.length === 0) return;
+				if (models.some((option) => option.id === parseModel)) return;
 				setParseModel("");
 				writeParseModelPreference("");
 			}, [parseModel, options.models]);
@@ -7457,6 +9142,27 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				};
 				const tagList = cleanTags(tags);
 				setPending(true);
+				const uploaded = [];
+				for (const staged of attachments.staged) {
+					setAttachments((current) => markStaged$1(current, staged.id, {
+						pending: true,
+						error: void 0
+					}));
+					try {
+						const attachment = await controller.uploadAttachment(staged.file, staged.kind);
+						if (attachment === void 0) throw new Error(t("new.attachments.unavailable"));
+						uploaded.push(attachment);
+					} catch (uploadError) {
+						const message = uploadError instanceof Error ? uploadError.message : String(uploadError);
+						setAttachments((current) => markStaged$1(current, staged.id, {
+							pending: false,
+							error: message
+						}));
+						setPending(false);
+						setError(message);
+						return;
+					}
+				}
 				const task = await controller.createTaskConfirmed({
 					title,
 					description,
@@ -7464,14 +9170,16 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					...parentTask === void 0 ? {} : { parentId: parentTask.id },
 					freeze,
 					handover,
-					workspaceId: workspaceId === "" ? void 0 : workspaceId,
-					mode: mode === "" ? void 0 : mode,
-					permission: permission === "" ? void 0 : permission,
-					model: model === "" ? void 0 : model,
+					...workspaceId === "" ? {} : { workspaceId },
+					...mode === "" ? {} : { mode },
+					...permission === "" ? {} : { permission },
+					...model === "" ? {} : { model },
+					...reasoningEffort === "" ? {} : { reasoningEffort },
 					...reuseSession ? { reuseSession: true } : {},
 					...goalRun ? { goalRun: true } : {},
 					...skipVerification ? { skipVerification: true } : {},
 					...tagList.length > 0 ? { tags: tagList } : {},
+					...attachments.persisted.length + uploaded.length > 0 ? { attachments: dedupeAttachments([...attachments.persisted, ...uploaded]) } : {},
 					schedule: scheduleEnabled ? scheduleMode === "once" ? {
 						enabled: true,
 						mode: "once",
@@ -7501,20 +9209,22 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			const scheduleTimeZone = scheduleZone === "" ? hostTimeZone : scheduleZone;
 			const scheduleNextRun = !scheduleEnabled ? void 0 : scheduleMode === "once" ? parseZonedInput(scheduleAt, scheduleTimeZone) : scheduleCron.trim() !== "" && isValidCron(scheduleCron) ? nextRunAtMs(scheduleCron, Date.now(), scheduleTimeZone) : void 0;
 			const modalTitle = parentTask !== void 0 ? t("new.subtaskTitle") : isDuplicate ? t("new.duplicateTitle") : t("board.new");
-			const builtinPresets = options.presets.filter((preset) => isBuiltinPreset(preset.id));
-			const customPresets = options.presets.filter((preset) => !isBuiltinPreset(preset.id));
+			const presetRows = presetChoiceRows(options.presets);
 			const inheritLabel = inheritPresetLabel(options.presets);
 			const selectedPreset = options.presets.find((preset) => preset.id === mode);
 			const modeLabel = mode === "" ? inheritLabel : selectedPreset === void 0 ? mode : presetLabel(selectedPreset);
 			const workspaceLabel = workspaceId === "" ? t("exec.workspace.recent") : options.workspaces.find((item) => item.workspaceId === workspaceId)?.title ?? workspaceId;
 			const permissionLabel = permission === "" ? inheritedPermission === void 0 ? t("exec.permission.default") : t("exec.permission.inheritParent", { permission: t(`exec.permission.${inheritedPermission}`) }) : t(`exec.permission.${permission}`);
-			const modelLabel = model === "" ? t("exec.model.default") : (options.models ?? []).find((item) => item.id === model)?.name ?? model;
+			const modelLabel = model === "" ? t("exec.model.default") : modelDisplayLabel(models.find((item) => item.id === model) ?? { id: model });
+			const modelSummary = reasoningEffort === "" ? modelLabel : `${modelLabel} · ${reasoningEffort}`;
 			const executionSummary = [
 				workspaceLabel,
 				modeLabel,
 				permissionLabel,
-				...model === "" ? [] : [modelLabel]
+				...model === "" ? [] : [modelSummary]
 			].join(" · ");
+			const attachmentCount = attachments.persisted.length + attachments.staged.length;
+			const attachmentSummary = attachmentCount === 0 ? t("new.summary.none") : t("new.summary.attachmentCount", { count: String(attachmentCount) });
 			const tagCount = cleanTags(tags).length;
 			const labelsSummary = tagCount === 0 ? t("new.summary.none") : t("new.summary.labelCount", { count: String(tagCount) });
 			const runSummary = [goalRun && goalRunEnabled ? t("new.summary.multiRound") : t("new.summary.singleRound"), ...reuseSession ? [t("exec.reuseSession")] : []].join(" · ");
@@ -7579,9 +9289,9 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
 											value: "",
 											children: t("exec.model.default")
-										}), parseModels.map((option) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+										}), models.map((option) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
 											value: option.id,
-											children: option.name ?? option.id
+											children: modelDisplayLabel(option)
 										}, option.id))]
 									}), parsePending ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 										type: "button",
@@ -7592,7 +9302,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 										children: t("new.aiParseCancel")
 									}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 										type: "button",
-										className: board_module_css_default.primaryButton,
+										className: board_module_css_default.ghostButton,
 										disabled: parseText.trim() === "",
 										onClick: () => {
 											runParse();
@@ -7607,7 +9317,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 							]
 						})
 					}),
-					parentTask !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+					parentTask !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(react_jsx_runtime.Fragment, { children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
 						className: board_module_css_default.detailText,
 						"data-dsh-part": "subtask-inherit",
 						children: [
@@ -7617,7 +9327,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 							" · ",
 							t("new.subtaskInherit")
 						]
-					}),
+					}) }),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(CollapsibleSection, {
 						title: t("new.section.content"),
 						defaultOpen: true,
@@ -7632,7 +9342,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 							onDescriptionChange: setDescription,
 							onPromptChange: setPrompt
 						}), isDuplicate && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-							className: board_module_css_default.checkboxLabel,
+							className: board_module_css_default.scheduleToggle,
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 								type: "checkbox",
 								checked: archiveOriginal,
@@ -7650,6 +9360,23 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 							knownTags: collectKnownTags(controller.getSnapshot().tasks),
 							onChange: setTags
 						})
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(CollapsibleSection, {
+						title: t("new.section.attachments"),
+						summary: attachmentSummary,
+						forceOpen: attachmentError !== void 0,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(AttachmentField, {
+							selection: attachments,
+							onChange: setAttachments,
+							limits: controller.getSnapshot().host?.attachmentLimits,
+							disabled: pending,
+							onError: (message) => {
+								setAttachmentError(message);
+							}
+						}), attachmentError !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: board_module_css_default.formError,
+							children: attachmentError
+						})]
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(CollapsibleSection, {
 						title: t("new.section.execution"),
@@ -7702,29 +9429,21 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 											value: mode,
 											children: [mode, t("exec.mode.removed")]
 										}),
-										builtinPresets.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("optgroup", {
+										presetRows.builtin.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("optgroup", {
 											label: t("exec.mode.builtinGroup"),
-											children: builtinPresets.map((preset) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
-												value: preset.id,
-												disabled: preset.broken !== void 0,
-												children: [
-													presetLabel(preset),
-													preset.isDefault ? t("exec.mode.defaultSuffix") : "",
-													preset.broken !== void 0 ? t("exec.mode.brokenSuffix") : ""
-												]
-											}, preset.id))
+											children: presetRows.builtin.map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+												value: row.id,
+												disabled: row.disabled,
+												children: row.label
+											}, row.id))
 										}),
-										customPresets.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("optgroup", {
+										presetRows.custom.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("optgroup", {
 											label: t("exec.mode.customGroup"),
-											children: customPresets.map((preset) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
-												value: preset.id,
-												disabled: preset.broken !== void 0,
-												children: [
-													presetLabel(preset),
-													preset.isDefault ? t("exec.mode.defaultSuffix") : "",
-													preset.broken !== void 0 ? t("exec.mode.brokenSuffix") : ""
-												]
-											}, preset.id))
+											children: presetRows.custom.map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+												value: row.id,
+												disabled: row.disabled,
+												children: row.label
+											}, row.id))
 										})
 									]
 								})]
@@ -7758,7 +9477,9 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 									className: board_module_css_default.select,
 									value: model,
 									onChange: (event) => {
-										setModel(event.target.value);
+										const next = event.target.value;
+										setModel(next);
+										setReasoningEffort((current) => reconcileReasoningEffort(models, next, current));
 									},
 									children: [
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
@@ -7769,12 +9490,19 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 											value: model,
 											children: [model, t("exec.model.unknown")]
 										}),
-										options.models?.map((item) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+										models.map((item) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
 											value: item.id,
-											children: item.name ?? item.id
+											children: modelDisplayLabel(item)
 										}, item.id))
 									]
 								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ReasoningEffortField, {
+								models,
+								modelId: model,
+								value: reasoningEffort,
+								pending,
+								onChange: setReasoningEffort
 							})
 						]
 					}),
@@ -8095,7 +9823,19 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		* Renaming onto a name already in use merges the two labels; the dialog says so
 		* before the edit is submitted. Deleting is confirmed first, and the
 		* confirmation names how many tasks the label is removed from.
+		*
+		* Clearing is that same delete applied to a judged set instead of one row: the
+		* dialog offers a usage threshold, cleanupCandidates names the labels that are
+		* both below it and carried only by finished tasks, and the confirmation lists
+		* what would go before anything is written. The Host ledger stays the authority
+		* either way — this surface only decides what to ask for.
 		*/
+		/** Usage the clear control starts on: labels carried by fewer tasks than this. */
+		const CLEANUP_THRESHOLD_DEFAULT = 5;
+		/** Floor of the threshold field: a label in use always sits on at least one task. */
+		const CLEANUP_THRESHOLD_MIN = 1;
+		/** Ceiling of the threshold field, which keeps the field a two-digit control. */
+		const CLEANUP_THRESHOLD_MAX = 99;
 		/**
 		* Labels in use, in board order (first occurrence wins, exactly like the
 		* filter row), each with its usage count.
@@ -8111,6 +9851,34 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				count: counts.get(tag.name) ?? 0
 			}));
 		}
+		/**
+		* The threshold a typed value actually stands for. A number field only marks an
+		* out-of-range value invalid; it still hands the value back, so the range the
+		* field declares is folded in here before anything is judged: below the floor
+		* becomes the floor, above the ceiling becomes the ceiling, and a value that is
+		* not a number at all selects nothing (the manager then answers "no label
+		* matches" instead of guessing a bound).
+		* @param typed - the raw field value.
+		* @returns a threshold inside the field's range, or NaN for "select nothing".
+		*/
+		function cleanupThreshold(typed) {
+			const value = Number(typed);
+			if (!Number.isFinite(value)) return NaN;
+			return Math.min(CLEANUP_THRESHOLD_MAX, Math.max(CLEANUP_THRESHOLD_MIN, value));
+		}
+		/**
+		* The confirmation body for a cleanup: every label that would go, each with the
+		* number of tasks it would be removed from, so the decision is made against
+		* names and sizes rather than against a bare count.
+		* @param candidates - what the threshold judged, in listing order.
+		* @returns the sentence the confirmation shows.
+		*/
+		function cleanupMessage(candidates) {
+			return t("tags.cleanupConfirm", {
+				count: String(candidates.length),
+				names: candidates.map((candidate) => candidate.name + " (" + candidate.count + ")").join(", ")
+			});
+		}
 		/** Label-manager overlay. */
 		function TagManagerModal({ controller, onClose, phase = "open" }) {
 			/** The label whose row is being renamed, and the draft name. */
@@ -8119,7 +9887,22 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			const [busy, setBusy] = (0, react.useState)(false);
 			const [error, setError] = (0, react.useState)(void 0);
 			const [confirmDelete, setConfirmDelete] = (0, react.useState)(void 0);
+			/** What the clear control judged, kept as the draft the confirmation lists. */
+			const [confirmCleanup, setConfirmCleanup] = (0, react.useState)(void 0);
+			/** The threshold as typed, so an emptied field stays empty instead of snapping back. */
+			const [threshold, setThreshold] = (0, react.useState)(String(CLEANUP_THRESHOLD_DEFAULT));
+			/** Supporting answer to a clear press (nothing matched), never an error. */
+			const [notice, setNotice] = (0, react.useState)(void 0);
+			/** Description target of the corner `?`: the same text as its hover text. */
+			const ruleId = (0, react.useId)();
+			/**
+			* Everything this dialog explains, in reading order: what labels are and what
+			* renaming or deleting does to the cards, then the clear rule. The body keeps
+			* the list alone; the corner `?` carries the prose.
+			*/
+			const ruleText = `${t("tags.hint")}\n\n${t("tags.cleanupHint")}`;
 			const confirmPresence = usePresence(confirmDelete !== void 0);
+			const cleanupPresence = usePresence(confirmCleanup !== void 0);
 			const dismiss = () => {
 				if (editing !== void 0) {
 					setEditing(void 0);
@@ -8162,147 +9945,244 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				setBusy(false);
 				if (!accepted) setError(controller.getSnapshot().transportError ?? t("tags.deleteFailed"));
 			};
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-				className: board_module_css_default.modalBackdrop,
-				"data-state": phase,
-				onMouseDown: dialog.onMouseDown,
-				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					ref: dialog.attach,
-					className: board_module_css_default.modal,
-					role: "dialog",
-					"aria-modal": "true",
-					"aria-label": t("tags.title"),
-					tabIndex: -1,
-					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
-							className: board_module_css_default.modalHeader,
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", {
-								className: board_module_css_default.modalTitle,
-								children: t("tags.title")
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-								type: "button",
-								className: board_module_css_default.iconButton,
-								"aria-label": t("detail.close"),
-								title: t("detail.close"),
-								onClick: onClose,
-								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(IconClose, { size: 16 })
-							})]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: board_module_css_default.modalBody,
-							children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-									className: board_module_css_default.fieldHint,
-									children: t("tags.hint")
-								}),
-								rows.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-									className: board_module_css_default.detailText,
-									children: t("tags.empty")
-								}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
-									className: board_module_css_default.tagManageList,
-									children: rows.map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
-										className: board_module_css_default.tagManageRow,
-										children: [editing === row.name ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-												className: board_module_css_default.input + " " + board_module_css_default.tagManageInput,
-												value: draft,
-												maxLength: 32,
-												spellCheck: false,
-												"aria-label": t("tags.renameLabel", { name: row.name }),
-												onChange: (event) => {
-													setDraft(event.target.value);
-													setError(void 0);
-												},
-												onKeyDown: (event) => {
-													if (event.key === "Enter") submitRename(row.name);
-												}
-											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-												type: "button",
-												className: board_module_css_default.primaryButton,
-												disabled: busy || draft.trim() === "",
-												onClick: () => {
-													submitRename(row.name);
-												},
-												children: t("tags.save")
-											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-												type: "button",
-												className: board_module_css_default.ghostButton,
-												disabled: busy,
-												onClick: () => {
-													setEditing(void 0);
-													setError(void 0);
-												},
-												children: t("new.cancel")
-											})
-										] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												className: board_module_css_default.tagManageName,
-												children: row.name
-											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												className: board_module_css_default.tagManageCount,
-												children: t("tags.usage", { count: String(row.count) })
-											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-												type: "button",
-												className: board_module_css_default.ghostButton,
-												disabled: busy,
-												onClick: () => {
-													startRename(row);
-												},
-												children: t("tags.rename")
-											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-												type: "button",
-												className: board_module_css_default.ghostButton,
-												disabled: busy,
-												onClick: () => {
-													setConfirmDelete(row.name);
-												},
-												children: t("tags.delete")
-											})
-										] }), editing === row.name && mergesInto !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: board_module_css_default.tagManageMerge,
-											children: t("tags.mergeHint", { name: mergesInto.name })
-										})]
-									}, row.name))
-								}),
-								error !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-									className: board_module_css_default.formError,
-									children: error
-								})
-							]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("footer", {
-							className: board_module_css_default.modalFooter,
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-								type: "button",
-								className: board_module_css_default.ghostButton,
-								onClick: onClose,
-								children: t("tags.done")
-							})
-						})
-					]
-				})
-			}), confirmPresence.mounted && deleting !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ConfirmDialog, {
-				title: t("tags.deleteTitle"),
-				message: t("tags.deleteConfirm", {
-					name: deleting.name,
-					count: String(deleting.count)
-				}),
-				confirmLabel: t("tags.deleteOk"),
-				danger: true,
-				phase: confirmPresence.phase,
-				onCancel: () => {
-					setConfirmDelete(void 0);
-				},
-				onConfirm: () => {
-					setConfirmDelete(void 0);
-					remove(deleting.name);
+			/**
+			* Judge the ledger against the typed threshold. Nothing is written here: an
+			* empty verdict is answered in place, so a threshold nobody agrees with can
+			* never delete anything by itself.
+			*/
+			const startCleanup = () => {
+				setError(void 0);
+				setNotice(void 0);
+				const candidates = cleanupCandidates(controller.getSnapshot().tasks, cleanupThreshold(threshold));
+				if (candidates.length === 0) {
+					setNotice(t("tags.cleanupEmpty"));
+					return;
 				}
-			})] });
+				setConfirmCleanup(candidates);
+			};
+			/**
+			* Remove the judged labels one ledger edit at a time, in the order they were
+			* listed: each delete is its own Host-confirmed transition, so a refused one
+			* leaves the rest of the ledger untouched and only counts as a failure.
+			*/
+			const clearLabels = async (candidates) => {
+				setBusy(true);
+				setError(void 0);
+				setNotice(void 0);
+				let failed = 0;
+				for (const candidate of candidates) if (!await controller.deleteTag(candidate.name)) failed += 1;
+				setBusy(false);
+				if (failed > 0) setError(t("tags.cleanupFailed", { count: String(failed) }));
+			};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+				/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					className: board_module_css_default.modalBackdrop,
+					"data-state": phase,
+					onMouseDown: dialog.onMouseDown,
+					children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						ref: dialog.attach,
+						className: board_module_css_default.modal,
+						role: "dialog",
+						"aria-modal": "true",
+						"aria-label": t("tags.title"),
+						tabIndex: -1,
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
+								className: board_module_css_default.modalHeader,
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", {
+										className: board_module_css_default.modalTitle,
+										children: t("tags.title")
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: board_module_css_default.tagCleanup,
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												className: board_module_css_default.helpTipWrap,
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+													type: "button",
+													className: board_module_css_default.helpButton,
+													"aria-label": t("tags.help"),
+													"aria-describedby": ruleId,
+													children: "?"
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+													id: ruleId,
+													className: board_module_css_default.helpTip,
+													role: "tooltip",
+													children: ruleText
+												})]
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+												className: board_module_css_default.scheduleZone,
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("tags.cleanupThreshold") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+													className: board_module_css_default.input + " " + board_module_css_default.tagCleanupInput,
+													type: "number",
+													min: CLEANUP_THRESHOLD_MIN,
+													max: CLEANUP_THRESHOLD_MAX,
+													step: 1,
+													inputMode: "numeric",
+													value: threshold,
+													disabled: busy,
+													"aria-label": t("tags.cleanupThreshold"),
+													onChange: (event) => {
+														setThreshold(event.target.value);
+														setNotice(void 0);
+														setError(void 0);
+													}
+												})]
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: board_module_css_default.ghostButton,
+												disabled: busy,
+												onClick: startCleanup,
+												children: t("tags.cleanup")
+											})
+										]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: board_module_css_default.iconButton,
+										"aria-label": t("detail.close"),
+										title: t("detail.close"),
+										onClick: onClose,
+										children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(IconClose, { size: 16 })
+									})
+								]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: board_module_css_default.modalBody,
+								children: [
+									notice !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+										className: board_module_css_default.tagCleanupNotice,
+										role: "status",
+										children: notice
+									}),
+									rows.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+										className: board_module_css_default.detailText,
+										children: t("tags.empty")
+									}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
+										className: board_module_css_default.tagManageList,
+										children: rows.map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
+											className: board_module_css_default.tagManageRow,
+											children: [editing === row.name ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+													className: board_module_css_default.input + " " + board_module_css_default.tagManageInput,
+													value: draft,
+													maxLength: 32,
+													spellCheck: false,
+													"aria-label": t("tags.renameLabel", { name: row.name }),
+													onChange: (event) => {
+														setDraft(event.target.value);
+														setError(void 0);
+													},
+													onKeyDown: (event) => {
+														if (event.key === "Enter") submitRename(row.name);
+													}
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+													type: "button",
+													className: board_module_css_default.primaryButton,
+													disabled: busy || draft.trim() === "",
+													onClick: () => {
+														submitRename(row.name);
+													},
+													children: t("tags.save")
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+													type: "button",
+													className: board_module_css_default.ghostButton,
+													disabled: busy,
+													onClick: () => {
+														setEditing(void 0);
+														setError(void 0);
+													},
+													children: t("new.cancel")
+												})
+											] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+													className: board_module_css_default.tagManageName,
+													children: row.name
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+													className: board_module_css_default.tagManageCount,
+													children: t("tags.usage", { count: String(row.count) })
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+													type: "button",
+													className: board_module_css_default.ghostButton,
+													disabled: busy,
+													onClick: () => {
+														startRename(row);
+													},
+													children: t("tags.rename")
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+													type: "button",
+													className: board_module_css_default.ghostButton,
+													disabled: busy,
+													onClick: () => {
+														setConfirmDelete(row.name);
+													},
+													children: t("tags.delete")
+												})
+											] }), editing === row.name && mergesInto !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: board_module_css_default.tagManageMerge,
+												children: t("tags.mergeHint", { name: mergesInto.name })
+											})]
+										}, row.name))
+									}),
+									error !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+										className: board_module_css_default.formError,
+										children: error
+									})
+								]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("footer", {
+								className: board_module_css_default.modalFooter,
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: board_module_css_default.ghostButton,
+									onClick: onClose,
+									children: t("tags.done")
+								})
+							})
+						]
+					})
+				}),
+				confirmPresence.mounted && deleting !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ConfirmDialog, {
+					title: t("tags.deleteTitle"),
+					message: t("tags.deleteConfirm", {
+						name: deleting.name,
+						count: String(deleting.count)
+					}),
+					confirmLabel: t("tags.deleteOk"),
+					danger: true,
+					phase: confirmPresence.phase,
+					onCancel: () => {
+						setConfirmDelete(void 0);
+					},
+					onConfirm: () => {
+						setConfirmDelete(void 0);
+						remove(deleting.name);
+					}
+				}),
+				cleanupPresence.mounted && confirmCleanup !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ConfirmDialog, {
+					title: t("tags.cleanupTitle"),
+					message: cleanupMessage(confirmCleanup),
+					confirmLabel: t("tags.cleanupOk"),
+					danger: true,
+					phase: cleanupPresence.phase,
+					onCancel: () => {
+						setConfirmCleanup(void 0);
+					},
+					onConfirm: () => {
+						const judged = confirmCleanup;
+						setConfirmCleanup(void 0);
+						clearLabels(judged);
+					}
+				})
+			] });
 		}
 		//#endregion
 		//#region src/client/board/EditTaskModal.tsx
@@ -8319,6 +10199,11 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			const [description, setDescription] = (0, react.useState)(task.description);
 			const [prompt, setPrompt] = (0, react.useState)(task.prompt);
 			const [tags, setTags] = (0, react.useState)(task.tags ?? []);
+			const [attachments, setAttachments] = (0, react.useState)({
+				persisted: task.attachments ?? [],
+				staged: []
+			});
+			const [attachmentError, setAttachmentError] = (0, react.useState)(void 0);
 			const [error, setError] = (0, react.useState)(void 0);
 			const [pending, setPending] = (0, react.useState)(false);
 			const submit = async () => {
@@ -8328,11 +10213,36 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				}
 				setPending(true);
 				const tagList = cleanTags(tags);
+				const uploaded = [];
+				for (const staged of attachments.staged) {
+					setAttachments((current) => markStaged(current, staged.id, {
+						pending: true,
+						error: void 0
+					}));
+					try {
+						const attachment = await controller.uploadAttachment(staged.file, staged.kind);
+						if (attachment === void 0) throw new Error(t("new.attachments.unavailable"));
+						uploaded.push(attachment);
+					} catch (uploadError) {
+						const message = uploadError instanceof Error ? uploadError.message : String(uploadError);
+						setAttachments((current) => markStaged(current, staged.id, {
+							pending: false,
+							error: message
+						}));
+						setPending(false);
+						setError(message);
+						return;
+					}
+				}
+				const carried = dedupeAttachments([...attachments.persisted, ...uploaded]);
+				const current = task.attachments ?? [];
+				const unchanged = current.length === carried.length && current.every((attachment, index) => attachment.attachmentId === carried[index]?.attachmentId);
 				const patch = {
 					title,
 					description,
 					prompt,
-					...tagList.length > 0 ? { tags: tagList } : task.tags === void 0 ? {} : { tags: null }
+					...tagList.length > 0 ? { tags: tagList } : task.tags === void 0 ? {} : { tags: null },
+					...unchanged ? {} : carried.length > 0 ? { attachments: carried } : { attachments: null }
 				};
 				if (await controller.updateTask(task.id, patch)) {
 					onClose();
@@ -8352,22 +10262,50 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				},
 				onClose,
 				phase,
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(TaskContentFields, {
-					title,
-					description,
-					prompt,
-					onTitleChange: (value) => {
-						setTitle(value);
-						setError(void 0);
-					},
-					onDescriptionChange: setDescription,
-					onPromptChange: setPrompt
-				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TaskTagFields, {
-					tags,
-					knownTags: collectKnownTags(controller.getSnapshot().tasks),
-					onChange: setTags
-				})]
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(TaskContentFields, {
+						title,
+						description,
+						prompt,
+						onTitleChange: (value) => {
+							setTitle(value);
+							setError(void 0);
+						},
+						onDescriptionChange: setDescription,
+						onPromptChange: setPrompt
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(TaskTagFields, {
+						tags,
+						knownTags: collectKnownTags(controller.getSnapshot().tasks),
+						onChange: setTags
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(AttachmentField, {
+						selection: attachments,
+						onChange: setAttachments,
+						limits: controller.getSnapshot().host?.attachmentLimits,
+						disabled: pending,
+						onError: (message) => {
+							setAttachmentError(message);
+						}
+					}),
+					attachmentError !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: board_module_css_default.formError,
+						children: attachmentError
+					})
+				]
 			});
+		}
+		/**
+		* Mark one staged attachment row: the upload state and the failure reason.
+		*/
+		function markStaged(selection, id, patch) {
+			return {
+				...selection,
+				staged: selection.staged.map((staged) => staged.id === id ? {
+					...staged,
+					...patch
+				} : staged)
+			};
 		}
 		/** Edit-tags modal: edit labels only, shown for tasks after first execution. */
 		function EditTagsModal({ controller, task, onClose, phase }) {
@@ -8476,7 +10414,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 										type: "button",
-										className: board_module_css_default.primaryButton,
+										className: board_module_css_default.ghostButton,
 										disabled: pending,
 										onClick: () => {
 											link(task.id);
@@ -8504,16 +10442,96 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			});
 		}
 		//#endregion
+		//#region src/client/board/ClampedMarkdown.tsx
+		/**
+		* Clamped markdown body for the detail overlay: a long description or prompt
+		* renders behind a max-height clamp with a fade into the dialog surface and
+		* an expand toggle, so it no longer pushes the execution settings and the
+		* execution history out of view. Content that fits the clamp renders
+		* untouched — no toggle, no fade, no extra markup behaviour.
+		*/
+		/**
+		* Clamp height used when the stylesheet is unavailable to the runtime (unit
+		* tests). The rendered value lives on `.clampBody[data-clamped='true']` in
+		* board.module.css and is read back through getComputedStyle, so the CSS
+		* stays the single source of the geometry.
+		*/
+		const CLAMP_FALLBACK_PX = 160;
+		function ClampedMarkdown({ source }) {
+			const [expanded, setExpanded] = (0, react.useState)(false);
+			const [overflowing, setOverflowing] = (0, react.useState)(false);
+			const bodyRef = (0, react.useRef)(null);
+			(0, react.useEffect)(() => {
+				setExpanded(false);
+			}, [source]);
+			(0, react.useEffect)(() => {
+				const node = bodyRef.current;
+				if (node === null) return;
+				const measure = () => {
+					const declared = Number.parseFloat(getComputedStyle(node).maxHeight);
+					const clamp = Number.isFinite(declared) ? declared : CLAMP_FALLBACK_PX;
+					setOverflowing(node.scrollHeight > clamp + 1);
+				};
+				measure();
+				if (typeof ResizeObserver === "undefined") return;
+				const observer = new ResizeObserver(measure);
+				observer.observe(node);
+				return () => {
+					observer.disconnect();
+				};
+			}, [source, expanded]);
+			const clamped = overflowing && !expanded;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				ref: bodyRef,
+				className: board_module_css_default.clampBody,
+				"data-clamped": clamped,
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TaskMarkdown, { source })
+			}), overflowing && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+				type: "button",
+				className: `${board_module_css_default.linkButton} ${board_module_css_default.clampToggle}`,
+				"aria-expanded": expanded,
+				onClick: () => {
+					setExpanded(!expanded);
+				},
+				children: expanded ? t("detail.collapse") : t("detail.expand")
+			})] });
+		}
+		//#endregion
+		//#region src/core/workspace-target.ts
+		/**
+		* The failure text the Host records when a card names no workspace and the
+		* deployment has none to resolve it to: the run is refused before any session
+		* exists instead of letting `session.create` fall back to the Host process
+		* working directory (the desktop app's profile directory), which is never the
+		* project the user meant.
+		*
+		* A finished sentence rather than a code: the ledger stores it as the
+		* execution's failure text, which the agent tools serve to a model and which
+		* any client prints verbatim. It names the fix, not the mechanism.
+		*/
+		const MISSING_WORKSPACE_REASON = "this card pins no workspace; choose a workspace on the card before running";
+		/**
+		* Whether a recorded failure text is the missing-workspace refusal, which the
+		* browser half renders in the reader's own language.
+		* @param reason - the execution's recorded failure text.
+		* @returns true when that run was refused for naming no workspace.
+		*/
+		function isMissingWorkspaceReason(reason) {
+			return reason === MISSING_WORKSPACE_REASON;
+		}
+		//#endregion
 		//#region src/client/board/VerificationReport.tsx
 		/**
 		* One execution's goal-acceptance report.
 		*
 		* Rendered inside the execution-history row, so a rerun or a scheduled run
 		* keeps its OWN report and a later cycle never overwrites an earlier verdict.
-		* It shows what the board decided and the evidence it decided on: the verdict,
-		* the judge route and reasoning level, the acceptance count, the total and
-		* per-criterion scores against their threshold, the findings the judge located,
-		* the evidence scope with its truncation, and the token usage.
+		* The row itself only carries the verdict: the judge route, the acceptance
+		* count, the per-criterion scores and their threshold, the findings, the
+		* evidence scope and the token usage sit behind one disclosure, because the
+		* same machine explanation repeated on all thirty-four rows of a card was what
+		* buried the row a reader needed. Expanding it shows every field the board
+		* decided on — nothing is dropped, only folded.
 		*
 		* Deliberately adds no new `data-dsh-part` value: the part enum is owned by the
 		* cross-repository semantic-attribute contract, and this report reuses the
@@ -8542,6 +10560,21 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			failed: "verify.status.failed",
 			invalid: "verify.status.invalidHeld"
 		};
+		/**
+		* Board phase → the badge's colour slot. One slot per meaning instead of one
+		* per phase: a phase that is still running reads as a warning, a refused
+		* acceptance reads as a failure, and an acceptance that never applied reads as
+		* neutral — never as a pass.
+		*/
+		const PHASE_TONE = {
+			off: "neutral",
+			executing: "warn",
+			verifying: "warn",
+			repairing: "error",
+			passed: "success",
+			failed: "error",
+			invalid: "error"
+		};
 		/** Evidence location → locale key, for one structured finding's citation. */
 		const LOCATION_KEY = {
 			task: "verify.location.task",
@@ -8568,28 +10601,34 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			exception: "verify.cleanup.stage.exception",
 			budget: "verify.cleanup.stage.budget"
 		};
+		/** Stable key for one finding row. */
+		function findingKey(attempt, index) {
+			return attempt.at.toString(36) + "-" + String(index);
+		}
 		/** One recorded attempt: a quality verdict, an invalid veto, an anomaly, or a budget stop. */
 		function AttemptRow({ attempt, detailRemoved }) {
 			const invalid = attempt.stage === "invalid";
 			const exception = attempt.stage !== "quality" && !invalid;
 			const result = exception ? "failed" : attempt.passed ? "succeeded" : "failed";
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
-				className: board_module_css_default.executionRow,
+				className: board_module_css_default.attemptRow,
 				"data-result": result,
 				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: board_module_css_default.executionBadge,
-						"data-result": result,
-						children: invalid ? t("verify.status.invalid") : exception ? t("verify.status.exception") : attempt.passed ? t("verify.status.passed") : t("verify.status.failed")
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-						className: board_module_css_default.executionTimes,
-						children: [
-							invalid ? t("verify.attemptInvalid", { index: String(attempt.index) }) : exception ? t("verify.attemptException", { index: String(attempt.index) }) : t("verify.attempt", { index: String(attempt.index) }),
-							" · ",
-							routeLabel(attempt),
-							!exception && !invalid && " · " + t("verify.rounds", { rounds: String(attempt.rounds) })
-						]
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: board_module_css_default.attemptHead,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: board_module_css_default.executionBadge,
+							"data-result": result,
+							children: invalid ? t("verify.status.invalid") : exception ? t("verify.status.exception") : attempt.passed ? t("verify.status.passed") : t("verify.status.failed")
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: board_module_css_default.executionTimes,
+							children: [
+								invalid ? t("verify.attemptInvalid", { index: String(attempt.index) }) : exception ? t("verify.attemptException", { index: String(attempt.index) }) : t("verify.attempt", { index: String(attempt.index) }),
+								" · ",
+								routeLabel(attempt),
+								!exception && !invalid && " · " + t("verify.rounds", { rounds: String(attempt.rounds) })
+							]
+						})]
 					}),
 					invalid && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 						className: board_module_css_default.executionTimes,
@@ -8675,85 +10714,6 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				]
 			});
 		}
-		/** Stable key for one finding row. */
-		function findingKey(attempt, index) {
-			return attempt.at.toString(36) + "-" + String(index);
-		}
-		/**
-		* Render one execution's acceptance report.
-		* @param props - the execution's persisted acceptance block.
-		* @returns the report, or nothing when acceptance never applied.
-		*/
-		function VerificationReport({ verification }) {
-			const phase = verificationPhase(verification);
-			if (phase === "off" && verification.contract.enabled === false && verification.applicability !== "skipped") return null;
-			const totals = verificationTotals(verification);
-			const route = verification.contract.route;
-			const applicabilityKey = verification.applicability === "disabled" ? "verify.applicability.disabled" : verification.applicability === "skipped" ? "verify.applicability.skipped" : verification.applicability === "goal-unavailable" ? "verify.applicability.goalUnavailable" : verification.applicability === "goal-disabled" ? "verify.applicability.goalDisabled" : verification.applicability === "team-member" ? "verify.applicability.teamMember" : void 0;
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-				className: board_module_css_default.executionTimes,
-				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-						className: board_module_css_default.executionBadge,
-						"data-result": phase === "passed" ? "succeeded" : phase === "failed" ? "failed" : void 0,
-						children: [
-							t("verify.title"),
-							" · ",
-							t(PHASE_STATUS_KEY[phase])
-						]
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: board_module_css_default.executionTimes,
-						children: t("verify.invalidCounts", {
-							quality: String(qualityAttempts(verification).length),
-							max: String(2),
-							invalid: String(invalidAttempts(verification).length),
-							maxInvalid: String(2),
-							exceptions: String(exceptionAttempts(verification).length)
-						})
-					}),
-					route !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: board_module_css_default.executionTimes,
-						children: verification.contract.modelSource === "inherit" ? t("verify.judgeInherited", { model: route.provider + "/" + route.model }) : t(route.reasoningEffort === void 0 || route.reasoningEffort === "" ? "verify.judgeNoEffort" : "verify.judge", {
-							model: route.provider + "/" + route.model,
-							...route.reasoningEffort === void 0 ? {} : { effort: route.reasoningEffort }
-						})
-					}),
-					verification.contract.effortFallback !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: board_module_css_default.executionTimes,
-						children: t("verify.effortFallback", {
-							requested: verification.contract.effortFallback.requested,
-							resolved: verification.contract.effortFallback.resolved ?? t("settings.goalVerificationResolvedNoEffort")
-						})
-					}),
-					applicabilityKey !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: board_module_css_default.executionTimes,
-						children: t(applicabilityKey)
-					}),
-					verification.failedReason !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: board_module_css_default.executionTimes,
-						children: t("verify.finalFailure", { reason: verification.failedReason })
-					}),
-					totals.calls > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-						className: board_module_css_default.executionTimes,
-						children: [t("verify.usage", {
-							calls: String(totals.calls),
-							input: String(totals.inputTokens),
-							output: String(totals.outputTokens),
-							reasoning: String(totals.reasoningTokens)
-						}), totals.usageIncomplete ? t("verify.usageIncomplete") : ""]
-					}),
-					verification.attempts.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
-						className: board_module_css_default.executionList,
-						children: [...verification.attempts].reverse().map((attempt) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(AttemptRow, {
-							attempt,
-							detailRemoved: verification.cleanup?.state === "cleaned"
-						}, attempt.at.toString(36) + "-" + attempt.stage + "-" + String(attempt.index)))
-					}),
-					verification.cleanup !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CleanupNotice, { cleanup: verification.cleanup })
-				]
-			});
-		}
 		/**
 		* Retention notice of one execution's acceptance detail.
 		*
@@ -8784,60 +10744,227 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				}, record.at.toString(36) + "-" + record.stage + "-" + String(index)))
 			})] });
 		}
-		//#endregion
-		//#region src/client/board/ClampedMarkdown.tsx
 		/**
-		* Clamped markdown body for the detail overlay: a long description or prompt
-		* renders behind a max-height clamp with a fade into the dialog surface and
-		* an expand toggle, so it no longer pushes the execution settings and the
-		* execution history out of view. Content that fits the clamp renders
-		* untouched — no toggle, no fade, no extra markup behaviour.
+		* Render one execution's acceptance report.
+		* @param props - the execution's persisted acceptance block.
+		* @returns the verdict badge with its fold-out detail, or nothing when
+		* acceptance never applied.
 		*/
-		/**
-		* Clamp height used when the stylesheet is unavailable to the runtime (unit
-		* tests). The rendered value lives on `.clampBody[data-clamped='true']` in
-		* board.module.css and is read back through getComputedStyle, so the CSS
-		* stays the single source of the geometry.
-		*/
-		const CLAMP_FALLBACK_PX = 160;
-		function ClampedMarkdown({ source }) {
+		function VerificationReport({ verification }) {
 			const [expanded, setExpanded] = (0, react.useState)(false);
-			const [overflowing, setOverflowing] = (0, react.useState)(false);
-			const bodyRef = (0, react.useRef)(null);
-			(0, react.useEffect)(() => {
-				setExpanded(false);
-			}, [source]);
-			(0, react.useEffect)(() => {
-				const node = bodyRef.current;
-				if (node === null) return;
-				const measure = () => {
-					const declared = Number.parseFloat(getComputedStyle(node).maxHeight);
-					const clamp = Number.isFinite(declared) ? declared : CLAMP_FALLBACK_PX;
-					setOverflowing(node.scrollHeight > clamp + 1);
-				};
-				measure();
-				if (typeof ResizeObserver === "undefined") return;
-				const observer = new ResizeObserver(measure);
-				observer.observe(node);
-				return () => {
-					observer.disconnect();
-				};
-			}, [source, expanded]);
-			const clamped = overflowing && !expanded;
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-				ref: bodyRef,
-				className: board_module_css_default.clampBody,
-				"data-clamped": clamped,
-				children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(TaskMarkdown, { source })
-			}), overflowing && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-				type: "button",
-				className: `${board_module_css_default.linkButton} ${board_module_css_default.clampToggle}`,
-				"aria-expanded": expanded,
-				onClick: () => {
-					setExpanded(!expanded);
-				},
-				children: expanded ? t("detail.collapse") : t("detail.expand")
-			})] });
+			const presence = usePresence(expanded);
+			const panelId = (0, react.useId)();
+			const phase = verificationPhase(verification);
+			if (phase === "off" && verification.contract.enabled === false && verification.applicability !== "skipped") return null;
+			const totals = verificationTotals(verification);
+			const route = verification.contract.route;
+			const applicabilityKey = verification.applicability === "disabled" ? "verify.applicability.disabled" : verification.applicability === "skipped" ? "verify.applicability.skipped" : verification.applicability === "goal-unavailable" ? "verify.applicability.goalUnavailable" : verification.applicability === "goal-disabled" ? "verify.applicability.goalDisabled" : verification.applicability === "team-member" ? "verify.applicability.teamMember" : void 0;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: board_module_css_default.verifyReport,
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+					type: "button",
+					className: board_module_css_default.verifyBadge,
+					"data-tone": PHASE_TONE[phase],
+					"aria-expanded": expanded,
+					"aria-controls": panelId,
+					onClick: () => {
+						setExpanded(!expanded);
+					},
+					children: [
+						t("verify.title"),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: board_module_css_default.verifyVerdict,
+							children: t(PHASE_STATUS_KEY[phase])
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: board_module_css_default.disclosureChevron,
+							"data-open": expanded,
+							"aria-hidden": "true"
+						})
+					]
+				}), presence.mounted && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: board_module_css_default.verifyPanel,
+					id: panelId,
+					"data-state": presence.phase,
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: board_module_css_default.executionTimes,
+							children: t("verify.invalidCounts", {
+								quality: String(qualityAttempts(verification).length),
+								max: String(2),
+								invalid: String(invalidAttempts(verification).length),
+								maxInvalid: String(2),
+								exceptions: String(exceptionAttempts(verification).length)
+							})
+						}),
+						route !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: board_module_css_default.executionTimes,
+							children: verification.contract.modelSource === "inherit" ? t("verify.judgeInherited", { model: route.provider + "/" + route.model }) : t(route.reasoningEffort === void 0 || route.reasoningEffort === "" ? "verify.judgeNoEffort" : "verify.judge", {
+								model: route.provider + "/" + route.model,
+								...route.reasoningEffort === void 0 ? {} : { effort: route.reasoningEffort }
+							})
+						}),
+						verification.contract.effortFallback !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: board_module_css_default.executionTimes,
+							children: t("verify.effortFallback", {
+								requested: verification.contract.effortFallback.requested,
+								resolved: verification.contract.effortFallback.resolved ?? t("settings.goalVerificationResolvedNoEffort")
+							})
+						}),
+						applicabilityKey !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: board_module_css_default.executionTimes,
+							children: t(applicabilityKey)
+						}),
+						verification.failedReason !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: board_module_css_default.executionTimes,
+							children: t("verify.finalFailure", { reason: verification.failedReason })
+						}),
+						totals.calls > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: board_module_css_default.executionTimes,
+							children: [t("verify.usage", {
+								calls: String(totals.calls),
+								input: String(totals.inputTokens),
+								output: String(totals.outputTokens),
+								reasoning: String(totals.reasoningTokens)
+							}), totals.usageIncomplete ? t("verify.usageIncomplete") : ""]
+						}),
+						verification.attempts.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
+							className: board_module_css_default.executionList,
+							children: [...verification.attempts].reverse().map((attempt) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(AttemptRow, {
+								attempt,
+								detailRemoved: verification.cleanup?.state === "cleaned"
+							}, attempt.at.toString(36) + "-" + attempt.stage + "-" + String(attempt.index)))
+						}),
+						verification.cleanup !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CleanupNotice, { cleanup: verification.cleanup })
+					]
+				})]
+			});
+		}
+		/** Execution outcome → locale key, shared with the history's folded summary. */
+		/**
+		* A recorded failure text in the reader's own language, for the refusals the
+		* board itself produces and can therefore translate. Any other text is the
+		* Host's own sentence and is printed verbatim.
+		* @param error - the execution's recorded failure text.
+		* @returns the localized refusal, or the original text.
+		*/
+		function failureText(error) {
+			if (isMissingWorkspaceReason(error)) return t("exec.error.noWorkspace");
+			if (isLegacyAgentTeamsReason(error)) return t("exec.error.legacyAgentTeams");
+			return error;
+		}
+		const EXECUTION_RESULT_KEY = {
+			succeeded: "detail.result.succeeded",
+			failed: "detail.result.failed",
+			cancelled: "detail.result.cancelled"
+		};
+		/** One execution-history row: identity on the head line, evidence below it. */
+		function ExecutionRow({ execution, timeZone, onOpen }) {
+			const result = execution.result;
+			const external = execution.external === true;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
+				className: board_module_css_default.executionRow,
+				"data-result": result,
+				"data-execution-id": execution.id,
+				"data-external": external ? "true" : void 0,
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: board_module_css_default.executionRowHead,
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: board_module_css_default.executionBadge,
+							"data-result": result,
+							children: result === void 0 ? t("detail.result.running") : t(EXECUTION_RESULT_KEY[result])
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: board_module_css_default.executionTimes,
+							children: [
+								t("detail.executionStarted"),
+								" ",
+								formatTime(execution.startedAt, timeZone),
+								execution.endedAt !== void 0 && ` · ${t("detail.executionEnded")} ${formatTime(execution.endedAt, timeZone)}`
+							]
+						}),
+						execution.sessionId !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+							type: "button",
+							className: board_module_css_default.executionSession,
+							onClick: () => {
+								onOpen(execution.sessionId);
+							},
+							title: execution.sessionId,
+							children: [t("detail.viewSession"), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(IconSession, { size: 13 })]
+						})
+					]
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: board_module_css_default.executionRowEvidence,
+					children: [
+						external && execution.initiatedBy !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: board_module_css_default.executionTimes,
+							title: execution.initiatedBy,
+							children: t("detail.execution.external", { agent: execution.initiatedBy })
+						}),
+						!external && execution.initiatedBy !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: board_module_css_default.executionTimes,
+							title: execution.initiatedBy,
+							children: t("detail.execution.initiator", { session: execution.initiatedBy })
+						}),
+						execution.verification !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(VerificationReport, { verification: execution.verification }),
+						execution.error !== void 0 && execution.error !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: board_module_css_default.executionError,
+							children: failureText(execution.error)
+						})
+					]
+				})]
+			});
+		}
+		/**
+		* Render one card's execution history.
+		* @param props - the card's executions, its time zone and the session jump.
+		* @returns the newest rows, the disclosure for the rest, and nothing else.
+		*/
+		function ExecutionLog({ executions, timeZone, onOpenSession }) {
+			const [expanded, setExpanded] = (0, react.useState)(false);
+			const presence = usePresence(expanded);
+			const logId = (0, react.useId)();
+			const recent = [...executions].reverse();
+			const visible = recent.slice(0, 5);
+			const older = recent.slice(5);
+			const row = (execution) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ExecutionRow, {
+				execution,
+				timeZone,
+				onOpen: onOpenSession
+			}, execution.id);
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: board_module_css_default.executionLog,
+				id: logId,
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
+						className: board_module_css_default.executionList,
+						children: visible.map(row)
+					}),
+					older.length > 0 && presence.mounted && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: board_module_css_default.executionExtra,
+						"data-execution-fold": presence.phase,
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
+							className: board_module_css_default.executionList,
+							children: older.map(row)
+						})
+					}),
+					older.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+						type: "button",
+						className: `${board_module_css_default.linkButton} ${board_module_css_default.executionDisclosure}`,
+						"aria-expanded": expanded,
+						"aria-controls": logId,
+						onClick: () => {
+							setExpanded(!expanded);
+						},
+						children: [expanded ? t("detail.collapse") : t("detail.execution.showAll", { count: String(recent.length) }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: board_module_css_default.disclosureChevron,
+							"data-open": expanded,
+							"aria-hidden": "true"
+						})]
+					})
+				]
+			});
 		}
 		//#endregion
 		//#region src/client/board/TaskDetail.tsx
@@ -8847,79 +10974,172 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		* delete (with confirmation), manual status moves, and a jump to the
 		* execution's session transcript.
 		*/
-		/** Execution outcome → locale key. */
-		const RESULT_KEY = {
-			succeeded: "detail.result.succeeded",
-			failed: "detail.result.failed",
-			cancelled: "detail.result.cancelled"
-		};
-		/** One execution-history row. */
-		function ExecutionRow({ execution, timeZone, onOpen }) {
-			const result = execution.result;
-			const external = execution.external === true;
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
-				className: board_module_css_default.executionRow,
-				"data-result": result,
-				"data-external": external ? "true" : void 0,
-				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: board_module_css_default.executionBadge,
-						"data-result": result,
-						children: result === void 0 ? t("detail.result.running") : t(RESULT_KEY[result])
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-						className: board_module_css_default.executionTimes,
-						children: [
-							t("detail.executionStarted"),
-							" ",
-							formatTime(execution.startedAt, timeZone),
-							execution.endedAt !== void 0 && ` · ${t("detail.executionEnded")} ${formatTime(execution.endedAt, timeZone)}`
-						]
-					}),
-					external && execution.initiatedBy !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: board_module_css_default.executionTimes,
-						title: execution.initiatedBy,
-						children: t("detail.execution.external", { agent: execution.initiatedBy })
-					}),
-					!external && execution.initiatedBy !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: board_module_css_default.executionTimes,
-						title: execution.initiatedBy,
-						children: t("detail.execution.initiator", { session: execution.initiatedBy })
-					}),
-					execution.verification !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(VerificationReport, { verification: execution.verification }),
-					execution.sessionId !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+		/**
+		* A compact action menu: one trigger on the panel's control track, the choices
+		* only while it is open, Escape or an outside press to close, and focus back on
+		* the trigger afterwards. The panel's dialog owns Escape on `document` in the
+		* capture phase, so the menu answers from the window leg of the same event —
+		* otherwise the press would close the whole detail view under the menu.
+		*/
+		function ActionMenu({ label, items, disabled }) {
+			const [open, setOpen] = (0, react.useState)(false);
+			const rootRef = (0, react.useRef)(null);
+			const triggerRef = (0, react.useRef)(null);
+			const menuRef = (0, react.useRef)(null);
+			const menuId = (0, react.useId)();
+			/** Close the menu; a keyboard user gets the trigger back instead of the document body. */
+			const close = (0, react.useCallback)((restoreFocus) => {
+				setOpen(false);
+				if (restoreFocus) triggerRef.current?.focus();
+			}, []);
+			(0, react.useEffect)(() => {
+				if (!open) return;
+				const onKeyDown = (event) => {
+					if (event.key !== "Escape") return;
+					event.stopPropagation();
+					setOpen(false);
+					triggerRef.current?.focus();
+				};
+				const onPointerDown = (event) => {
+					const root = rootRef.current;
+					if (root !== null && event.target instanceof Node && root.contains(event.target)) return;
+					setOpen(false);
+				};
+				window.addEventListener("keydown", onKeyDown, true);
+				document.addEventListener("mousedown", onPointerDown, true);
+				return () => {
+					window.removeEventListener("keydown", onKeyDown, true);
+					document.removeEventListener("mousedown", onPointerDown, true);
+				};
+			}, [open]);
+			(0, react.useEffect)(() => {
+				if (!open) return;
+				menuRef.current?.querySelector("[role=\"menuitem\"]:not([disabled])")?.focus();
+			}, [open]);
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: board_module_css_default.menuRoot,
+				ref: rootRef,
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+					ref: triggerRef,
+					type: "button",
+					className: board_module_css_default.ghostButton,
+					"aria-haspopup": "menu",
+					"aria-expanded": open,
+					"aria-controls": menuId,
+					disabled,
+					onClick: () => {
+						setOpen(!open);
+					},
+					children: [label, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: board_module_css_default.menuChevron,
+						"data-open": open,
+						"aria-hidden": "true"
+					})]
+				}), open && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					ref: menuRef,
+					id: menuId,
+					className: board_module_css_default.menuPanel,
+					role: "menu",
+					"aria-label": label,
+					children: items.map((item) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 						type: "button",
-						className: board_module_css_default.linkButton,
+						role: "menuitem",
+						className: board_module_css_default.menuItem,
+						disabled: item.disabled,
+						title: item.title,
 						onClick: () => {
-							onOpen(execution.sessionId);
+							close(true);
+							item.onSelect();
 						},
-						title: execution.sessionId,
-						children: [t("detail.viewSession"), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(IconSession, { size: 13 })]
-					}),
-					execution.error !== void 0 && execution.error !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: board_module_css_default.executionError,
-						children: execution.error
-					})
-				]
+						children: item.label
+					}, item.key))
+				})]
+			});
+		}
+		/**
+		* One folded region of the detail panel.
+		*
+		* It reuses the task form's region contract verbatim — `.formSection`, the
+		* chevron drawn from borders, the one-line summary, `data-open`, the
+		* `data-dsh-part="form-section"` part the semantic-attribute contract already
+		* owns — and adds the two things a panel fold needs that a dialog region does
+		* not: an `aria-controls` target and a paired exit leg (`usePresence` keeps the
+		* body mounted until the close has run). The panel cannot reach into the form
+		* module to extend its copy, so the shape is mirrored here rather than forked
+		* into a third disclosure style.
+		*/
+		function FoldSection({ title, summary, hint, children }) {
+			const [open, setOpen] = (0, react.useState)(false);
+			const presence = usePresence(open);
+			const panelId = (0, react.useId)();
+			const headerRef = (0, react.useRef)(null);
+			const fullLine = hint ?? summary;
+			const toggle = () => {
+				if (open) {
+					const body = panelId === "" ? null : document.getElementById(panelId);
+					if (body !== null && body.contains(document.activeElement)) headerRef.current?.focus();
+				}
+				setOpen(!open);
+			};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+				className: board_module_css_default.formSection,
+				"data-dsh-part": "form-section",
+				"data-open": open ? "true" : void 0,
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+					ref: headerRef,
+					type: "button",
+					className: board_module_css_default.formSectionHeader,
+					"aria-expanded": open,
+					"aria-controls": panelId,
+					title: fullLine === "" ? void 0 : fullLine,
+					onClick: toggle,
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: board_module_css_default.formSectionChevron,
+							"aria-hidden": "true"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: board_module_css_default.formSectionTitle,
+							children: title
+						}),
+						!open && summary !== "" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: board_module_css_default.formSectionSummary,
+							children: summary
+						})
+					]
+				}), presence.mounted && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					className: board_module_css_default.formSectionBody,
+					id: panelId,
+					"data-state": presence.phase,
+					children
+				})]
 			});
 		}
 		/** The execution-target editor: workspace / mode / permission pickers. */
-		function ExecutionSettingsSection({ controller, task, pending, executionOptions, teamRunAvailable, goalRunEnabled }) {
+		function ExecutionSettingsSection({ controller, task, pending, executionOptions, goalRunEnabled }) {
 			const options = executionOptions;
+			const models = options.models ?? [];
 			const workspaceId = task.workspaceId ?? "";
 			const mode = task.mode ?? "";
 			const permission = task.permission ?? "";
 			const model = task.model ?? "";
+			const reasoningEffort = task.reasoningEffort ?? "";
 			const workspaceKnown = workspaceId === "" || options.workspaces.some((item) => item.workspaceId === workspaceId);
 			const modeKnown = mode === "" || options.presets.some((item) => item.id === mode);
-			const modelKnown = model === "" || (options.models ?? []).some((item) => item.id === model);
+			const modelKnown = model === "" || models.some((item) => item.id === model);
+			const advancedOn = [];
+			if (task.reuseSession === true) advancedOn.push(t("detail.settings.summary.reuseSession"));
+			if (task.goalRun === true) advancedOn.push(t("detail.settings.summary.goal"));
+			if (task.skipVerification === true) advancedOn.push(t("detail.settings.summary.skipVerification"));
+			const advancedSummary = advancedOn.length === 0 ? t("detail.settings.summary.none") : advancedOn.join(" · ");
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
 				className: board_module_css_default.detailSection,
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", { children: t("detail.executionSettings") }),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: board_module_css_default.detailText,
-						children: t("exec.hint")
+						title: t("exec.hint"),
+						children: t("exec.hint.short")
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
 						className: board_module_css_default.field,
@@ -9013,7 +11233,12 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 							value: model,
 							disabled: pending,
 							onChange: (event) => {
-								controller.updateTask(task.id, { model: event.target.value === "" ? void 0 : event.target.value });
+								const next = event.target.value;
+								const effort = reconcileReasoningEffort(models, next, reasoningEffort);
+								controller.updateTask(task.id, {
+									model: next,
+									...effort === reasoningEffort ? {} : { reasoningEffort: effort }
+								});
 							},
 							children: [
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
@@ -9024,76 +11249,80 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 									value: model,
 									children: [model, t("exec.model.unknown")]
 								}),
-								options.models?.map((item) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+								models.map((item) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
 									value: item.id,
-									children: item.name ?? item.id
+									children: modelDisplayLabel(item)
 								}, item.id))
 							]
 						})]
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-						className: board_module_css_default.scheduleToggle,
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-							type: "checkbox",
-							checked: task.reuseSession === true,
-							disabled: pending,
-							onChange: (event) => {
-								controller.updateTask(task.id, { reuseSession: event.target.checked });
-							}
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("exec.reuseSession") })]
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ReasoningEffortField, {
+						models,
+						modelId: model,
+						value: reasoningEffort,
+						pending,
+						onChange: (effort) => {
+							controller.updateTask(task.id, { reasoningEffort: effort });
+						}
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						className: board_module_css_default.detailText,
-						children: t("exec.reuseSessionHint")
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-						className: board_module_css_default.scheduleToggle,
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-							type: "checkbox",
-							checked: task.goalRun === true,
-							disabled: pending,
-							onChange: (event) => {
-								controller.updateTask(task.id, { goalRun: event.target.checked });
-							}
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("exec.goalRun") })]
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						className: board_module_css_default.detailText,
-						children: t("exec.goalRunHint")
-					}),
-					!goalRunEnabled && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						className: board_module_css_default.detailText,
-						children: t("settings.goalRunGlobalDisabledTaskOption")
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-						className: board_module_css_default.scheduleToggle,
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-							type: "checkbox",
-							checked: task.skipVerification === true,
-							disabled: pending,
-							onChange: (event) => {
-								controller.updateTask(task.id, { skipVerification: event.target.checked });
-							}
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("exec.skipVerification") })]
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						className: board_module_css_default.detailText,
-						children: t("exec.skipVerificationHint")
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
-						className: board_module_css_default.scheduleToggle,
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-							type: "checkbox",
-							checked: task.teamRun === true,
-							disabled: pending || !teamRunAvailable,
-							onChange: (event) => {
-								controller.updateTask(task.id, { teamRun: event.target.checked });
-							}
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("exec.teamRun") })]
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-						className: board_module_css_default.detailText,
-						children: teamRunAvailable ? t("exec.teamRunHint") : t("exec.teamRunUnavailable")
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(FoldSection, {
+						title: t("detail.settings.advanced"),
+						summary: advancedSummary,
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+								className: board_module_css_default.scheduleToggle,
+								title: t("exec.reuseSessionHint"),
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									type: "checkbox",
+									checked: task.reuseSession === true,
+									disabled: pending,
+									onChange: (event) => {
+										controller.updateTask(task.id, { reuseSession: event.target.checked });
+									}
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("exec.reuseSession") })]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: board_module_css_default.detailMeta,
+								children: t("exec.reuseSessionHint.short")
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+								className: board_module_css_default.scheduleToggle,
+								title: t("exec.goalRunHint"),
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									type: "checkbox",
+									checked: task.goalRun === true,
+									disabled: pending,
+									onChange: (event) => {
+										controller.updateTask(task.id, { goalRun: event.target.checked });
+									}
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("exec.goalRun") })]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: board_module_css_default.detailMeta,
+								children: t("exec.goalRunHint.short")
+							}),
+							!goalRunEnabled && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: board_module_css_default.detailMeta,
+								title: t("settings.goalRunGlobalDisabledTaskOption"),
+								children: t("exec.goalRunGlobalOff")
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+								className: board_module_css_default.scheduleToggle,
+								title: t("exec.skipVerificationHint"),
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									type: "checkbox",
+									checked: task.skipVerification === true,
+									disabled: pending,
+									onChange: (event) => {
+										controller.updateTask(task.id, { skipVerification: event.target.checked });
+									}
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: t("exec.skipVerification") })]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: board_module_css_default.detailMeta,
+								children: t("exec.skipVerificationHint.short")
+							})
+						]
 					})
 				]
 			});
@@ -9290,10 +11519,18 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			const budget = schedule === void 0 ? void 0 : budgetLabel(schedule);
 			const ended = schedule === void 0 ? void 0 : endedLabel(schedule);
 			const skipped = schedule === void 0 ? void 0 : skippedLabel(schedule);
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
-				className: board_module_css_default.detailSection,
+			const plannedAt = mode === "once" ? parseZonedInput(atText, effectiveZone) : void 0;
+			const planLabel = mode === "once" ? t("detail.schedule.summary.planOnce", { time: plannedAt === void 0 ? "—" : formatHostTimestamp(plannedAt, effectiveZone) }) : t("detail.schedule.summary.planCron", { cron: cron.trim() === "" ? "—" : cron.trim() });
+			const scheduleHint = enabled && ended === void 0 ? t("detail.schedule.summary.onFull", {
+				plan: planLabel,
+				next: nextLabel
+			}) : void 0;
+			const scheduleSummary = ended !== void 0 ? t("detail.schedule.ended", { reason: ended }) : enabled ? t("detail.schedule.summary.on", { next: nextLabel }) : skipped !== void 0 ? t("detail.schedule.skipped", { reason: skipped }) : t("detail.schedule.summary.off");
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(FoldSection, {
+				title: t("detail.schedule"),
+				summary: scheduleSummary,
+				hint: scheduleHint,
 				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", { children: t("detail.schedule") }),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
 						className: board_module_css_default.scheduleToggle,
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
@@ -9483,6 +11720,18 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			});
 		}
 		/**
+		* The read-only note under the subtask list. A card with unfinished descendants
+		* runs as ONE session — that card's own — which reads the subtasks and hands
+		* them off in dependency order, so the note states what the run does instead of
+		* promising a session per member. It counts the same members the run hands off
+		* (`joinsCascadeRun` leaves a finished subtask alone, and an archived card never
+		* runs at all), and stays a sentence: nothing here is a card field.
+		*/
+		function subtaskDispatchNote(task, tasks, maxSubtaskDepth) {
+			const pending = descendantTasks(tasks, task.id, maxSubtaskDepth).filter((descendant) => descendant.archivedAt === void 0 && joinsCascadeRun(descendant, task.id));
+			return pending.length > 0 ? t("detail.subtasks.runHint", { count: String(pending.length) }) : t("detail.subtasks.runHintSettled");
+		}
+		/**
 		* The subtask block: the parent link, the direct subtasks with their status,
 		* and the actions that grow or prune the tree. Every gate here mirrors the
 		* Host lineage gate for affordance only; the Host re-checks the action.
@@ -9556,7 +11805,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					}),
 					children.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: board_module_css_default.detailText,
-						children: t("detail.subtasks.runHint", { count: String(children.length) })
+						children: subtaskDispatchNote(task, tasks, limit)
 					}),
 					!archived && (canAddChild ? controller.isHostBacked() ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: board_module_css_default.subtaskAddRow,
@@ -9629,6 +11878,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			const timeZone = snapshot.host?.scheduler.timeZone;
 			const permissionPending = requiresPermissionConfirmation(current, snapshot.host?.sessionDefaultPermission);
 			const subtaskChildren = directSubtasks(snapshot.tasks, current.id);
+			const subtaskDepthLimit = snapshot.host?.maxSubtaskDepth ?? 1;
 			const dialog = useDialog(() => {
 				controller.closeTask();
 			}, phase);
@@ -9639,6 +11889,31 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			const editPresence = usePresence(editOpen);
 			const tagsPresence = usePresence(tagsOpen);
 			const duplicatePresence = usePresence(duplicateOpen);
+			const latestExecution = current.executions[current.executions.length - 1];
+			const historySummary = latestExecution === void 0 ? t("detail.noExecution") : t("detail.execution.summary", {
+				count: String(current.executions.length),
+				time: formatTime(latestExecution.endedAt ?? latestExecution.startedAt, timeZone),
+				result: latestExecution.result === void 0 ? t("detail.result.running") : t(EXECUTION_RESULT_KEY[latestExecution.result])
+			});
+			const headerActions = [];
+			if (!archived) {
+				headerActions.push({
+					key: "duplicate",
+					label: canEditTaskContent(current) ? t("detail.duplicate") : t("detail.duplicateAndEdit"),
+					disabled: pending,
+					onSelect: () => {
+						setShowDuplicate(true);
+					}
+				});
+				if (current.status === "done" || current.status === "failed") headerActions.push({
+					key: "archive",
+					label: t("detail.archive"),
+					disabled: pending,
+					onSelect: () => {
+						controller.archiveTask(current.id);
+					}
+				});
+			}
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: board_module_css_default.modalBackdrop,
 				"data-state": phase,
@@ -9664,6 +11939,11 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 										"data-status": archived ? "archived" : current.status,
 										children: archived ? t("board.archive") : t(STATUS_KEY[current.status])
 									}),
+									headerActions.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ActionMenu, {
+										label: t("detail.more"),
+										items: headerActions,
+										disabled: pending
+									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 										type: "button",
 										className: board_module_css_default.iconButton,
@@ -9678,201 +11958,243 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: board_module_css_default.detailBody,
-								children: [
-									transportError !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-										className: board_module_css_default.formError,
+								children: [transportError !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: board_module_css_default.formError,
+									children: [
+										t("board.hostError", { error: transportError }),
+										" ",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: board_module_css_default.linkButton,
+											onClick: () => {
+												controller.retryHostSync();
+											},
+											children: t("board.retryHost")
+										})
+									]
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: board_module_css_default.detailColumns,
+									"data-detail-layout": "columns",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: board_module_css_default.detailColumn,
+										"data-detail-column": "content",
 										children: [
-											t("board.hostError", { error: transportError }),
-											" ",
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-												type: "button",
-												className: board_module_css_default.linkButton,
-												onClick: () => {
-													controller.retryHostSync();
-												},
-												children: t("board.retryHost")
-											})
-										]
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
-										className: board_module_css_default.detailSection,
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", { children: t("detail.description") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ClampedMarkdown, { source: current.description !== "" ? current.description : "—" })]
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SubtaskSection, {
-										controller,
-										task: current,
-										pending,
-										archived,
-										snapshot
-									}),
-									current.tags !== void 0 && current.tags.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
-										className: board_module_css_default.detailSection,
-										"data-dsh-part": "tags",
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", { children: t("new.tags") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-											className: board_module_css_default.cardTags,
-											children: current.tags.map((tag) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												className: board_module_css_default.cardTag,
-												"data-tag-tone": tagTone(tag.name),
-												"data-dsh-part": "tag-badge",
-												"data-tag-hint": tag.promptPrefix === void 0 ? void 0 : tag.promptPrefix,
-												title: tag.promptPrefix === void 0 ? tag.name : tag.promptPrefix,
-												children: tag.name
-											}, tag.name))
-										})]
-									}),
-									current.freeze !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
-										className: board_module_css_default.detailSection,
-										"data-dsh-part": "freeze",
-										children: [
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", { children: t("detail.freeze") }),
-											current.freeze.redacted === true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-												className: board_module_css_default.formError,
-												children: t("detail.freeze.redacted")
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+												className: board_module_css_default.detailSection,
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", { children: t("detail.description") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ClampedMarkdown, { source: current.description !== "" ? current.description : "—" })]
 											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-												className: board_module_css_default.detailText,
-												children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: t("detail.freeze.goal") })
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+												className: board_module_css_default.detailSection,
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", { children: t("detail.prompt") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ClampedMarkdown, { source: current.prompt !== "" ? current.prompt : current.title })]
 											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
-												className: board_module_css_default.promptBlock,
-												children: current.freeze.goal
+											current.tags !== void 0 && current.tags.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+												className: board_module_css_default.detailSection,
+												"data-dsh-part": "tags",
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", { children: t("new.tags") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													className: board_module_css_default.cardTags,
+													children: current.tags.map((tag) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+														className: board_module_css_default.cardTag,
+														"data-tag-tone": tagTone(tag.name),
+														"data-dsh-part": "tag-badge",
+														"data-tag-hint": tag.promptPrefix === void 0 ? void 0 : tag.promptPrefix,
+														title: tag.promptPrefix === void 0 ? tag.name : tag.promptPrefix,
+														children: tag.name
+													}, tag.name))
+												})]
 											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-												className: board_module_css_default.detailText,
-												children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: t("detail.freeze.progress") })
-											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
-												className: board_module_css_default.promptBlock,
-												children: current.freeze.progress
-											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-												className: board_module_css_default.detailText,
-												children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: t("detail.freeze.next") })
-											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
-												className: board_module_css_default.promptBlock,
-												children: current.freeze.next
-											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-												className: board_module_css_default.detailMeta,
-												children: t("detail.freeze.frozenAt", { time: formatHostTimestamp(current.freeze.frozenAt, timeZone) })
-											}),
-											current.freeze.frozenBy !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-												className: board_module_css_default.detailMeta,
-												children: t("detail.freeze.frozenBy", { session: current.freeze.frozenBy })
-											})
-										]
-									}),
-									current.handover !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
-										className: board_module_css_default.detailSection,
-										"data-dsh-part": "handover",
-										children: [
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", { children: t("detail.handover") }),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
-												className: board_module_css_default.detailText,
+											current.attachments !== void 0 && current.attachments.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+												className: board_module_css_default.detailSection,
 												children: [
-													t("new.workspace"),
-													": ",
-													current.handover.workspaceId ?? t("exec.workspace.recent"),
-													" · ",
-													t("new.agentPreset"),
-													": ",
-													current.handover.mode ?? t("exec.mode.inherit"),
-													" · ",
-													t("new.permission"),
-													": ",
-													current.handover.permission === void 0 ? t("exec.permission.default") : t(`exec.permission.${current.handover.permission}`)
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", { children: t("detail.attachments") }),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
+														className: board_module_css_default.attachmentList,
+														children: current.attachments.map((attachment) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
+															className: board_module_css_default.attachmentRow,
+															children: [attachment.kind === "image" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
+																className: board_module_css_default.attachmentThumb,
+																src: attachmentImageUrl(attachment.attachmentId),
+																alt: attachment.name
+															}) : null, /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+																className: board_module_css_default.attachmentName,
+																children: [attachment.name, /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+																	className: board_module_css_default.attachmentMeta,
+																	children: [
+																		" ",
+																		formatAttachmentBytes(attachment.bytes),
+																		attachment.kind === "image" && attachment.width !== void 0 && attachment.height !== void 0 ? ` · ${attachment.width}×${attachment.height}` : ""
+																	]
+																})]
+															})]
+														}, attachment.attachmentId))
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+														className: board_module_css_default.detailMeta,
+														children: t("detail.attachments.removeHint")
+													})
 												]
 											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-												className: board_module_css_default.detailText,
-												children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: t("detail.handover.references") })
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SubtaskSection, {
+												controller,
+												task: current,
+												pending,
+												archived,
+												snapshot
 											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
-												className: board_module_css_default.executionList,
-												children: current.handover.references.map((reference, index) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("li", {
-													className: board_module_css_default.executionRow,
-													children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", { children: reference })
-												}, `${reference}-${index}`))
+											current.freeze !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+												className: board_module_css_default.detailSection,
+												"data-dsh-part": "freeze",
+												children: [
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", { children: t("detail.freeze") }),
+													current.freeze.redacted === true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+														className: board_module_css_default.formError,
+														children: t("detail.freeze.redacted")
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+														className: board_module_css_default.detailText,
+														children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: t("detail.freeze.goal") })
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
+														className: board_module_css_default.promptBlock,
+														children: current.freeze.goal
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+														className: board_module_css_default.detailText,
+														children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: t("detail.freeze.progress") })
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
+														className: board_module_css_default.promptBlock,
+														children: current.freeze.progress
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+														className: board_module_css_default.detailText,
+														children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: t("detail.freeze.next") })
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
+														className: board_module_css_default.promptBlock,
+														children: current.freeze.next
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+														className: board_module_css_default.detailMeta,
+														children: t("detail.freeze.frozenAt", { time: formatHostTimestamp(current.freeze.frozenAt, timeZone) })
+													}),
+													current.freeze.frozenBy !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+														className: board_module_css_default.detailMeta,
+														children: t("detail.freeze.frozenBy", { session: current.freeze.frozenBy })
+													})
+												]
 											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-												className: board_module_css_default.detailMeta,
-												children: t("detail.handover.bundledAt", { time: formatHostTimestamp(current.handover.bundledAt, timeZone) })
+											current.handover !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+												className: board_module_css_default.detailSection,
+												"data-dsh-part": "handover",
+												children: [
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", { children: t("detail.handover") }),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+														className: board_module_css_default.detailText,
+														children: [
+															t("new.workspace"),
+															": ",
+															current.handover.workspaceId ?? t("exec.workspace.recent"),
+															" · ",
+															t("new.agentPreset"),
+															": ",
+															current.handover.mode ?? t("exec.mode.inherit"),
+															" · ",
+															t("new.permission"),
+															": ",
+															current.handover.permission === void 0 ? t("exec.permission.default") : t(`exec.permission.${current.handover.permission}`)
+														]
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+														className: board_module_css_default.detailText,
+														children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: t("detail.handover.references") })
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
+														className: board_module_css_default.referenceList,
+														children: current.handover.references.map((reference, index) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("li", {
+															className: board_module_css_default.referenceRow,
+															children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", { children: reference })
+														}, `${reference}-${index}`))
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+														className: board_module_css_default.detailMeta,
+														children: t("detail.handover.bundledAt", { time: formatHostTimestamp(current.handover.bundledAt, timeZone) })
+													})
+												]
+											}),
+											seats.detailSection({
+												task: current,
+												dispatch
 											})
 										]
-									}),
-									permissionPending && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
-										className: board_module_css_default.detailSection,
-										"data-dsh-part": "permission-gate",
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-											className: board_module_css_default.formError,
-											children: t("detail.permissionPending", { permission: t(`exec.permission.${current.handover?.permission ?? current.permission}`) })
-										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											className: board_module_css_default.primaryButton,
-											disabled: pending,
-											onClick: () => {
-												controller.confirmPermission(current.id);
-											},
-											children: t("detail.permissionConfirm")
-										})]
-									}),
-									current.permissionConfirmedAt !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-										className: board_module_css_default.detailMeta,
-										children: t("detail.permissionConfirmed", { time: formatHostTimestamp(current.permissionConfirmedAt, timeZone) })
-									}),
-									seats.detailSection({
-										task: current,
-										dispatch
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
-										className: board_module_css_default.detailSection,
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", { children: t("detail.prompt") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ClampedMarkdown, { source: current.prompt !== "" ? current.prompt : current.title })]
-									}),
-									!archived && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ExecutionSettingsSection, {
-										controller,
-										task: current,
-										pending,
-										executionOptions: snapshot.executionOptions,
-										teamRunAvailable: snapshot.host?.teamRunAvailable === true,
-										goalRunEnabled: snapshot.host?.goalRunEnabled === true
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ScheduleSection, {
-										controller,
-										task: current,
-										pending
-									})] }),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
-										className: board_module_css_default.detailSection,
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", { children: t("detail.execution") }), current.executions.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-											className: board_module_css_default.detailText,
-											children: t("detail.noExecution")
-										}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
-											className: board_module_css_default.executionList,
-											children: [...current.executions].reverse().map((execution) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ExecutionRow, {
-												execution,
-												timeZone,
-												onOpen: (sessionId) => {
-													controller.openSession(sessionId);
-												}
-											}, execution.id))
-										})]
-									}),
-									!archived && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
-										className: board_module_css_default.detailSection,
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", { children: t("board.status") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-											className: board_module_css_default.moveRow,
-											children: MANUAL_STATUSES.map((status) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-												type: "button",
-												className: board_module_css_default.ghostButton,
-												disabled: pending || !canMoveTask(current, status),
-												onClick: () => {
-													controller.moveTask(current.id, status);
-												},
-												children: t(`status.move.${status}`)
-											}, status))
-										})]
-									})
-								]
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: board_module_css_default.detailColumn,
+										"data-detail-column": "execution",
+										children: [
+											permissionPending && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+												className: board_module_css_default.detailSection,
+												"data-dsh-part": "permission-gate",
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+													className: board_module_css_default.formError,
+													children: t("detail.permissionPending", { permission: t(`exec.permission.${current.handover?.permission ?? current.permission}`) })
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+													type: "button",
+													className: board_module_css_default.primaryButton,
+													disabled: pending,
+													onClick: () => {
+														controller.confirmPermission(current.id);
+													},
+													children: t("detail.permissionConfirm")
+												})]
+											}),
+											current.permissionConfirmedAt !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+												className: board_module_css_default.detailMeta,
+												children: t("detail.permissionConfirmed", { time: formatHostTimestamp(current.permissionConfirmedAt, timeZone) })
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												className: board_module_css_default.detailFolds,
+												children: [!archived && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ExecutionSettingsSection, {
+													controller,
+													task: current,
+													pending,
+													executionOptions: snapshot.executionOptions,
+													goalRunEnabled: snapshot.host?.goalRunEnabled === true
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ScheduleSection, {
+													controller,
+													task: current,
+													pending
+												})] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(FoldSection, {
+													title: t("detail.execution"),
+													summary: historySummary,
+													children: current.executions.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+														className: board_module_css_default.detailText,
+														children: t("detail.noExecution")
+													}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ExecutionLog, {
+														executions: current.executions,
+														timeZone,
+														onOpenSession: (sessionId) => {
+															controller.openSession(sessionId);
+														}
+													})
+												})]
+											}),
+											!archived && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+												className: board_module_css_default.detailSection,
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", { children: t("board.status") }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ActionMenu, {
+													label: t("detail.moveTo"),
+													disabled: pending,
+													items: MANUAL_STATUSES.map((status) => ({
+														key: status,
+														label: t(`status.move.${status}`),
+														disabled: !canMoveTask(current, status),
+														onSelect: () => {
+															controller.moveTask(current.id, status);
+														}
+													}))
+												})]
+											})
+										]
+									})]
+								})]
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("footer", {
 								className: board_module_css_default.detailFooter,
@@ -9901,19 +12223,9 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 									}),
 									!archived && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 										type: "button",
-										className: board_module_css_default.ghostButton,
-										disabled: pending,
-										onClick: () => {
-											setShowDuplicate(true);
-										},
-										title: canEditTaskContent(current) ? t("detail.duplicate") : t("detail.duplicateAndEdit"),
-										children: canEditTaskContent(current) ? t("detail.duplicate") : t("detail.duplicateAndEdit")
-									}),
-									!archived && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
 										className: board_module_css_default.primaryButton,
 										disabled: busy || pending,
-										title: subtaskChildren.length > 0 ? t("detail.subtasks.runHint", { count: String(subtaskChildren.length) }) : void 0,
+										title: subtaskChildren.length > 0 ? subtaskDispatchNote(current, snapshot.tasks, subtaskDepthLimit) : void 0,
 										onClick: () => {
 											controller.rerunTask(current.id).then(() => {
 												if (controller.getSnapshot().transportError === void 0) controller.closeTask();
@@ -9921,7 +12233,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 										},
 										children: current.executions.length === 0 ? t("detail.run") : t("detail.rerun")
 									}),
-									archived ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									archived && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 										type: "button",
 										className: board_module_css_default.primaryButton,
 										disabled: pending,
@@ -9929,14 +12241,15 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 											controller.restoreTask(current.id);
 										},
 										children: t("detail.restore")
-									}) : (current.status === "done" || current.status === "failed") && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
-										className: board_module_css_default.ghostButton,
-										disabled: pending,
-										onClick: () => {
-											controller.archiveTask(current.id);
-										},
-										children: t("detail.archive")
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: `${board_module_css_default.detailMeta} ${board_module_css_default.detailStamp}`,
+										children: [
+											t("board.created"),
+											" ",
+											formatTime(current.createdAt, timeZone),
+											archived && ` · ${t("detail.archivedAt", { time: formatTime(current.archivedAt, timeZone) })}`
+										]
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 										type: "button",
@@ -9946,15 +12259,6 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 											setConfirmDelete(true);
 										},
 										children: t("detail.delete")
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-										className: board_module_css_default.detailMeta,
-										children: [
-											t("board.created"),
-											" ",
-											formatTime(current.createdAt, timeZone),
-											archived && ` · ${t("detail.archivedAt", { time: formatTime(current.archivedAt, timeZone) })}`
-										]
 									})
 								]
 							})
@@ -10004,6 +12308,78 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					})
 				]
 			});
+		}
+		/** Browser storage key for explicit source-fold overrides. */
+		const SOURCE_GROUP_FOLDS_KEY = "dsh.taskBoard.sourceGroupFolds.v1";
+		function compareText(left, right) {
+			const a = left.toLowerCase();
+			const b = right.toLowerCase();
+			if (a < b) return -1;
+			if (a > b) return 1;
+			return left < right ? -1 : left > right ? 1 : 0;
+		}
+		/** Group cards in their incoming order, then sort provider groups by full label. */
+		function groupTasksBySource(tasks, selectors) {
+			const groups = /* @__PURE__ */ new Map();
+			for (const task of tasks) {
+				let source;
+				for (const selector of selectors) try {
+					const candidate = selector(task);
+					if (candidate === void 0) continue;
+					const id = candidate.id.trim();
+					const label = candidate.label.trim();
+					if (id === "" || label === "") continue;
+					source = {
+						id,
+						label
+					};
+					break;
+				} catch {}
+				const group = source ?? {
+					id: "local",
+					label: ""
+				};
+				const bucket = groups.get(group.id) ?? {
+					...group,
+					items: [],
+					local: source === void 0
+				};
+				bucket.items.push(task);
+				groups.set(group.id, bucket);
+			}
+			return [...groups.values()].sort((left, right) => {
+				if (left.local !== right.local) return left.local ? 1 : -1;
+				return compareText(left.label, right.label) || compareText(left.id, right.id);
+			});
+		}
+		/** Compound key keeps a fold choice scoped to one column/view and one source. */
+		function sourceGroupFoldKey(view, sourceId) {
+			return `${view}:${sourceId}`;
+		}
+		/** Read explicit overrides; malformed or unavailable storage falls back to defaults. */
+		function readSourceGroupFolds(storage) {
+			try {
+				const raw = storage?.getItem(SOURCE_GROUP_FOLDS_KEY);
+				if (raw === null || raw === void 0) return {};
+				const parsed = JSON.parse(raw);
+				if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+				const result = Object.create(null);
+				for (const [key, value] of Object.entries(parsed)) if (key !== "" && typeof value === "boolean") result[key] = value;
+				return result;
+			} catch {
+				return {};
+			}
+		}
+		/** Persist overrides; a storage failure only loses the preference. */
+		function writeSourceGroupFolds(storage, folds) {
+			try {
+				storage?.setItem(SOURCE_GROUP_FOLDS_KEY, JSON.stringify(folds));
+			} catch {}
+		}
+		/** Search always reveals matches; otherwise an override beats the column default. */
+		function isSourceGroupFolded(folds, view, sourceId, searchActive) {
+			if (searchActive) return false;
+			return folds[sourceGroupFoldKey(view, sourceId)] ?? view === "done";
 		}
 		/**
 		* Collect every string leaf of an opaque extension payload. The board does not
@@ -10096,6 +12472,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			const [tagFilter, setTagFilter] = (0, react.useState)([]);
 			const [hideSubtasks, setHideSubtasks] = (0, react.useState)(true);
 			const [compactColumns, setCompactColumns] = (0, react.useState)(() => readCompactColumns(globalThis.localStorage));
+			const [sourceFolds, setSourceFolds] = (0, react.useState)(() => readSourceGroupFolds(globalThis.localStorage));
 			const [unfolded, setUnfolded] = (0, react.useState)([]);
 			const [showNew, setShowNew] = (0, react.useState)(false);
 			const [showTagManager, setShowTagManager] = (0, react.useState)(false);
@@ -10189,15 +12566,13 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				subtasksFailed: subtaskRollup.get(task.id)?.failed ?? 0
 			}, task.id);
 			/**
-			* Settled cards in recency groups, newest first. A column longer than the
-			* fold threshold folds its oldest group behind a disclosure, so a column of
-			* a hundred finished issues opens on what happened lately; a text or label
-			* search never folds, because a match hidden behind a fold reads as no match.
+			* Recency groups nested inside one source group. The fold key includes the
+			* source, so expanding one repository's earlier cards opens no other group's.
 			*/
-			const renderGrouped = (columnKey, tasks, compact, archived) => {
+			const renderRecencyGroups = (foldScope, tasks, compact, archived) => {
 				const buckets = groupByRecency(tasks, (task) => cardTimeline(task, archived).at, now, timeZone);
 				const foldable = !searchActive && tasks.length > 30 && buckets.length > 1;
-				const open = unfolded.includes(columnKey);
+				const open = unfolded.includes(foldScope);
 				return buckets.map((bucket) => {
 					const folded = foldable && bucket.group === buckets[buckets.length - 1].group && !open;
 					return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -10218,13 +12593,57 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 									"data-dsh-part": "card-group-toggle",
 									"aria-expanded": !folded,
 									onClick: () => {
-										setUnfolded((current) => current.includes(columnKey) ? current.filter((entry) => entry !== columnKey) : [...current, columnKey]);
+										setUnfolded((current) => current.includes(foldScope) ? current.filter((entry) => entry !== foldScope) : [...current, foldScope]);
 									},
 									children: folded ? t("board.group.expand", { count: String(bucket.items.length) }) : t("board.group.collapse")
 								})
 							]
 						}), !folded && bucket.items.map((task) => renderCard(task, compact))]
 					}, bucket.group);
+				});
+			};
+			/** Every column and the archive first split by provider-owned source. */
+			const renderSourceGroups = (view, tasks, compact, archived) => {
+				const recency = archived || GROUPED_COLUMNS.includes(view);
+				return groupTasksBySource(tasks, snapshot.grouping ?? []).map((bucket) => {
+					const foldKey = sourceGroupFoldKey(view, bucket.id);
+					const folded = isSourceGroupFolded(sourceFolds, view, bucket.id, searchActive);
+					const label = bucket.local ? t("board.source.local") : bucket.label;
+					return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: `${board_module_css_default.cardGroup} ${board_module_css_default.sourceGroup}`,
+						"data-dsh-part": "card-group",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: `${board_module_css_default.cardGroupHeader} ${board_module_css_default.sourceGroupHeader}`,
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: board_module_css_default.sourceGroupLabel,
+									children: label
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: board_module_css_default.cardGroupCount,
+									children: bucket.items.length
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: board_module_css_default.linkButton,
+									"data-dsh-part": "card-group-toggle",
+									"aria-expanded": !folded,
+									disabled: searchActive,
+									onClick: () => {
+										setSourceFolds((current) => {
+											const next = {
+												...current,
+												[foldKey]: !isSourceGroupFolded(current, view, bucket.id, false)
+											};
+											writeSourceGroupFolds(globalThis.localStorage, next);
+											return next;
+										});
+									},
+									children: folded ? t("board.group.expand", { count: String(bucket.items.length) }) : t("board.group.collapse")
+								})
+							]
+						}), !folded && (recency ? renderRecencyGroups(foldKey, bucket.items, compact, archived) : bucket.items.map((task) => renderCard(task, compact)))]
+					}, bucket.id);
 				});
 			};
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -10459,7 +12878,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 								})]
 							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: board_module_css_default.cards,
-								children: [renderGrouped(ARCHIVE_COLUMN, visible, false, true), visible.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								children: [renderSourceGroups(ARCHIVE_COLUMN, visible, false, true), visible.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 									className: board_module_css_default.columnEmpty,
 									children: tagFilter.length > 0 ? t("board.tagEmpty") : t("archive.empty")
 								})]
@@ -10468,7 +12887,6 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 							const tasks = visible.filter((task) => task.status === column.status);
 							const isManualDropTarget = MANUAL_STATUSES.includes(column.status);
 							const compact = compactColumns.includes(column.status);
-							const grouped = GROUPED_COLUMNS.includes(column.status);
 							return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
 								className: board_module_css_default.column,
 								"data-status": column.status,
@@ -10516,7 +12934,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 									]
 								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									className: board_module_css_default.cards,
-									children: [grouped ? renderGrouped(column.status, tasks, compact, false) : tasks.map((task) => renderCard(task, compact)), tasks.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									children: [renderSourceGroups(column.status, tasks, compact, false), tasks.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 										className: board_module_css_default.columnEmpty,
 										children: tagFilter.length > 0 ? t("board.tagEmpty") : t("board.empty")
 									})]
@@ -10664,7 +13082,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		}
 		//#endregion
 		//#region \0dsh-css:packages/dsh-client-ui-task-board-fish/src/client/settings-card.module.css.mjs
-		const css$1 = ".MthAPW_card{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:12px;list-style:none;transition:border-color .16s,background .16s}.MthAPW_card:hover{border-color:var(--dsw-alias-label-dimmed)}.MthAPW_cardOpen{background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-label-dimmed)}.MthAPW_header{appearance:none;box-sizing:border-box;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;background:0 0;border:0;border-radius:12px;align-items:center;gap:13px;padding:16px;display:flex}.MthAPW_header:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}.MthAPW_headerStatic{box-sizing:border-box;border-radius:12px;align-items:center;gap:13px;width:100%;padding:16px;display:flex}.MthAPW_headText{flex-direction:column;flex:1;gap:4px;min-width:0;display:flex}.MthAPW_mark{background:var(--dsw-alias-bg-module-platform);width:34px;height:34px;color:var(--dsw-alias-label-secondary);border-radius:10px;flex:none;place-items:center;transition:color .16s;display:grid}.MthAPW_header:hover .MthAPW_mark,.MthAPW_cardOpen .MthAPW_mark{color:var(--dsw-alias-label-primary)}.MthAPW_name{color:var(--dsw-alias-label-primary);font-size:15px;font-weight:600;line-height:1.4}.MthAPW_description{color:var(--dsw-alias-label-secondary);font-size:13px;line-height:1.5}.MthAPW_pending{white-space:nowrap;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-secondary);border-radius:999px;flex:none;padding:1px 8px;font-size:11px;font-weight:500;line-height:17px}.MthAPW_chevron{color:var(--dsw-alias-label-tertiary);flex:none;width:16px;height:16px;transition:transform .16s,color .16s}.MthAPW_header:hover .MthAPW_chevron{color:var(--dsw-alias-label-secondary)}.MthAPW_chevronOpen{transform:rotate(180deg)}.MthAPW_body{border-top:1px solid var(--dsw-alias-border-l2);margin:0 16px;padding-bottom:8px}.MthAPW_readOnly{color:var(--dsw-alias-label-secondary);margin:12px 0 0;font-size:12px;line-height:1.5}.MthAPW_notExposed{color:var(--dsw-alias-state-warn-primary);margin:12px 0 0;font-size:12px;line-height:1.5}.MthAPW_footer{border-top:1px solid var(--dsw-alias-border-l2);justify-content:flex-end;align-items:center;gap:8px;padding:12px 0 4px;display:flex}.MthAPW_failed{min-width:0;color:var(--dsw-alias-state-error-primary,#b42318);text-overflow:ellipsis;white-space:nowrap;flex:1;margin:0;font-size:12px;line-height:1.5;overflow:hidden}.MthAPW_discard,.MthAPW_save{appearance:none;font:inherit;cursor:pointer;border:1px solid #0000;border-radius:8px;padding:5px 14px;font-size:13px;line-height:1.5}.MthAPW_discard{border-color:var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary);background:0 0}.MthAPW_discard:hover:not(:disabled){color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-label-dimmed)}.MthAPW_save{background:var(--dsw-alias-label-primary);color:var(--dsw-alias-bg-layer-3)}.MthAPW_discard:disabled,.MthAPW_save:disabled{opacity:.4;cursor:default}.MthAPW_discard:focus-visible,.MthAPW_save:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}.MthAPW_field{flex-direction:column;gap:6px;padding:12px 0;display:flex}.MthAPW_field+.MthAPW_field{border-top:1px solid var(--dsw-alias-border-l2)}.MthAPW_head{align-items:center;gap:8px;display:flex}.MthAPW_label{min-width:0;color:var(--dsw-alias-label-primary);flex:1;font-size:13px;font-weight:500;line-height:1.5}.MthAPW_badges{align-items:center;gap:8px;display:inline-flex}.MthAPW_badge{white-space:nowrap;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-secondary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:17px}.MthAPW_reset{font:inherit;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;padding:0;font-size:12px;line-height:1.5}.MthAPW_reset:hover:not(:disabled){color:var(--dsw-alias-label-primary)}.MthAPW_reset:disabled{cursor:default}.MthAPW_reset:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px;outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}.MthAPW_input,.MthAPW_select{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);height:34px;font:inherit;color:var(--dsw-alias-label-primary);border-radius:8px;padding:0 12px;font-size:13px;line-height:1.5}.MthAPW_input:focus-visible,.MthAPW_select:focus-visible{border-color:var(--dsw-alias-brand-primary);outline:none}.MthAPW_input:disabled,.MthAPW_select:disabled{color:var(--dsw-alias-label-tertiary);cursor:default}.MthAPW_inputInvalid{border:1px solid var(--dsw-alias-state-error-primary,#b42318);background:var(--dsw-alias-bg-layer-3);height:34px;font:inherit;color:var(--dsw-alias-label-primary);border-radius:8px;padding:0 12px;font-size:13px;line-height:1.5}.MthAPW_inputInvalid:focus-visible{outline:2px solid var(--dsw-alias-state-error-primary,#b42318);outline-offset:1px;border-color:var(--dsw-alias-state-error-primary,#b42318)}.MthAPW_selectWrap{position:relative}.MthAPW_selectButton{appearance:none;text-align:left;cursor:pointer;justify-content:space-between;align-items:center;gap:8px;width:100%;display:flex}.MthAPW_selectLabel{text-overflow:ellipsis;white-space:nowrap;min-width:0;overflow:hidden}.MthAPW_selectChevron{color:var(--dsw-alias-label-tertiary);flex:none;transition:transform .16s}.MthAPW_selectChevronOpen{transform:rotate(180deg)}.MthAPW_selectPopup{z-index:40;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);max-height:240px;box-shadow:0 8px 24px var(--dsw-alias-bg-mask-2);opacity:0;border-radius:8px;flex-direction:column;padding:4px;transition:opacity .1s,transform .1s;display:flex;position:absolute;top:calc(100% + 4px);left:0;right:0;overflow-y:auto;transform:translateY(-4px)}.MthAPW_selectPopupOpen{opacity:1;transform:none}.MthAPW_selectPopupClose{opacity:0;pointer-events:none;transform:translateY(-4px)}.MthAPW_selectOption{color:var(--dsw-alias-label-primary);cursor:pointer;white-space:nowrap;text-overflow:ellipsis;border-radius:6px;flex-shrink:0;padding:6px 10px;font-size:13px;line-height:1.5;overflow:hidden}.MthAPW_selectOption:hover,.MthAPW_selectOptionActive{background:var(--dsw-alias-interactive-bg-hover)}.MthAPW_selectOptionSelected{color:var(--dsw-alias-brand-primary);background:color-mix(in srgb, var(--dsw-alias-brand-primary-new-colorprimary-new-color) 10%, transparent);font-weight:500}.MthAPW_invalid{color:var(--dsw-alias-state-error-primary,#b42318);margin:0;font-size:12px;line-height:1.5}.MthAPW_hint{color:var(--dsw-alias-label-secondary);margin:0;font-size:12px;line-height:1.5}@media (prefers-reduced-motion:reduce){.MthAPW_card,.MthAPW_header,.MthAPW_mark,.MthAPW_chevron,.MthAPW_chevronOpen,.MthAPW_discard,.MthAPW_save,.MthAPW_selectChevron,.MthAPW_selectChevronOpen,.MthAPW_selectPopup{transition:none}}";
+		const css$1 = ".MthAPW_card{--settings-card-radius:12px;--settings-card-header-pad:16px;--settings-card-header-gap:13px;--settings-card-title-size:15px;--settings-card-description-size:13px;--settings-card-body-inset:16px;--settings-card-motion:.18s;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);border-radius:var(--settings-card-radius);list-style:none;transition:border-color .16s,background .16s}.MthAPW_card:hover{border-color:var(--dsw-alias-label-dimmed)}.MthAPW_cardOpen{background:var(--dsw-alias-bg-layer-2);border-color:var(--dsw-alias-label-dimmed)}.MthAPW_cardNested{--settings-card-radius:10px;--settings-card-header-pad:10px 12px;--settings-card-header-gap:10px;--settings-card-title-size:13px;--settings-card-description-size:12px;--settings-card-body-inset:12px}.MthAPW_cardNested .MthAPW_description{white-space:nowrap;text-overflow:ellipsis;overflow:hidden}.MthAPW_header{appearance:none;box-sizing:border-box;width:100%;font:inherit;color:inherit;text-align:left;cursor:pointer;border-radius:var(--settings-card-radius);align-items:center;gap:var(--settings-card-header-gap);padding:var(--settings-card-header-pad);background:0 0;border:0;display:flex}.MthAPW_header:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:-2px}.MthAPW_headerStatic{box-sizing:border-box;border-radius:var(--settings-card-radius);align-items:center;gap:var(--settings-card-header-gap);width:100%;padding:var(--settings-card-header-pad);display:flex}.MthAPW_headText{flex-direction:column;flex:1;gap:4px;min-width:0;display:flex}.MthAPW_mark{background:var(--dsw-alias-bg-module-platform);width:34px;height:34px;color:var(--dsw-alias-label-secondary);border-radius:10px;flex:none;place-items:center;transition:color .16s;display:grid}.MthAPW_header:hover .MthAPW_mark,.MthAPW_cardOpen .MthAPW_mark{color:var(--dsw-alias-label-primary)}.MthAPW_name{color:var(--dsw-alias-label-primary);font-size:var(--settings-card-title-size);font-weight:600;line-height:1.4}.MthAPW_description{color:var(--dsw-alias-label-secondary);font-size:12px;line-height:18px}.MthAPW_headerAction{flex:none;align-items:center;display:inline-flex}.MthAPW_chevron{color:var(--dsw-alias-label-tertiary);flex:none;width:16px;height:16px;transition:transform .16s,color .16s}.MthAPW_header:hover .MthAPW_chevron{color:var(--dsw-alias-label-secondary)}.MthAPW_chevronOpen{transform:rotate(180deg)}.MthAPW_disclosure{opacity:0;transition:grid-template-rows var(--settings-card-motion) ease, opacity var(--settings-card-motion) ease;grid-template-rows:0fr;display:grid}.MthAPW_disclosure[data-state=collapsed],.MthAPW_disclosure[data-state=entering],.MthAPW_disclosure[data-state=closing]{overflow:hidden}.MthAPW_disclosure[data-state=entering],.MthAPW_disclosure[data-state=shown]{opacity:1;grid-template-rows:1fr}.MthAPW_disclosure>.MthAPW_body{min-height:0}.MthAPW_body{border-top:1px solid var(--dsw-alias-border-l2);margin:0 var(--settings-card-body-inset);padding-bottom:8px;container:MthAPW_settings-card/inline-size}.MthAPW_readOnly{color:var(--dsw-alias-label-secondary);margin:12px 0 0;font-size:12px;line-height:1.5}.MthAPW_notExposed{color:var(--dsw-alias-state-warn-primary);margin:12px 0 0;font-size:12px;line-height:1.5}.MthAPW_failed{color:var(--dsw-alias-state-error-primary,#b42318);overflow-wrap:anywhere;margin:8px 0 4px;font-size:12px;line-height:18px}.MthAPW_field{grid-template-columns:minmax(0,1fr) fit-content(50%);grid-template-areas:\"MthAPW_head MthAPW_control\"\"MthAPW_hint MthAPW_control\";align-items:center;gap:4px 24px;padding:16px 0;display:grid}.MthAPW_field>.MthAPW_head{grid-area:MthAPW_head}.MthAPW_field>:is(.MthAPW_hint,.MthAPW_invalid){grid-area:MthAPW_hint}.MthAPW_field>:not(.MthAPW_head,.MthAPW_hint,.MthAPW_invalid){grid-area:MthAPW_control;justify-self:end;max-width:100%}.MthAPW_field+.MthAPW_field{border-top:1px solid var(--dsw-alias-border-l2)}.MthAPW_head{align-items:center;gap:8px;display:flex}.MthAPW_label{min-width:0;color:var(--dsw-alias-label-primary);flex:1;font-size:14px;font-weight:400;line-height:22px}.MthAPW_badges{align-items:center;gap:8px;display:inline-flex}.MthAPW_badge{white-space:nowrap;background:var(--dsw-alias-bg-module-platform);color:var(--dsw-alias-label-secondary);border-radius:999px;padding:1px 8px;font-size:11px;font-weight:500;line-height:17px}.MthAPW_reset{font:inherit;color:var(--dsw-alias-label-secondary);cursor:pointer;background:0 0;border:none;padding:0;font-size:12px;line-height:1.5}.MthAPW_reset:hover:not(:disabled){color:var(--dsw-alias-label-primary)}.MthAPW_reset:disabled{cursor:default}.MthAPW_reset:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}.MthAPW_segmentGroup{background:color-mix(in srgb, var(--dsw-alias-label-primary) 7%, transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--dsw-alias-label-primary) 5%, transparent);border-radius:8px;flex-wrap:wrap;align-items:center;gap:2px;padding:2px;display:inline-flex;position:relative}.MthAPW_segment{appearance:none;color:var(--dsw-alias-label-secondary);font:inherit;white-space:nowrap;cursor:pointer;background:0 0;border:0;border-radius:7px;margin:0;padding:3px 12px;font-size:13px;font-weight:500;line-height:18px;transition:background-color .12s,color .12s}.MthAPW_segment:hover:not(:disabled):not([data-active]){color:var(--dsw-alias-label-primary)}.MthAPW_segmentGroup:not([data-pill])>.MthAPW_segment[data-active],.MthAPW_segmentGroup[data-pill]:before{background:var(--dsw-alias-bg-overlay,var(--dsw-alias-bg-layer-3));box-shadow:0 1px 2px #14141314}body[data-ds-dark-theme] .MthAPW_segmentGroup:not([data-pill])>.MthAPW_segment[data-active],body[data-ds-dark-theme] .MthAPW_segmentGroup[data-pill]:before{box-shadow:none;background:#ffffff24}.MthAPW_segment[data-active]{color:var(--dsw-alias-label-primary)}.MthAPW_segmentGroup[data-pill]:before{content:\"\";width:var(--segment-pill-w,0px);height:var(--segment-pill-h,0px);transform:translate(var(--segment-pill-x,0px), var(--segment-pill-y,0px));pointer-events:none;border-radius:7px;transition:transform .24s cubic-bezier(.22,.61,.36,1),width .24s cubic-bezier(.22,.61,.36,1),height .24s cubic-bezier(.22,.61,.36,1);position:absolute;top:0;left:0}.MthAPW_segmentGroup>*{z-index:1;position:relative}.MthAPW_segment:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}.MthAPW_segment:disabled{cursor:not-allowed;opacity:.45}.MthAPW_segmentGroup[data-pill]:has(>.MthAPW_segment:disabled):before{opacity:.45}.MthAPW_input,.MthAPW_select{border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);height:34px;font:inherit;color:var(--dsw-alias-label-primary);border-radius:8px;padding:0 12px;font-size:13px;line-height:1.5}.MthAPW_input:focus-visible,.MthAPW_select:focus-visible{border-color:var(--dsw-alias-brand-primary);outline:none}.MthAPW_input:disabled,.MthAPW_select:disabled{color:var(--dsw-alias-label-tertiary);cursor:default}.MthAPW_inputInvalid{border:1px solid var(--dsw-alias-state-error-primary,#b42318);background:var(--dsw-alias-bg-layer-3);height:34px;font:inherit;color:var(--dsw-alias-label-primary);border-radius:8px;padding:0 12px;font-size:13px;line-height:1.5}.MthAPW_inputInvalid:focus-visible{outline:2px solid var(--dsw-alias-state-error-primary,#b42318);outline-offset:1px;border-color:var(--dsw-alias-state-error-primary,#b42318)}.MthAPW_field>:is(.MthAPW_input,.MthAPW_inputInvalid,.MthAPW_select,.MthAPW_selectWrap,.MthAPW_rangeAnchor){box-sizing:border-box;width:220px}.MthAPW_rangeAnchor>:is(.MthAPW_input,.MthAPW_inputInvalid){box-sizing:border-box;width:100%}@container MthAPW_settings-card (width<=440px){.MthAPW_field{grid-template-columns:minmax(0,1fr);grid-template-areas:\"MthAPW_head\"\"MthAPW_hint\"\"MthAPW_control\";row-gap:8px}.MthAPW_field>:not(.MthAPW_head,.MthAPW_hint,.MthAPW_invalid){justify-self:start}.MthAPW_field>:is(.MthAPW_input,.MthAPW_inputInvalid,.MthAPW_select,.MthAPW_selectWrap,.MthAPW_rangeAnchor){justify-self:stretch;width:auto}}.MthAPW_selectWrap{position:relative}.MthAPW_selectButton{appearance:none;text-align:left;cursor:pointer;justify-content:space-between;align-items:center;gap:8px;width:100%;display:flex}.MthAPW_selectLabel{text-overflow:ellipsis;white-space:nowrap;min-width:0;overflow:hidden}.MthAPW_selectChevron{color:var(--dsw-alias-label-tertiary);flex:none;transition:transform .16s}.MthAPW_selectChevronOpen{transform:rotate(180deg)}.MthAPW_selectPopup{z-index:40;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);max-height:240px;box-shadow:0 8px 24px var(--dsw-alias-bg-mask-2);opacity:0;border-radius:8px;flex-direction:column;padding:4px;transition:opacity .1s,transform .1s;display:flex;position:absolute;top:calc(100% + 4px);left:0;right:0;overflow-y:auto;transform:translateY(-4px)}.MthAPW_selectPopupOpen{opacity:1;transform:none}.MthAPW_selectPopupClose{opacity:0;pointer-events:none;transform:translateY(-4px)}.MthAPW_rangeAnchor{display:inline-flex;position:relative}.MthAPW_rangeBubble{z-index:40;box-sizing:border-box;border:1px solid var(--dsw-alias-border-l2);background:var(--dsw-alias-bg-layer-3);width:220px;box-shadow:0 8px 24px var(--dsw-alias-bg-mask-2);opacity:0;visibility:hidden;border-radius:10px;padding:10px 12px 6px;transition:opacity .12s,transform .12s,visibility 0s linear .12s;position:absolute;right:0}.MthAPW_rangeBubble[data-side=above]{bottom:calc(100% + 6px);transform:translateY(4px)}.MthAPW_rangeBubble[data-side=below]{top:calc(100% + 6px);transform:translateY(-4px)}.MthAPW_rangeBubble[data-open]{opacity:1;visibility:visible;transition:opacity .12s,transform .12s,visibility;transform:none}.MthAPW_rangeSlider{appearance:none;cursor:pointer;background:0 0;width:100%;height:18px;margin:0;display:block}.MthAPW_rangeSlider::-webkit-slider-runnable-track{background:linear-gradient(to right, var(--dsw-alias-brand-primary) var(--range-fill,0%), color-mix(in srgb, var(--dsw-alias-label-primary) 12%, transparent) var(--range-fill,0%));border-radius:999px;height:4px}.MthAPW_rangeSlider::-moz-range-track{background:color-mix(in srgb, var(--dsw-alias-label-primary) 12%, transparent);border-radius:999px;height:4px}.MthAPW_rangeSlider::-moz-range-progress{background:var(--dsw-alias-brand-primary);border-radius:999px;height:4px}.MthAPW_rangeSlider::-webkit-slider-thumb{appearance:none;background:#fff;border:0;border-radius:50%;width:14px;height:14px;margin-top:-5px;transition:transform .12s;box-shadow:0 0 0 1px #0000001f,0 1px 3px #00000040}.MthAPW_rangeSlider::-moz-range-thumb{background:#fff;border:0;border-radius:50%;width:14px;height:14px;box-shadow:0 0 0 1px #0000001f,0 1px 3px #00000040}.MthAPW_rangeSlider:active::-webkit-slider-thumb{transform:scale(1.15)}.MthAPW_rangeSlider:focus-visible{outline:none}.MthAPW_rangeSlider:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 2px var(--dsw-alias-brand-primary)}.MthAPW_rangeSlider:disabled{cursor:not-allowed}.MthAPW_rangeEnds{color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums;justify-content:space-between;margin-top:2px;font-size:11px;line-height:16px;display:flex}.MthAPW_selectOption{color:var(--dsw-alias-label-primary);cursor:pointer;white-space:nowrap;text-overflow:ellipsis;border-radius:6px;flex-shrink:0;padding:6px 10px;font-size:13px;line-height:1.5;overflow:hidden}.MthAPW_selectOption:hover,.MthAPW_selectOptionActive{background:var(--dsw-alias-interactive-bg-hover)}.MthAPW_selectOptionSelected{color:var(--dsw-alias-brand-primary);background:color-mix(in srgb, var(--dsw-alias-brand-primary) 10%, transparent);font-weight:500}.MthAPW_invalid{color:var(--dsw-alias-state-error-primary,#b42318);margin:0;font-size:12px;line-height:18px}.MthAPW_hint{color:var(--dsw-alias-label-secondary);margin:0;font-size:12px;line-height:18px}.MthAPW_toggle{appearance:none;cursor:pointer;font:inherit;background:0 0;border:0;border-radius:999px;align-items:center;margin:0;padding:0;display:inline-flex}.MthAPW_toggleTrack{background:var(--dsw-alias-label-dimmed);border-radius:999px;flex:none;width:36px;height:20px;transition:background-color .18s;position:relative}.MthAPW_toggleThumb{--toggle-travel:16px;--toggle-overshoot:1px;background:var(--dsw-alias-bg-layer-3);border-radius:50%;width:16px;height:16px;transition:translate .18s;position:absolute;top:2px;left:2px;translate:0;box-shadow:0 1px 2px #1414132e}.MthAPW_toggle[aria-checked=true] .MthAPW_toggleTrack{background:var(--dsw-alias-button-primary-fill,var(--dsw-alias-label-primary))}.MthAPW_toggle[aria-checked=true] .MthAPW_toggleThumb{translate:var(--toggle-travel) 0;background:var(--dsw-alias-label-primary-foreground,var(--dsw-alias-bg-layer-3))}.MthAPW_toggle[data-moved][aria-checked=true] .MthAPW_toggleThumb{animation:.35s cubic-bezier(.34,1.45,.64,1) both MthAPW_toggle-on}.MthAPW_toggle[data-moved][aria-checked=false] .MthAPW_toggleThumb{animation:.35s cubic-bezier(.34,1.45,.64,1) both MthAPW_toggle-off}@keyframes MthAPW_toggle-on{0%{translate:0}55%{translate:calc(var(--toggle-travel) + var(--toggle-overshoot)) 0}80%,to{translate:var(--toggle-travel) 0}}@keyframes MthAPW_toggle-off{0%{translate:var(--toggle-travel) 0}55%{translate:calc(0px - var(--toggle-overshoot)) 0}80%,to{translate:0}}.MthAPW_toggle:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}.MthAPW_toggle:disabled{opacity:.45;cursor:not-allowed}@media (prefers-reduced-motion:reduce){.MthAPW_card,.MthAPW_header,.MthAPW_mark,.MthAPW_chevron,.MthAPW_chevronOpen,.MthAPW_rangeBubble,.MthAPW_selectChevron,.MthAPW_selectChevronOpen,.MthAPW_selectPopup,.MthAPW_toggleTrack,.MthAPW_toggleThumb{transition:none}.MthAPW_toggle[data-moved] .MthAPW_toggleThumb{animation:none}.MthAPW_disclosure{transition-property:opacity}}";
 		const tagId$1 = "@fish-under-sea/dsh-client-ui-task-board-fish/packages/dsh-client-ui-task-board-fish/src/client/settings-card.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$1) + "]") === null) {
 			const tag = document.createElement("style");
@@ -10678,17 +13096,19 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"badges": "MthAPW_badges",
 			"body": "MthAPW_body",
 			"card": "MthAPW_card",
+			"cardNested": "MthAPW_cardNested",
 			"cardOpen": "MthAPW_cardOpen",
 			"chevron": "MthAPW_chevron",
 			"chevronOpen": "MthAPW_chevronOpen",
+			"control": "MthAPW_control",
 			"description": "MthAPW_description",
-			"discard": "MthAPW_discard",
+			"disclosure": "MthAPW_disclosure",
 			"failed": "MthAPW_failed",
 			"field": "MthAPW_field",
-			"footer": "MthAPW_footer",
 			"head": "MthAPW_head",
 			"headText": "MthAPW_headText",
 			"header": "MthAPW_header",
+			"headerAction": "MthAPW_headerAction",
 			"headerStatic": "MthAPW_headerStatic",
 			"hint": "MthAPW_hint",
 			"input": "MthAPW_input",
@@ -10698,10 +13118,14 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"mark": "MthAPW_mark",
 			"name": "MthAPW_name",
 			"notExposed": "MthAPW_notExposed",
-			"pending": "MthAPW_pending",
+			"rangeAnchor": "MthAPW_rangeAnchor",
+			"rangeBubble": "MthAPW_rangeBubble",
+			"rangeEnds": "MthAPW_rangeEnds",
+			"rangeSlider": "MthAPW_rangeSlider",
 			"readOnly": "MthAPW_readOnly",
 			"reset": "MthAPW_reset",
-			"save": "MthAPW_save",
+			"segment": "MthAPW_segment",
+			"segmentGroup": "MthAPW_segmentGroup",
 			"select": "MthAPW_select",
 			"selectButton": "MthAPW_selectButton",
 			"selectChevron": "MthAPW_selectChevron",
@@ -10713,158 +13137,25 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"selectPopup": "MthAPW_selectPopup",
 			"selectPopupClose": "MthAPW_selectPopupClose",
 			"selectPopupOpen": "MthAPW_selectPopupOpen",
-			"selectWrap": "MthAPW_selectWrap"
+			"selectWrap": "MthAPW_selectWrap",
+			"settings-card": "MthAPW_settings-card",
+			"toggle": "MthAPW_toggle",
+			"toggle-off": "MthAPW_toggle-off",
+			"toggle-on": "MthAPW_toggle-on",
+			"toggleThumb": "MthAPW_toggleThumb",
+			"toggleTrack": "MthAPW_toggleTrack"
 		};
 		//#endregion
-		//#region src/client/PluginSettingsCard.tsx
+		//#region src/client/CardDefaultPresetField.tsx
 		/**
-		* Family-shared chrome for plugin settings cards: a disclosure header naming
-		* the plugin and what its settings govern, the controls inside, and the save
-		* that writes them. Renders nothing while the namespace is unavailable — a
-		* deployment that does not compose the owning plugin should show no trace of
-		* it. Inlined into each consumer's client bundle; mirrors the official
-		* ui-plugin-config PluginCard in a self-contained slice.
+		* Render the default-preset select.
+		* @param props - the field contract and the roster to list.
+		* @returns the field.
 		*/
-		/**
-		* Render one plugin settings card.
-		* @param props - the plugin's copy keys, its form state, and its controls.
-		* @returns the card, or nothing while the namespace is still loading.
-		*/
-		function PluginSettingsCard(props) {
-			const [open, setOpen] = (0, react.useState)(props.defaultOpen ?? true);
-			const { state, alwaysOpen } = props;
-			if (!state.available) return null;
-			const title = props.t(props.titleKey);
-			const description = props.t(props.descriptionKey);
-			const blocked = !state.dirty || state.invalid || state.saving;
-			const expanded = alwaysOpen === true || open;
-			const cardClass = expanded ? `${settings_card_module_css_default.cardOpen} ${settings_card_module_css_default.card}` : settings_card_module_css_default.card;
-			const header = alwaysOpen === true ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-				className: settings_card_module_css_default.headerStatic,
-				children: [
-					props.icon !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: settings_card_module_css_default.mark,
-						"aria-hidden": "true",
-						children: props.icon
-					}) : null,
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-						className: settings_card_module_css_default.headText,
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: settings_card_module_css_default.name,
-							title,
-							children: title
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: settings_card_module_css_default.description,
-							title: description,
-							children: props.descriptionNode ?? description
-						})]
-					}),
-					state.dirty ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: settings_card_module_css_default.pending,
-						title: props.t("settings.unsaved"),
-						children: props.t("settings.unsaved")
-					}) : null
-				]
-			}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-				type: "button",
-				className: settings_card_module_css_default.header,
-				"aria-expanded": open,
-				"aria-label": `${props.t(open ? "settings.collapse" : "settings.expand")}: ${title}`,
-				onClick: () => {
-					setOpen(!open);
-				},
-				children: [
-					props.icon !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: settings_card_module_css_default.mark,
-						"aria-hidden": "true",
-						children: props.icon
-					}) : null,
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-						className: settings_card_module_css_default.headText,
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: settings_card_module_css_default.name,
-							title,
-							children: title
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: settings_card_module_css_default.description,
-							title: description,
-							children: props.descriptionNode ?? description
-						})]
-					}),
-					state.dirty ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: settings_card_module_css_default.pending,
-						title: props.t("settings.unsaved"),
-						children: props.t("settings.unsaved")
-					}) : null,
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
-						width: "14",
-						height: "14",
-						viewBox: "0 0 14 14",
-						fill: "none",
-						xmlns: "http://www.w3.org/2000/svg",
-						className: open ? `${settings_card_module_css_default.chevron} ${settings_card_module_css_default.chevronOpen}` : settings_card_module_css_default.chevron,
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
-							d: "M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382 5.55843 8.90706 5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732 6.59876 8.24849 6.74023 8.3623C6.87291 8.46904 6.92272 8.47813 6.9375 8.48047C6.97895 8.48703 7.02105 8.48703 7.0625 8.48047C7.07728 8.47813 7.12709 8.46904 7.25977 8.3623C7.40124 8.24849 7.57405 8.07732 7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z",
-							fill: "currentColor"
-						})
-					})
-				]
-			});
-			if (!state.exposed && props.renderChildrenWhenNotExposed !== true) {
-				const showNotice = props.hideNotExposedNotice !== true;
-				return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
-					className: cardClass,
-					children: [header, expanded ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: settings_card_module_css_default.body,
-						children: showNotice ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-							className: settings_card_module_css_default.notExposed,
-							role: "status",
-							children: props.t("settings.notExposed")
-						}) : null
-					}) : null]
-				});
-			}
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
-				className: cardClass,
-				children: [header, expanded ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: settings_card_module_css_default.body,
-					children: [
-						!state.writable ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-							className: settings_card_module_css_default.readOnly,
-							role: "status",
-							children: props.t("settings.readOnly")
-						}) : null,
-						props.children,
-						props.hideFooter === true ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: settings_card_module_css_default.footer,
-							children: [
-								state.failed ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
-									className: settings_card_module_css_default.failed,
-									role: "status",
-									children: [props.t("settings.saveFailed"), state.failedReason ? " - " + state.failedReason : ""]
-								}) : null,
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-									type: "button",
-									className: settings_card_module_css_default.discard,
-									disabled: !state.dirty || state.saving,
-									onClick: props.onDiscard,
-									children: props.t("settings.discard")
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-									type: "button",
-									className: settings_card_module_css_default.save,
-									disabled: blocked,
-									onClick: props.onSave,
-									children: props.t(!state.saving ? "settings.save" : "settings.saving")
-								})
-							]
-						})
-					]
-				}) : null]
-			});
-		}
-		/** A staged value field. `numeric` only hints the keypad: which drafts a field accepts is decided by its spec. */
-		function ValueField(props) {
+		function CardDefaultPresetField(props) {
+			const presets = props.presets;
+			const rows = presetChoiceRows(presets ?? []);
+			const unlisted = props.text !== "" && presets !== void 0 && !presets.some((preset) => preset.id === props.text);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: settings_card_module_css_default.field,
 				children: [
@@ -10888,21 +13179,550 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 							})]
 						}) : null]
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
 						id: props.id,
-						className: props.invalid ? settings_card_module_css_default.inputInvalid : settings_card_module_css_default.input,
-						type: "text",
-						...props.numeric === true ? { inputMode: "numeric" } : {},
-						...props.invalid ? { "aria-invalid": true } : {},
+						className: settings_card_module_css_default.select,
 						value: props.text,
-						placeholder: props.placeholder ?? "",
 						disabled: props.disabled,
+						"aria-invalid": props.invalid || void 0,
 						onChange: (event) => {
 							props.onEdit(event.target.value);
-						}
+						},
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+								value: "",
+								children: inheritPresetLabel(presets ?? [])
+							}),
+							unlisted ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
+								value: props.text,
+								children: [props.text, t("exec.mode.removed")]
+							}) : null,
+							rows.builtin.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("optgroup", {
+								label: t("exec.mode.builtinGroup"),
+								children: rows.builtin.map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: row.id,
+									disabled: row.disabled,
+									children: row.label
+								}, row.id))
+							}) : null,
+							rows.custom.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("optgroup", {
+								label: t("exec.mode.customGroup"),
+								children: rows.custom.map((row) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: row.id,
+									disabled: row.disabled,
+									children: row.label
+								}, row.id))
+							}) : null
+						]
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: props.invalid ? settings_card_module_css_default.invalid : settings_card_module_css_default.hint,
+						title: props.hintTitle,
+						children: props.invalid ? props.invalidLabel : props.hint
+					})
+				]
+			});
+		}
+		//#endregion
+		//#region src/client/RangeBubble.tsx
+		/**
+		* Coarse adjustment for a bounded number: resting the pointer on the control
+		* (or moving focus into it) raises a small bubble holding a slider across the
+		* field's whole range, so a large change is one drag instead of many presses
+		* or a retyped value. The control itself stays the precise entry.
+		*
+		* The bubble belongs to the anchor's subtree, so moving from the control onto
+		* the bubble never counts as leaving. It opens after a short rest and closes a
+		* moment after the pointer and focus have both gone, so crossing the control
+		* on the way elsewhere does not flash it. While a drag is in progress the
+		* bubble stays put even if the pointer strays off it.
+		*
+		* Dragging reports each value through `onInput`, so the field shows it live;
+		* releasing the thumb, or a key press on it, reports `onCommit` once. The
+		* bubble opens on the side of the control that has room inside the nearest
+		* scrolling ancestor, so a row near the top of a settings page does not hang
+		* its bubble under the page edge.
+		*/
+		/** Rest on the control before the bubble opens. */
+		const OPEN_DELAY_MS = 220;
+		/** Grace after pointer and focus have left before the bubble closes. */
+		const CLOSE_DELAY_MS = 200;
+		/** Room the bubble needs between the control and the scroller's edge. */
+		const BUBBLE_ROOM_PX = 64;
+		/** The nearest ancestor that scrolls vertically, or the viewport's root. */
+		function scroller(node) {
+			for (let parent = node.parentElement; parent !== null; parent = parent.parentElement) {
+				const overflow = getComputedStyle(parent).overflowY;
+				if (overflow === "auto" || overflow === "scroll") return parent;
+			}
+			return node.ownerDocument.documentElement;
+		}
+		/**
+		* Render the control with its coarse-adjustment bubble.
+		* @param props - the range, the value and the two report callbacks.
+		* @returns the anchor holding the control and the bubble.
+		*/
+		function RangeBubble(props) {
+			const { min, max, step, disabled = false } = props;
+			const [open, setOpen] = (0, react.useState)(false);
+			const [side, setSide] = (0, react.useState)("above");
+			const [live, setLive] = (0, react.useState)(null);
+			const anchorRef = (0, react.useRef)(null);
+			const timer = (0, react.useRef)(void 0);
+			const hovered = (0, react.useRef)(false);
+			const focused = (0, react.useRef)(false);
+			const dragging = (0, react.useRef)(false);
+			(0, react.useEffect)(() => () => {
+				clearTimeout(timer.current);
+			}, []);
+			(0, react.useEffect)(() => {
+				if (disabled) {
+					clearTimeout(timer.current);
+					setOpen(false);
+				}
+			}, [disabled]);
+			const show = () => {
+				const anchor = anchorRef.current;
+				if (anchor !== null) {
+					const room = anchor.getBoundingClientRect().top - scroller(anchor).getBoundingClientRect().top;
+					setSide(room >= BUBBLE_ROOM_PX ? "above" : "below");
+				}
+				setOpen(true);
+			};
+			const schedule = () => {
+				clearTimeout(timer.current);
+				if (disabled) return;
+				if (hovered.current || focused.current || dragging.current) {
+					if (!open) timer.current = setTimeout(show, focused.current ? 0 : OPEN_DELAY_MS);
+					return;
+				}
+				timer.current = setTimeout(() => {
+					setOpen(false);
+				}, CLOSE_DELAY_MS);
+			};
+			const commit = (value) => {
+				dragging.current = false;
+				setLive(null);
+				props.onCommit(value);
+				schedule();
+			};
+			const onChange = (event) => {
+				const value = Number(event.target.value);
+				setLive(value);
+				props.onInput(value);
+			};
+			const onKeyUp = (event) => {
+				if (live !== null) commit(live);
+				if (event.key === "Escape") {
+					clearTimeout(timer.current);
+					setOpen(false);
+				}
+			};
+			const shown = live ?? Math.min(max, Math.max(min, props.value));
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				ref: anchorRef,
+				className: settings_card_module_css_default.rangeAnchor,
+				onPointerEnter: () => {
+					hovered.current = true;
+					schedule();
+				},
+				onPointerLeave: () => {
+					hovered.current = false;
+					schedule();
+				},
+				onFocus: () => {
+					focused.current = true;
+					schedule();
+				},
+				onBlur: (event) => {
+					if (event.currentTarget.contains(event.relatedTarget)) return;
+					focused.current = false;
+					if (live !== null) commit(live);
+					else schedule();
+				},
+				children: [props.children, /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: settings_card_module_css_default.rangeBubble,
+					"data-open": open ? "" : void 0,
+					"data-side": side,
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+						type: "range",
+						className: settings_card_module_css_default.rangeSlider,
+						min,
+						max,
+						step,
+						value: shown,
+						"aria-label": props.label,
+						tabIndex: open ? 0 : -1,
+						disabled,
+						style: { "--range-fill": `${(shown - min) / (max - min) * 100}%` },
+						onPointerDown: () => {
+							dragging.current = true;
+						},
+						onPointerUp: (event) => {
+							commit(Number(event.currentTarget.value));
+						},
+						onPointerCancel: (event) => {
+							commit(Number(event.currentTarget.value));
+						},
+						onChange,
+						onKeyUp
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						className: settings_card_module_css_default.rangeEnds,
+						"aria-hidden": "true",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: min }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: max })]
+					})]
+				})]
+			});
+		}
+		//#endregion
+		//#region src/client/SegmentGroup.tsx
+		/**
+		* The family's segmented control: a quiet track whose options share one
+		* highlight that slides to the pressed option, instead of each option fading
+		* its own background out and the next one in. The settings fields' small
+		* choices and the Web Extensions TAB strip both render through it, so the two
+		* read as one control.
+		*
+		* The caller builds the option buttons and marks the pressed one with
+		* `data-active`; the group measures that button after every render and writes
+		* its box as four custom properties, and the stylesheet draws the highlight
+		* there (`.segmentGroup[data-pill]::before`). Attribute and first placement
+		* land in the same task, so the highlight appears in place and only later
+		* changes slide. A ResizeObserver re-measures when the group or an option
+		* changes size: a longer locale, a font arriving, a container growing, a
+		* strip wrapping onto a second line.
+		*/
+		/** The attribute marking a group whose highlight has been placed. */
+		const PILL_ATTR = "data-pill";
+		/** The pressed option, relative to the group. */
+		const ACTIVE_SELECTOR = ":scope > [data-active]";
+		const PILL_PROPERTIES = [
+			"--segment-pill-x",
+			"--segment-pill-y",
+			"--segment-pill-w",
+			"--segment-pill-h"
+		];
+		/**
+		* Write the highlight's box from the pressed option's box, or take the
+		* highlight off when nothing is pressed or the group has no layout yet.
+		* The two boxes are read in viewport pixels and turned back into the group's
+		* own CSS pixels, so a dialog that opens through a scale transform still
+		* lands the highlight on its option.
+		*/
+		function placePill(group) {
+			const item = group.querySelector(ACTIVE_SELECTOR);
+			const box = group.getBoundingClientRect();
+			if (item === null || group.offsetWidth === 0 || box.width === 0) {
+				group.removeAttribute(PILL_ATTR);
+				for (const property of PILL_PROPERTIES) group.style.removeProperty(property);
+				return;
+			}
+			const scale = box.width / group.offsetWidth;
+			const itemBox = item.getBoundingClientRect();
+			[
+				(itemBox.left - box.left) / scale - group.clientLeft,
+				(itemBox.top - box.top) / scale - group.clientTop,
+				itemBox.width / scale,
+				itemBox.height / scale
+			].forEach((value, index) => {
+				group.style.setProperty(PILL_PROPERTIES[index], `${Math.round(value * 100) / 100}px`);
+			});
+			if (!group.hasAttribute(PILL_ATTR)) group.setAttribute(PILL_ATTR, "");
+		}
+		/**
+		* Render a segmented track around the caller's option buttons.
+		* @param props - the track's attributes (role, accessible name, key handler) and its options.
+		* @returns the track.
+		*/
+		function SegmentGroup(props) {
+			const { children, className, ...rest } = props;
+			const group = (0, react.useRef)(null);
+			const count = react.Children.count(children);
+			(0, react.useLayoutEffect)(() => {
+				if (group.current !== null) placePill(group.current);
+			});
+			(0, react.useLayoutEffect)(() => {
+				const element = group.current;
+				if (element === null || typeof ResizeObserver === "undefined") return void 0;
+				const observer = new ResizeObserver(() => {
+					placePill(element);
+				});
+				observer.observe(element);
+				for (const item of Array.from(element.children)) observer.observe(item);
+				return () => {
+					observer.disconnect();
+				};
+			}, [count]);
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				...rest,
+				ref: group,
+				className: className === void 0 ? settings_card_module_css_default.segmentGroup : `${settings_card_module_css_default.segmentGroup} ${className}`,
+				children
+			});
+		}
+		//#endregion
+		//#region src/client/PluginSettingsCard.tsx
+		/**
+		* Family-shared chrome for plugin settings cards: a disclosure header naming
+		* the plugin and what its settings govern, the controls inside, and the line
+		* that reports a refused write. A pick is written the moment it is made and a
+		* typed value after a pause, so the card has no save button and nothing waits
+		* on the reader. Renders nothing while the namespace is unavailable — a
+		* deployment that does not compose the owning plugin should show no trace of
+		* it. Inlined into each consumer's client bundle; mirrors the official
+		* ui-plugin-config PluginCard in a self-contained slice.
+		*
+		* Every field inside the body is one settings row: the label and its hint on
+		* the left, the control on the right, a hairline between two rows; a narrow
+		* card stacks the control under the text (settings-card.module.css).
+		*/
+		/**
+		* What a text field inside a card reaches without its plugin wiring it: write
+		* the pending draft now (Enter, leaving the field) or put it back (Escape).
+		* Picks need neither; they are written the moment they are made.
+		*/
+		const CardApply = (0, react.createContext)(null);
+		/** Length of the body's disclosure motion; it matches `--settings-card-motion` on the card root. */
+		const BODY_MOTION_MS = 180;
+		/**
+		* Render one plugin settings card.
+		* @param props - the plugin's copy keys, its form state, and its controls.
+		* @returns the card, or nothing while the namespace is still loading.
+		*/
+		function PluginSettingsCard(props) {
+			const [open, setOpen] = (0, react.useState)(props.defaultOpen ?? true);
+			const { state, alwaysOpen } = props;
+			const expanded = alwaysOpen === true || open;
+			const [bodyPhase, setBodyPhase] = (0, react.useState)(expanded ? "shown" : "hidden");
+			const bodyRef = (0, react.useRef)(null);
+			(0, react.useLayoutEffect)(() => {
+				if (expanded) {
+					if (bodyPhase === "hidden") setBodyPhase("collapsed");
+					else if (bodyPhase === "collapsed") {
+						const node = bodyRef.current;
+						if (node !== null) node.offsetHeight;
+						setBodyPhase("entering");
+					} else if (bodyPhase === "closing") setBodyPhase("entering");
+					return;
+				}
+				if (bodyPhase === "collapsed") setBodyPhase("hidden");
+				else if (bodyPhase === "entering" || bodyPhase === "shown") setBodyPhase("closing");
+			}, [expanded, bodyPhase]);
+			(0, react.useEffect)(() => {
+				if (bodyPhase !== "entering" && bodyPhase !== "closing") return;
+				const timer = setTimeout(() => {
+					setBodyPhase(bodyPhase === "entering" ? "shown" : "hidden");
+				}, BODY_MOTION_MS);
+				return () => {
+					clearTimeout(timer);
+				};
+			}, [bodyPhase]);
+			if (!state.available) return null;
+			const title = props.t(props.titleKey);
+			const description = props.t(props.descriptionKey);
+			const descriptionTitle = props.descriptionTitleKey === void 0 ? description : props.t(props.descriptionTitleKey);
+			const baseClass = expanded ? `${settings_card_module_css_default.cardOpen} ${settings_card_module_css_default.card}` : settings_card_module_css_default.card;
+			const cardClass = props.density === "nested" ? `${baseClass} ${settings_card_module_css_default.cardNested}` : baseClass;
+			/** The body region both legs share; a hidden phase renders nothing at all. */
+			const bodyRegion = (content) => bodyPhase === "hidden" ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: settings_card_module_css_default.disclosure,
+				"data-state": bodyPhase,
+				ref: bodyRef,
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					className: settings_card_module_css_default.body,
+					children: content
+				})
+			});
+			const header = alwaysOpen === true ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: settings_card_module_css_default.headerStatic,
+				children: [
+					props.icon !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: settings_card_module_css_default.mark,
+						"aria-hidden": "true",
+						children: props.icon
+					}) : null,
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						className: settings_card_module_css_default.headText,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: settings_card_module_css_default.name,
+							id: props.titleId,
+							title,
+							children: title
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: settings_card_module_css_default.description,
+							title: descriptionTitle,
+							children: props.descriptionNode ?? description
+						})]
+					}),
+					props.headerAction !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: settings_card_module_css_default.headerAction,
+						children: props.headerAction
+					}) : null
+				]
+			}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+				type: "button",
+				className: settings_card_module_css_default.header,
+				"aria-expanded": open,
+				"aria-label": `${props.t(open ? "settings.collapse" : "settings.expand")}: ${title}`,
+				onClick: () => {
+					setOpen(!open);
+				},
+				children: [
+					props.icon !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: settings_card_module_css_default.mark,
+						"aria-hidden": "true",
+						children: props.icon
+					}) : null,
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						className: settings_card_module_css_default.headText,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: settings_card_module_css_default.name,
+							id: props.titleId,
+							title,
+							children: title
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: settings_card_module_css_default.description,
+							title: descriptionTitle,
+							children: props.descriptionNode ?? description
+						})]
+					}),
+					props.headerAction !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: settings_card_module_css_default.headerAction,
+						children: props.headerAction
+					}) : null,
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
+						width: "14",
+						height: "14",
+						viewBox: "0 0 14 14",
+						fill: "none",
+						xmlns: "http://www.w3.org/2000/svg",
+						className: open ? `${settings_card_module_css_default.chevron} ${settings_card_module_css_default.chevronOpen}` : settings_card_module_css_default.chevron,
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+							d: "M11.8486 5.5L11.4238 5.92383L8.69727 8.65137C8.44157 8.90706 8.21562 9.13382 8.01172 9.29785C7.79912 9.46883 7.55595 9.61756 7.25 9.66602C7.08435 9.69222 6.91565 9.69222 6.75 9.66602C6.44405 9.61756 6.20088 9.46883 5.98828 9.29785C5.78438 9.13382 5.55843 8.90706 5.30273 8.65137L2.57617 5.92383L2.15137 5.5L3 4.65137L3.42383 5.07617L6.15137 7.80273C6.42595 8.07732 6.59876 8.24849 6.74023 8.3623C6.87291 8.46904 6.92272 8.47813 6.9375 8.48047C6.97895 8.48703 7.02105 8.48703 7.0625 8.48047C7.07728 8.47813 7.12709 8.46904 7.25977 8.3623C7.40124 8.24849 7.57405 8.07732 7.84863 7.80273L10.5762 5.07617L11 4.65137L11.8486 5.5Z",
+							fill: "currentColor"
+						})
+					})
+				]
+			});
+			const notExposedNotice = state.exposed || props.hideNotExposedNotice === true ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+				className: settings_card_module_css_default.notExposed,
+				role: "status",
+				children: props.t("settings.notExposed")
+			});
+			if (!state.exposed && props.renderChildrenWhenNotExposed !== true) return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
+				className: cardClass,
+				children: [header, bodyRegion(notExposedNotice)]
+			});
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", {
+				className: cardClass,
+				children: [header, props.headerOnly !== true ? bodyRegion(/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+					notExposedNotice,
+					!state.writable ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: settings_card_module_css_default.readOnly,
+						role: "status",
+						children: props.t("settings.readOnly")
+					}) : null,
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(CardApply.Provider, {
+						value: {
+							commit: props.onSave,
+							revert: props.onDiscard
+						},
+						children: props.children
+					}),
+					props.hideFooter !== true && state.failed ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+						className: settings_card_module_css_default.failed,
+						role: "status",
+						children: [props.t("settings.saveFailed"), state.failedReason ? " - " + state.failedReason : ""]
+					}) : null
+				] })) : null]
+			});
+		}
+		/**
+		* A typed value field. Its draft is written after a pause in typing, at once on
+		* Enter or when focus leaves, and Escape puts the stored value back. `numeric`
+		* only hints the keypad: which drafts a field accepts is decided by its spec.
+		* A field given a `range` also offers the coarse slider bubble: dragging fills
+		* the draft live and releasing writes it.
+		*/
+		function ValueField(props) {
+			const apply = (0, react.useContext)(CardApply);
+			const settledByKey = (0, react.useRef)(false);
+			const onKeyDown = (event) => {
+				if (apply === null || event.key !== "Enter" && event.key !== "Escape") return;
+				event.preventDefault();
+				settledByKey.current = true;
+				if (event.key === "Enter") apply.commit();
+				else apply.revert();
+				event.currentTarget.blur();
+			};
+			const input = /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+				id: props.id,
+				className: props.invalid ? settings_card_module_css_default.inputInvalid : settings_card_module_css_default.input,
+				type: "text",
+				...props.numeric === true ? { inputMode: "numeric" } : {},
+				...props.invalid ? { "aria-invalid": true } : {},
+				value: props.text,
+				placeholder: props.placeholder ?? "",
+				disabled: props.disabled,
+				onChange: (event) => {
+					props.onEdit(event.target.value);
+				},
+				onKeyDown,
+				onFocus: () => {
+					settledByKey.current = false;
+				},
+				onBlur: () => {
+					if (settledByKey.current) {
+						settledByKey.current = false;
+						return;
+					}
+					apply?.commit();
+				}
+			});
+			const { range } = props;
+			const typed = Number(props.text);
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: settings_card_module_css_default.field,
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: settings_card_module_css_default.head,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("label", {
+							className: settings_card_module_css_default.label,
+							htmlFor: props.id,
+							children: props.label
+						}), props.overridden ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: settings_card_module_css_default.badges,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: settings_card_module_css_default.badge,
+								children: props.overriddenLabel
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: settings_card_module_css_default.reset,
+								disabled: props.disabled,
+								onClick: props.onReset,
+								children: props.resetLabel
+							})]
+						}) : null]
+					}),
+					range === void 0 ? input : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(RangeBubble, {
+						min: range.min,
+						max: range.max,
+						step: range.step,
+						value: props.text.trim() === "" || Number.isNaN(typed) ? range.min : typed,
+						label: `${props.label} ${range.min}–${range.max}`,
+						disabled: props.disabled,
+						onInput: (value) => {
+							props.onEdit(String(value));
+						},
+						onCommit: (value) => {
+							props.onEdit(String(value));
+							apply?.commit();
+						},
+						children: input
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: props.invalid ? settings_card_module_css_default.invalid : settings_card_module_css_default.hint,
+						title: props.hintTitle,
 						children: props.invalid ? props.invalidLabel : props.hint
 					})
 				]
@@ -10918,8 +13738,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		* renders the legacy native `<select>` untouched, so element-level skin
 		* selectors keep working; under the default appearance it renders a
 		* self-drawn `role="listbox"` popup whose open/close is transition-animated.
-		* Staged cards reach it through BooleanField/ChoiceField; immediate-apply
-		* editors (the side-card prefs) bind it directly through onEdit.
+		* Cards reach it through BooleanField/ChoiceField; editors outside a card
+		* (the side-card prefs) bind it directly through onEdit.
 		* 双模式下拉框：皮肤激活时用原生 select，默认外观用自绘动画弹层。
 		*/
 		function SelectField(props) {
@@ -11077,14 +13897,48 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				}) : null]
 			});
 		}
-		/** A staged boolean field: 继承 / 开 / 关. */
+		/**
+		* A visible segmented group for a small set of mutually exclusive values.
+		* Every option stays on screen, so inherit/on/off and short enum fields take
+		* one click without opening a popup. The pressed option carries the group's
+		* sliding highlight and `aria-pressed`; the group takes the field label as its
+		* accessible name.
+		*/
+		function SegmentField(props) {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SegmentGroup, {
+				id: props.id,
+				role: "group",
+				"aria-label": props.label,
+				"aria-invalid": props.invalid || void 0,
+				children: props.options.map((option, index) => {
+					const active = option.value === props.value;
+					return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: settings_card_module_css_default.segment,
+						"aria-pressed": active,
+						disabled: props.disabled,
+						"data-active": active ? "" : void 0,
+						"data-segment-index": index,
+						onClick: () => {
+							if (!active) props.onEdit(option.value);
+						},
+						children: option.label
+					}, option.value);
+				})
+			});
+		}
+		/** A boolean field: 继承 / 开 / 关. */
 		function BooleanField(props) {
+			const segmented = props.presentation !== "select";
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: settings_card_module_css_default.field,
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: settings_card_module_css_default.head,
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("label", {
+						children: [segmented ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: settings_card_module_css_default.label,
+							children: props.label
+						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("label", {
 							className: settings_card_module_css_default.label,
 							htmlFor: props.id,
 							children: props.label
@@ -11102,7 +13956,28 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 							})]
 						}) : null]
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SelectField, {
+					segmented ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SegmentField, {
+						id: props.id,
+						label: props.label,
+						options: [
+							{
+								value: "",
+								label: props.inheritLabel
+							},
+							{
+								value: "true",
+								label: props.onLabel
+							},
+							{
+								value: "false",
+								label: props.offLabel
+							}
+						],
+						value: props.text,
+						disabled: props.disabled,
+						invalid: props.invalid,
+						onEdit: props.onEdit
+					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SelectField, {
 						id: props.id,
 						options: [
 							{
@@ -11125,19 +14000,28 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: settings_card_module_css_default.hint,
+						title: props.hintTitle,
 						children: props.hint
 					})
 				]
 			});
 		}
-		/** A staged enumerated field rendered as a select. */
+		/** An enumerated field, selecting or segmenting its small choice set. */
 		function ChoiceField(props) {
+			const segmented = props.presentation === "segment";
+			const options = [{
+				value: "",
+				label: props.inheritLabel
+			}, ...props.choices];
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: settings_card_module_css_default.field,
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: settings_card_module_css_default.head,
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("label", {
+						children: [segmented ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: settings_card_module_css_default.label,
+							children: props.label
+						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("label", {
 							className: settings_card_module_css_default.label,
 							htmlFor: props.id,
 							children: props.label
@@ -11155,12 +14039,17 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 							})]
 						}) : null]
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SelectField, {
+					segmented ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SegmentField, {
 						id: props.id,
-						options: [{
-							value: "",
-							label: props.inheritLabel
-						}, ...props.choices],
+						label: props.label,
+						options,
+						value: props.text,
+						disabled: props.disabled,
+						invalid: props.invalid,
+						onEdit: props.onEdit
+					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SelectField, {
+						id: props.id,
+						options,
 						value: props.text,
 						disabled: props.disabled,
 						invalid: props.invalid,
@@ -11168,30 +14057,35 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 						className: props.invalid ? settings_card_module_css_default.invalid : settings_card_module_css_default.hint,
+						title: props.hintTitle,
 						children: props.invalid ? props.invalidLabel : props.hint
 					})
 				]
 			});
 		}
-		//#endregion
-		//#region \0dsh-store-engine
-		const platform = ["@deepseek-ai/dsh-client", "-store"].join("");
-		const legacy = ["@deepseek-ai/dsh-client-runtime", "/client"].join("");
-		let engine;
-		try {
-			engine = require(platform);
-		} catch {
-			engine = require(legacy);
+		/**
+		* A free-text field. An empty draft clears the field. `entry` is `pick` when
+		* the text arrives whole from a picker (a preset or a reasoning level).
+		*/
+		function textField(field, entry = "type") {
+			return {
+				field,
+				entry,
+				format: (value) => typeof value === "string" ? value : "",
+				parse: (text) => {
+					const trimmed = text.trim();
+					return trimmed === "" ? { kind: "clear" } : {
+						kind: "set",
+						value: trimmed
+					};
+				}
+			};
 		}
-		const createSnapshotStore = engine.createSnapshotStore;
-		engine.defineStore;
-		engine.shallowEqual;
-		//#endregion
-		//#region src/client/settings-form.ts
 		/** A boolean field, edited through true/false draft text. */
 		function booleanField(field) {
 			return {
 				field,
+				entry: "pick",
 				format: (value) => typeof value === "boolean" ? String(value) : "",
 				parse: (text) => {
 					const trimmed = text.trim();
@@ -11207,13 +14101,30 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				}
 			};
 		}
+		/** An enumerated string field; only the listed choices are accepted. An empty draft clears the field. */
+		function choiceField(field, choices) {
+			return {
+				field,
+				entry: "pick",
+				format: (value) => typeof value === "string" && choices.includes(value) ? value : "",
+				parse: (text) => {
+					if (text === "") return { kind: "clear" };
+					return choices.includes(text) ? {
+						kind: "set",
+						value: text
+					} : void 0;
+				}
+			};
+		}
 		/**
-		* Stages one card's edits over one settings namespace and writes them on save.
+		* Applies one card's edits to one settings namespace as the reader makes them.
 		*
 		* The Host is the only authority on whether a value was accepted — its
 		* validators own the constraints no schema can express — so the outcome is
-		* read back from the section rather than predicted here. A save that did not
-		* land keeps its drafts, so the user can correct them instead of retyping.
+		* read back from the section rather than predicted here. A write that did not
+		* land puts each pick back to the stored value, the way a switch that could not
+		* flip springs back, and keeps typed text so the reader can correct it instead
+		* of retyping.
 		*/
 		var CardForm = class {
 			scope;
@@ -11223,6 +14134,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			/** The form subscription installed in the constructor; released by dispose(). */
 			disposeForm;
 			disposed = false;
+			/** The pending write of typed text, waiting for typing to pause. */
+			typePause;
 			saving = false;
 			/** A save asked for while one was in flight; it runs once the first settles (#1754). */
 			saveQueued = false;
@@ -11243,18 +14156,19 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			dispose() {
 				if (this.disposed) return;
 				this.disposed = true;
+				clearTimeout(this.typePause);
 				this.disposeForm();
 				this.listeners.clear();
 			}
 			/** Publish a projection of this form, rebuilt whenever the form or a draft changes. */
 			bind(project) {
-				const store = createSnapshotStore(project());
+				const store = (0, _deepseek_ai_dsh_client_store.createSnapshotStore)(project());
 				this.listeners.add(() => {
 					store.set(project());
 				});
 				return store;
 			}
-			/** Read the card-level state: what the Host serves, and what a save would do. */
+			/** Read the card-level state: what the Host serves, and what is still waiting to be written. */
 			shell() {
 				const snapshot = this.scope.getSnapshot();
 				const plan = this.plan();
@@ -11301,9 +14215,10 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 						});
 					},
 					save: () => {
-						this.requestSave();
+						this.applyNow();
 					},
 					discard: () => {
+						clearTimeout(this.typePause);
 						if (this.staged.size === 0 && !this.failed) return;
 						this.staged.clear();
 						this.failed = false;
@@ -11313,32 +14228,14 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				};
 			}
 			/**
-			* Write every staged edit in one atomic form mutation, then re-seed from
-			* what the Host accepted.
-			*
-			* The whole batch rides one mutate, so cross-field validate hooks
-			* (baseURL+model) judge it as a unit: the Host either applies every write
-			* or refuses the batch. The form contract answers a refusal or a skipped
-			* write with `false` (it recovers with a fresh Host view instead of
-			* throwing), so the outcome is judged twice: the answer itself, and then the
-			* settled snapshot read back one planned write at a time. One missed write
-			* fails the whole save. A transport that rejects instead (the dsh-web bridge
-			* controller on a dead connection) reports through the same failure path
-			* with its rejection message. A save that did not land keeps its drafts, so
-			* the user can correct them instead of retyping.
-			* @returns settlement after the mutation and the read-back.
-			*/
-			/**
-			* Run one save, and re-run it once if another was asked for while this one
+			* Run one write, and re-run it once if another was asked for while this one
 			* was still in flight.
 			*
-			* A save is a Host round trip that also drives the profile reconcile, and
-			* the Host runs that write inside one exclusive transaction. Answering a
-			* press that arrives mid-flight by returning immediately dropped the edit
-			* with no explanation, which is the "the save button stops working after a
-			* few rounds" report (#1754). Serializing instead means a save pressed while
-			* another is still settling runs against the settled state - which is what
-			* the operator meant by pressing it again.
+			* A write is a Host round trip that also drives the profile reconcile, and
+			* the Host runs it inside one exclusive transaction. Answering an edit that
+			* arrives mid-flight by returning immediately dropped it with no explanation
+			* (#1754). Serializing instead means an edit made while another write is
+			* still settling is written against the settled state.
 			* @returns settlement after the mutation and the read-back.
 			*/
 			async requestSave() {
@@ -11351,12 +14248,28 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				this.saveQueued = false;
 				await this.requestSave();
 			}
+			/**
+			* Write every valid draft in one atomic form mutation, then re-seed from
+			* what the Host accepted. A draft the field does not accept stays on screen,
+			* unwritten, without holding the others back.
+			*
+			* The batch rides one mutate, so cross-field validate hooks (baseURL+model)
+			* judge it as a unit: the Host either applies every write or refuses the
+			* batch. The form contract answers a refusal or a skipped write with `false`
+			* (it recovers with a fresh Host view instead of throwing), so the outcome is
+			* judged twice: the answer itself, and then the settled snapshot read back
+			* one planned write at a time. One missed write fails the whole batch. A
+			* transport that rejects instead (the dsh-web bridge controller on a dead
+			* connection) reports through the same failure path with its rejection
+			* message. A batch that did not land puts its picks and clears back to the
+			* stored value and keeps its typed text, so the reader can correct it.
+			* @returns settlement after the mutation and the read-back.
+			*/
 			async save() {
-				const plan = this.plan();
-				const valid = plan.filter((item) => item.judge !== void 0);
-				if (plan.length === 0 || this.saving || valid.length !== plan.length) return;
+				const valid = this.plan().filter((item) => item.judge !== void 0);
+				if (valid.length === 0 || this.saving) return;
 				const pending = /* @__PURE__ */ new Map();
-				for (const item of plan) pending.set(item.field, this.staged.get(item.field));
+				for (const item of valid) pending.set(item.field, this.staged.get(item.field));
 				this.saving = true;
 				this.failed = false;
 				this.failedReason = void 0;
@@ -11377,16 +14290,19 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					failedReason = error instanceof Error ? error.message : String(error);
 				}
 				const landed = accepted && failedReason === void 0 && valid.every((item) => item.judge());
-				for (const [field, before] of pending) if (landed && this.staged.get(field) === before) this.staged.delete(field);
+				for (const [field, before] of pending) {
+					if (this.staged.get(field) !== before) continue;
+					if (landed || before === void 0 || before.clear || this.specOf(field).entry === "pick") this.staged.delete(field);
+				}
 				this.saving = false;
 				this.failed = !landed;
 				this.failedReason = failedReason;
 				this.publish();
 			}
 			/**
-			* Every staged edit a save would write. An entry whose draft is not a value
-			* its field accepts carries no write: the form is still dirty, and the save
-			* refuses rather than dropping the edit. A staged edit that matches the
+			* Every staged edit a write would carry. An entry whose draft is not a value
+			* its field accepts carries no write: the form is still dirty, and the draft
+			* stays on screen rather than being dropped. A staged edit that matches the
 			* effective section is not a write at all.
 			* @returns the planned writes, in the order the fields were staged.
 			*/
@@ -11450,11 +14366,30 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			landedUnset(field) {
 				return !this.stored(field);
 			}
+			/**
+			* Take one edit and schedule its write: a pick or a clear is written now,
+			* typed text once typing has rested for TYPE_PAUSE_MS.
+			*/
 			stage(field, edit) {
 				this.staged.set(field, edit);
 				this.failed = false;
 				this.failedReason = void 0;
 				this.publish();
+				if (edit.clear || this.specOf(field).entry === "pick") {
+					this.applyNow();
+					return;
+				}
+				clearTimeout(this.typePause);
+				this.typePause = setTimeout(() => {
+					this.applyNow();
+				}, 600);
+			}
+			/** Write every pending draft now, taking the place of a waiting pause. */
+			applyNow() {
+				clearTimeout(this.typePause);
+				this.typePause = void 0;
+				if (this.disposed) return;
+				this.requestSave();
 			}
 			specOf(field) {
 				const spec = this.specs.get(field);
@@ -11483,7 +14418,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		};
 		//#endregion
 		//#region \0dsh-css:packages/dsh-client-ui-task-board-fish/src/client/board-settings.module.css.mjs
-		const css = ".QDtaFW_note{color:var(--dsw-alias-label-secondary);margin:4px 0;font-size:12px}.QDtaFW_error{color:var(--dsw-alias-state-error-primary);margin:4px 0;font-size:12px}.QDtaFW_resolvedList{color:var(--dsw-alias-label-secondary);margin:4px 0 8px;padding-left:16px;font-size:12px}.QDtaFW_power{flex-direction:column;gap:2px;margin-top:14px;display:flex}.QDtaFW_powerLine{color:var(--dsw-alias-label-secondary);margin:0;font-size:12px;line-height:1.5}.QDtaFW_powerError{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px;line-height:1.5}.QDtaFW_nestedCards{flex-direction:column;gap:8px;margin:0;padding:0;list-style:none;display:flex}";
+		const css = ".QDtaFW_note{color:var(--dsw-alias-label-secondary);margin:4px 0;font-size:12px}.QDtaFW_error{color:var(--dsw-alias-state-error-primary);margin:4px 0;font-size:12px}.QDtaFW_resolvedList{color:var(--dsw-alias-label-secondary);margin:4px 0 8px;padding-left:16px;font-size:12px}.QDtaFW_nestedCards,.QDtaFW_power{--task-board-settings-gap:8px}.QDtaFW_power{gap:var(--task-board-settings-gap);margin-top:calc(var(--task-board-settings-gap) * 2);flex-direction:column;display:flex}.QDtaFW_powerFacts{column-gap:calc(var(--task-board-settings-gap) * 2);color:var(--dsw-alias-label-secondary);grid-template-columns:max-content 1fr;row-gap:2px;margin:0;font-size:12px;line-height:1.5;display:grid}.QDtaFW_powerTerm,.QDtaFW_powerValue{margin:0}.QDtaFW_powerTerm{color:var(--dsw-alias-label-tertiary)}.QDtaFW_powerLine{color:var(--dsw-alias-label-secondary);margin:0;font-size:12px;line-height:1.5}.QDtaFW_powerError{color:var(--dsw-alias-state-error-primary);margin:0;font-size:12px;line-height:1.5}.QDtaFW_nestedCards{gap:var(--task-board-settings-gap);flex-direction:column;margin:0;padding:0;list-style:none;display:flex}";
 		const tagId = "@fish-under-sea/dsh-client-ui-task-board-fish/packages/dsh-client-ui-task-board-fish/src/client/board-settings.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId) + "]") === null) {
 			const tag = document.createElement("style");
@@ -11498,7 +14433,10 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"note": "QDtaFW_note",
 			"power": "QDtaFW_power",
 			"powerError": "QDtaFW_powerError",
+			"powerFacts": "QDtaFW_powerFacts",
 			"powerLine": "QDtaFW_powerLine",
+			"powerTerm": "QDtaFW_powerTerm",
+			"powerValue": "QDtaFW_powerValue",
 			"resolvedList": "QDtaFW_resolvedList"
 		};
 		//#endregion
@@ -11514,6 +14452,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		function sessionPollField() {
 			return {
 				field: "sessionPollSeconds",
+				entry: "type",
 				format: (value) => typeof value === "number" && Number.isInteger(value) ? String(value) : "",
 				parse: (text) => {
 					const trimmed = text.trim();
@@ -11536,6 +14475,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 		function subtaskDepthField() {
 			return {
 				field: "maxSubtaskDepth",
+				entry: "pick",
 				format: (value) => typeof value === "number" && Number.isInteger(value) ? String(value) : "",
 				parse: (text) => {
 					const trimmed = text.trim();
@@ -11548,13 +14488,60 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			};
 		}
 		/**
+		* The run-launch width field: a whole number of concurrent launches inside the
+		* supported range, because the Host schema (`runLaunchWidth`) is numeric. A
+		* draft outside the range blocks the save instead of staging a value the Host
+		* would clamp behind the user's back.
+		*/
+		function runLaunchWidthField() {
+			return {
+				field: "runLaunchWidth",
+				entry: "type",
+				format: (value) => typeof value === "number" && Number.isInteger(value) ? String(value) : "",
+				parse: (text) => {
+					const trimmed = text.trim();
+					if (trimmed === "") return { kind: "clear" };
+					if (!/^\d+$/.test(trimmed)) return void 0;
+					const width = Number(trimmed);
+					return width >= 1 && width <= 16 ? {
+						kind: "set",
+						value: width
+					} : void 0;
+				}
+			};
+		}
+		/**
+		* The daily token cap field: whole tokens, 0 for "no gate". Every non-negative
+		* whole number is a legal cap, so the draft only has to be one; a blank draft
+		* clears the entry back to the schema default (0).
+		*/
+		function spendBudgetField() {
+			return {
+				field: "spendBudgetTokens",
+				entry: "type",
+				format: (value) => typeof value === "number" && Number.isInteger(value) ? String(value) : "",
+				parse: (text) => {
+					const trimmed = text.trim();
+					if (trimmed === "") return { kind: "clear" };
+					if (!/^\d+$/.test(trimmed)) return void 0;
+					return {
+						kind: "set",
+						value: Number(trimmed)
+					};
+				}
+			};
+		}
+		/**
 		* The judge-model field: blank inherits the host model catalog default, and a
 		* non-blank draft must be a qualified provider/model route. An unparseable
 		* draft blocks the save instead of storing a route nothing can resolve.
+		* The new-card default model uses the same gate, so both fields accept exactly
+		* the routes an execution can pin.
 		*/
-		function judgeModelField() {
+		function modelRouteField(field) {
 			return {
-				field: "goalVerificationModel",
+				field,
+				entry: "pick",
 				format: (value) => typeof value === "string" ? value : "",
 				parse: (text) => {
 					const trimmed = text.trim();
@@ -11566,29 +14553,13 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				}
 			};
 		}
-		/**
-		* The reasoning-effort field. Any non-blank id is staged: which levels a model
-		* accepts is decided by the host catalog, and the settings card shows the
-		* resolved level (including a fallback) rather than guessing here.
-		*/
-		function judgeEffortField() {
-			return {
-				field: "goalVerificationReasoningEffort",
-				format: (value) => typeof value === "string" ? value : "",
-				parse: (text) => {
-					const trimmed = text.trim();
-					return trimmed === "" ? { kind: "clear" } : {
-						kind: "set",
-						value: trimmed
-					};
-				}
-			};
-		}
 		/** Bridges the `task-board` settings form onto the card's staged form. */
 		var TaskBoardSettingsCardController = class {
 			dispatch;
 			form;
 			store;
+			/** The deployment's agent-preset roster, once its runtime read has answered. */
+			presets;
 			/** @param scope - the bound configuration form for the `task-board` namespace. */
 			constructor(scope, dispatch) {
 				this.dispatch = dispatch;
@@ -11596,12 +14567,19 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					booleanField("enabled"),
 					booleanField("announceToAgent"),
 					booleanField("preventIdleSleep"),
+					booleanField("trustForwardedProxy"),
 					subtaskDepthField(),
 					sessionPollField(),
+					runLaunchWidthField(),
+					spendBudgetField(),
 					booleanField("goalRunEnabled"),
 					booleanField("goalVerification"),
-					judgeModelField(),
-					judgeEffortField()
+					modelRouteField("goalVerificationModel"),
+					textField("goalVerificationReasoningEffort", "pick"),
+					textField("cardDefaultMode", "pick"),
+					choiceField("cardDefaultPermission", TASK_PERMISSIONS),
+					modelRouteField("cardDefaultModel"),
+					textField("cardDefaultReasoningEffort", "pick")
 				]);
 				this.store = this.form.bind(() => this.projection());
 			}
@@ -11611,13 +14589,34 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					enabled: this.form.field("enabled"),
 					announceToAgent: this.form.field("announceToAgent"),
 					preventIdleSleep: this.form.field("preventIdleSleep"),
+					trustForwardedProxy: this.form.field("trustForwardedProxy"),
 					maxSubtaskDepth: this.form.field("maxSubtaskDepth"),
 					sessionPollSeconds: this.form.field("sessionPollSeconds"),
+					runLaunchWidth: this.form.field("runLaunchWidth"),
+					spendBudgetTokens: this.form.field("spendBudgetTokens"),
 					goalRunEnabled: this.form.field("goalRunEnabled"),
 					goalVerification: this.form.field("goalVerification"),
 					goalVerificationModel: this.form.field("goalVerificationModel"),
-					goalVerificationReasoningEffort: this.form.field("goalVerificationReasoningEffort")
+					goalVerificationReasoningEffort: this.form.field("goalVerificationReasoningEffort"),
+					cardDefaultMode: this.form.field("cardDefaultMode"),
+					cardDefaultPermission: this.form.field("cardDefaultPermission"),
+					cardDefaultModel: this.form.field("cardDefaultModel"),
+					cardDefaultReasoningEffort: this.form.field("cardDefaultReasoningEffort"),
+					...this.presets === void 0 ? {} : { presets: this.presets }
 				};
+			}
+			/**
+			* Publish the deployment's agent-preset roster to the default-preset field.
+			* The roster is a runtime fact read outside this card (src/client/index.ts
+			* wires it once for both the board's pickers and this topic); it can arrive
+			* late or not at all, and until it does the field lists the inherit choice
+			* alone. This never blocks a save: a deployment that serves no roster still
+			* has a writable settings document.
+			* @param presets - the roster rows.
+			*/
+			setPresetRoster(presets) {
+				this.presets = presets;
+				this.store.set(this.projection());
 			}
 			/**
 			* Build the face the card's slot registration injects.
@@ -11715,7 +14714,11 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				label: inheritRoute === void 0 ? t("settings.goalVerificationModelInheritUnknown") : t("settings.goalVerificationModelInherit", { model: inheritRoute.provider + "/" + inheritRoute.model })
 			}, ...catalog.groups.flatMap((group) => group.models.map((model) => ({
 				value: group.id + "/" + model.id,
-				label: (group.name ?? group.id) + " · " + (model.name ?? model.id)
+				label: modelDisplayLabel({
+					id: group.id + "/" + model.id,
+					name: model.name ?? model.id,
+					provider: group.id
+				})
 			})))];
 			const stagedRoute = parseModelRoute(stagedSettings.model) ?? (inheritRoute === void 0 ? void 0 : {
 				provider: inheritRoute.provider,
@@ -11734,6 +14737,22 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				resetLabel: t("settings.reset"),
 				invalidLabel: t("settings.invalidNumber"),
 				disabled
+			};
+			const defaultModels = modelOptionsFromCatalog(catalog);
+			const defaultModel = state.cardDefaultModel.text;
+			const defaultEffortChoices = reasoningEffortsFor(defaultModels, defaultModel).map((effort) => ({
+				value: effort,
+				label: effort
+			}));
+			/**
+			* Drop a staged default level the newly picked default model cannot honour,
+			* exactly as the create dialog's own model picker does (one shared rule):
+			* the level belongs to the route it was chosen for.
+			*/
+			const dropUnhonouredEffort = (nextModel) => {
+				const current = state.cardDefaultReasoningEffort.text;
+				const kept = reconcileReasoningEffort(defaultModels, nextModel, current);
+				if (kept !== current) props.edit("cardDefaultReasoningEffort", kept);
 			};
 			const nestedShell = {
 				available: true,
@@ -11760,7 +14779,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					children: [
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(PluginSettingsCard, {
 							t,
-							titleKey: "settings.enabled",
+							density: "nested",
+							titleKey: "settings.enabledTopic",
 							descriptionKey: "settings.enabledCardHint",
 							defaultOpen: false,
 							hideFooter: true,
@@ -11771,7 +14791,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(BooleanField, {
 									id: "settings-task-board-enabled",
 									label: t("settings.enabled"),
-									hint: t("settings.enabledHint"),
+									hint: t("settings.enabledHintBrief"),
+									hintTitle: t("settings.enabledHint"),
 									inheritLabel: t("settings.inherit"),
 									onLabel: t("settings.on"),
 									offLabel: t("settings.off"),
@@ -11787,7 +14808,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(BooleanField, {
 									id: "settings-task-board-announce",
 									label: t("settings.announceToAgent"),
-									hint: t("settings.announceToAgentHint"),
+									hint: t("settings.announceToAgentHintBrief"),
+									hintTitle: t("settings.announceToAgentHint"),
 									inheritLabel: t("settings.inherit"),
 									onLabel: t("settings.on"),
 									offLabel: t("settings.off"),
@@ -11803,7 +14825,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(BooleanField, {
 									id: "settings-task-board-prevent-idle-sleep",
 									label: t("settings.preventIdleSleep"),
-									hint: t("settings.preventIdleSleepHint"),
+									hint: t("settings.preventIdleSleepHintBrief"),
+									hintTitle: t("settings.preventIdleSleepHint"),
 									inheritLabel: t("settings.inherit"),
 									onLabel: t("settings.on"),
 									offLabel: t("settings.off"),
@@ -11816,11 +14839,34 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 										props.resetField("preventIdleSleep");
 									}
 								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(BooleanField, {
+									id: "settings-task-board-trust-forwarded-proxy",
+									label: t("settings.trustForwardedProxy"),
+									hint: t("settings.trustForwardedProxyHintBrief"),
+									hintTitle: t("settings.trustForwardedProxyHint"),
+									inheritLabel: t("settings.inherit"),
+									onLabel: t("settings.on"),
+									offLabel: t("settings.off"),
+									...fieldProps,
+									...state.trustForwardedProxy,
+									onEdit: (text) => {
+										props.edit("trustForwardedProxy", text);
+									},
+									onReset: () => {
+										props.resetField("trustForwardedProxy");
+									}
+								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ValueField, {
 									id: "settings-task-board-session-poll",
 									label: t("settings.sessionPollSeconds"),
-									hint: t("settings.sessionPollSecondsHint"),
+									hint: t("settings.sessionPollSecondsHintBrief"),
+									hintTitle: t("settings.sessionPollSecondsHint"),
 									numeric: true,
+									range: {
+										min: 1,
+										max: 300,
+										step: 1
+									},
 									...fieldProps,
 									...state.sessionPollSeconds,
 									onEdit: (text) => {
@@ -11833,7 +14879,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ChoiceField, {
 									id: "settings-task-board-subtask-depth",
 									label: t("settings.maxSubtaskDepth"),
-									hint: t("settings.maxSubtaskDepthHint"),
+									hint: t("settings.maxSubtaskDepthHintBrief"),
+									hintTitle: t("settings.maxSubtaskDepthHint"),
 									inheritLabel: t("settings.inherit"),
 									choices: SUBTASK_DEPTH_CHOICES.map((value) => ({
 										value,
@@ -11847,11 +14894,47 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 									onReset: () => {
 										props.resetField("maxSubtaskDepth");
 									}
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ValueField, {
+									id: "settings-task-board-run-launch-width",
+									label: t("settings.runLaunchWidth"),
+									hint: t("settings.runLaunchWidthHintBrief"),
+									hintTitle: t("settings.runLaunchWidthHint"),
+									numeric: true,
+									range: {
+										min: 1,
+										max: 16,
+										step: 1
+									},
+									...fieldProps,
+									...state.runLaunchWidth,
+									onEdit: (text) => {
+										props.edit("runLaunchWidth", text);
+									},
+									onReset: () => {
+										props.resetField("runLaunchWidth");
+									}
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ValueField, {
+									id: "settings-task-board-spend-budget",
+									label: t("settings.spendBudgetTokens"),
+									hint: t("settings.spendBudgetTokensHintBrief"),
+									hintTitle: t("settings.spendBudgetTokensHint"),
+									numeric: true,
+									...fieldProps,
+									...state.spendBudgetTokens,
+									onEdit: (text) => {
+										props.edit("spendBudgetTokens", text);
+									},
+									onReset: () => {
+										props.resetField("spendBudgetTokens");
+									}
 								})
 							]
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(PluginSettingsCard, {
 							t,
+							density: "nested",
 							titleKey: "settings.runBehaviorTitle",
 							descriptionKey: "settings.runBehaviorCardHint",
 							defaultOpen: false,
@@ -11862,7 +14945,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(BooleanField, {
 								id: "settings-task-board-goal-run",
 								label: t("settings.goalRunGlobal"),
-								hint: t("settings.goalRunGlobalHint"),
+								hint: t("settings.goalRunGlobalHintBrief"),
+								hintTitle: t("settings.goalRunGlobalHint"),
 								inheritLabel: t("settings.inherit"),
 								onLabel: t("settings.on"),
 								offLabel: t("settings.off"),
@@ -11878,6 +14962,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(PluginSettingsCard, {
 							t,
+							density: "nested",
 							titleKey: "settings.goalVerificationTitle",
 							descriptionKey: "settings.goalVerificationCardHint",
 							defaultOpen: false,
@@ -11889,7 +14974,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(BooleanField, {
 									id: "settings-task-board-goal-verification",
 									label: t("settings.goalVerification"),
-									hint: t("settings.goalVerificationHint"),
+									hint: t("settings.goalVerificationHintBrief"),
+									hintTitle: t("settings.goalVerificationHint"),
 									inheritLabel: t("settings.inherit"),
 									onLabel: t("settings.on"),
 									offLabel: t("settings.off"),
@@ -11905,7 +14991,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ChoiceField, {
 									id: "settings-task-board-goal-verification-model",
 									label: t("settings.goalVerificationModel"),
-									hint: t("settings.goalVerificationModelHint"),
+									hint: t("settings.goalVerificationModelHintBrief"),
+									hintTitle: t("settings.goalVerificationModelHint"),
 									inheritLabel: t("settings.inherit"),
 									choices: modelChoices,
 									...fieldProps,
@@ -11920,7 +15007,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ChoiceField, {
 									id: "settings-task-board-goal-verification-effort",
 									label: t("settings.goalVerificationEffort"),
-									hint: t("settings.goalVerificationEffortHint"),
+									hint: t("settings.goalVerificationEffortHintBrief"),
+									hintTitle: t("settings.goalVerificationEffortHint"),
 									inheritLabel: t("settings.inherit"),
 									choices: effortChoices,
 									...fieldProps,
@@ -11961,19 +15049,129 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 								})
 							]
 						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)(PluginSettingsCard, {
+							t,
+							density: "nested",
+							titleKey: "settings.cardDefaultsTitle",
+							descriptionKey: "settings.cardDefaultsCardBrief",
+							descriptionTitleKey: "settings.cardDefaultsCardHint",
+							defaultOpen: false,
+							hideFooter: true,
+							state: nestedShell,
+							onSave: props.save,
+							onDiscard: props.discard,
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(CardDefaultPresetField, {
+									id: "settings-task-board-card-default-mode",
+									label: t("new.agentPreset"),
+									hint: t("settings.cardDefaultModeHintBrief"),
+									hintTitle: t("settings.cardDefaultModeHint"),
+									presets: state.presets,
+									...fieldProps,
+									...state.cardDefaultMode,
+									onEdit: (text) => {
+										props.edit("cardDefaultMode", text);
+									},
+									onReset: () => {
+										props.resetField("cardDefaultMode");
+									}
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ChoiceField, {
+									id: "settings-task-board-card-default-permission",
+									label: t("new.permission"),
+									hint: t("settings.cardDefaultPermissionHintBrief"),
+									hintTitle: t("settings.cardDefaultPermissionHint"),
+									inheritLabel: t("exec.permission.default"),
+									choices: TASK_PERMISSIONS.map((id) => ({
+										value: id,
+										label: t(`exec.permission.${id}`)
+									})),
+									...fieldProps,
+									...state.cardDefaultPermission,
+									onEdit: (text) => {
+										props.edit("cardDefaultPermission", text);
+									},
+									onReset: () => {
+										props.resetField("cardDefaultPermission");
+									}
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ChoiceField, {
+									id: "settings-task-board-card-default-model",
+									label: t("new.model"),
+									hint: t("settings.cardDefaultModelHintBrief"),
+									hintTitle: t("settings.cardDefaultModelHint"),
+									inheritLabel: t("exec.model.default"),
+									choices: modelChoiceRows(defaultModels),
+									...fieldProps,
+									...state.cardDefaultModel,
+									onEdit: (text) => {
+										props.edit("cardDefaultModel", text);
+										dropUnhonouredEffort(text);
+									},
+									onReset: () => {
+										props.resetField("cardDefaultModel");
+										dropUnhonouredEffort("");
+									}
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ChoiceField, {
+									id: "settings-task-board-card-default-effort",
+									label: t("exec.reasoning"),
+									hint: t(reasoningHintKey(defaultModels, defaultModel)),
+									inheritLabel: t("exec.reasoning.inherit"),
+									choices: defaultEffortChoices,
+									...fieldProps,
+									...state.cardDefaultReasoningEffort,
+									disabled: disabled || !reasoningPickerEnabled(defaultModels, defaultModel),
+									onEdit: (text) => {
+										props.edit("cardDefaultReasoningEffort", text);
+									},
+									onReset: () => {
+										props.resetField("cardDefaultReasoningEffort");
+									}
+								})
+							]
+						}),
 						renderSlot("task-board.settings.section", { dispatch })
 					]
 				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: board_settings_module_css_default.power,
 					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-							className: board_settings_module_css_default.powerLine,
-							children: t("settings.powerStatus", {
-								platform: power?.platform ?? t("settings.powerUnknown"),
-								phase: power?.phase ?? t("settings.powerUnknown"),
-								running: String(power?.runningSessions ?? 0),
-								schedules: String(power?.armedSchedules ?? 0)
-							})
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("dl", {
+							className: board_settings_module_css_default.powerFacts,
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("dt", {
+									className: board_settings_module_css_default.powerTerm,
+									children: t("settings.powerPlatform")
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("dd", {
+									className: board_settings_module_css_default.powerValue,
+									children: power?.platform ?? t("settings.powerUnknown")
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("dt", {
+									className: board_settings_module_css_default.powerTerm,
+									children: t("settings.powerPhase")
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("dd", {
+									className: board_settings_module_css_default.powerValue,
+									children: power?.phase ?? t("settings.powerUnknown")
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("dt", {
+									className: board_settings_module_css_default.powerTerm,
+									children: t("settings.powerRunning")
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("dd", {
+									className: board_settings_module_css_default.powerValue,
+									children: String(power?.runningSessions ?? 0)
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("dt", {
+									className: board_settings_module_css_default.powerTerm,
+									children: t("settings.powerSchedules")
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("dd", {
+									className: board_settings_module_css_default.powerValue,
+									children: String(power?.armedSchedules ?? 0)
+								})
+							]
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 							className: board_settings_module_css_default.powerLine,
@@ -11988,358 +15186,75 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			});
 		}
 		//#endregion
-		//#region src/core/degraded-reason.ts
+		//#region src/client/pending-verify.ts
 		/**
-		* The one degraded record naming `plugin`, or undefined when that row is not
-		* degraded (or the payload does not come from the shell's own shape). A
-		* plugin may appear once: the shell keys the ledger by package name and
-		* refreshes the record on every new failure.
-		* @param body - parsed JSON body of the health route.
-		* @param plugin - the real plugin package name to look for.
-		* @returns the degraded row, or undefined when the ledger does not name it.
-		*/
-		function degradedRowOf(body, plugin) {
-			if (typeof body !== "object" || body === null) return void 0;
-			const ledger = body;
-			if (ledger.ok !== true || !Array.isArray(ledger.degraded)) return void 0;
-			for (const entry of ledger.degraded) {
-				if (typeof entry !== "object" || entry === null) continue;
-				const record = entry;
-				if (record.plugin !== plugin) continue;
-				const stage = record.stage === "import" || record.stage === "shape" || record.stage === "start" ? record.stage : void 0;
-				if (stage === void 0) continue;
-				return {
-					plugin,
-					stage,
-					reason: typeof record.reason === "string" ? record.reason : ""
-				};
-			}
-		}
-		/** The ledger owner pid a task-board lock reason names, when it names one. */
-		const OWNED_BY_PROCESS_RE = /already owned by process\s+(\d+)/;
-		/**
-		* The marker the ledger appends when it could NOT confirm the recorded PID
-		* belongs to the lock's real owner: the PID was reused by an unrelated process
-		* after a crash, and the reason then carries the manual-removal step instead.
-		* That reason must be rendered verbatim — telling the user to close "the other
-		* DSH instance" would send them after a process that never touched the board.
-		*/
-		const UNCONFIRMED_OWNER_MARKER = "reused after a crash";
-		/**
-		* Extract the pid of the LIVE process a ledger-lock failure blames, when the
-		* reason identifies one. The task board's lock refusal is the one degraded
-		* reason that carries an owner the user can act on, so the panel renders the
-		* pid in its own sentence and adds the guidance that actually applies.
-		* @param reason - the shell's one-line failure reason.
-		* @returns the confirmed owner pid, or undefined when the reason names none or
-		*   warns that the PID may have been reused (its own text owns the recovery).
-		*/
-		function ledgerOwnerPid(reason) {
-			if (reason.includes(UNCONFIRMED_OWNER_MARKER)) return void 0;
-			const match = OWNED_BY_PROCESS_RE.exec(reason);
-			if (match === null) return void 0;
-			const pid = Number(match[1]);
-			return Number.isSafeInteger(pid) && pid > 0 ? pid : void 0;
-		}
-		//#endregion
-		//#region src/core/package-name.ts
-		/**
-		* npm identity of this plugin. The dsh-web-all degraded ledger is keyed by the
-		* real plugin package name of a family row, and this plugin's browser half
-		* must name its OWN row there to learn why its Host API is missing (issue
-		* #1730): the served bundle cannot derive the name, because a family row
-		* mounts the package from a versioned profile path. The host half spells the
-		* same name in its single-mount guard (src/index.ts); the two move together.
-		*/
-		const TASK_BOARD_PACKAGE = "@fish-under-sea/dsh-client-ui-task-board-fish";
-		//#endregion
-		//#region src/protocol.ts
-		const TASK_BOARD_API_PREFIX = "/api/task-board";
-		/** Whether a decoded reply carries the three draft strings the form accepts. */
-		function isTaskParseDraft(value) {
-			if (typeof value !== "object" || value === null) return false;
-			const record = value;
-			return typeof record.title === "string" && typeof record.description === "string" && typeof record.prompt === "string";
-		}
-		//#endregion
-		//#region src/client/host-api.ts
-		/**
-		* Client-side base for the board's routes: DOCUMENT-RELATIVE (issue #1707).
+		* Bounded verification of the one board state the mirror knows is transient.
 		*
-		* The host registers `TASK_BOARD_API_PREFIX` root-absolute; the page is served
-		* with `<base href="./">`, so the browser half must drop the leading slash or
-		* a sub-path deployment escapes its entry directory. Derived from the shared
-		* constant so host and client cannot drift.
-		*/
-		const CLIENT_API_PREFIX = TASK_BOARD_API_PREFIX.slice(1);
-		const IMPORT_MARKER = "dsh.taskBoard.v2.hostImported";
-		const SOURCE_KEY = "dsh.taskBoard.v2.sourceId";
-		const IMPORT_REQUEST_KEY = "dsh.taskBoard.v2.importRequestId";
-		const REQUEST_TIMEOUT_MS = 15e3;
-		/** Re-notify the panel at most this often while the event stream stays broken. */
-		const STREAM_ERROR_NOTIFY_MS = 15e3;
-		/** Mirrors the Host's own parse budget; only used to phrase the timeout. */
-		const TASK_PARSE_TIMEOUT_SECONDS = 45;
-		/** Transport failure carrying a stable class next to its user-facing message. */
-		var HostApiError = class extends Error {
-			failure;
-			status;
-			constructor(failure, message, status) {
-				super(message);
-				this.failure = failure;
-				this.status = status;
-				this.name = "HostApiError";
-			}
-		};
-		/**
-		* Same-origin family health route served by the dsh-web-all shell: the
-		* degraded ledger, in which a family row that failed during apply appears WITH
-		* its reason. DOCUMENT-RELATIVE for the same reason as the board's own routes
-		* (issue #1707). A 404 here means the family shell is absent or older than the
-		* route, which is not itself a failure of the board.
-		*/
-		const FAMILY_DEGRADED_ROUTE = "api/dsh-web-all/degraded";
-		/** Health-route ceiling: an unresponsive family shell must not hold the board's first paint. */
-		const DEGRADED_LOOKUP_TIMEOUT_MS = 2e3;
-		/**
-		* The failure text for a row this browser knows failed during start.
+		* A pushed frame is how the panel normally learns that the Host moved, and the
+		* browser cannot verify that frames still arrive: an SSE connection that stops
+		* delivering without closing leaves `EventSource` open and silent, so no error
+		* fires and no frame comes. While the mirror still shows an execution the Host
+		* has not settled, that silence looks exactly like a run still in progress —
+		* the row a reader is looking at keeps saying "running" long after the Host
+		* wrote the session id and settled it.
 		*
-		* A ledger lock is the one class with an owner the user can act on, so its
-		* reason is unpacked into the pid plus what to do about it; every other
-		* degraded row is reported with the shell's own reason verbatim. The raw
-		* reason rides along either way, because it is the only text that names the
-		* lock file or the recovery step when the pid is not the whole story.
-		* @param reason - the shell's one-line failure reason (never empty).
+		* So the mirror verifies exactly that state and nothing else: one state read per
+		* {@link PENDING_VERIFICATION_MS} while at least one execution is still open,
+		* disarmed by the snapshot itself as soon as the last one settles. A board with
+		* nothing in flight reads nothing (the package rule: an idle board does not
+		* poll), and a hidden page defers its reads until it is looked at again.
+		*
+		* @module dsh-task-board/client/pending-verify
 		*/
-		function degradedFailureMessage(reason) {
-			const pid = ledgerOwnerPid(reason);
-			if (pid === void 0) return {
-				failure: "degraded",
-				message: t("board.hostError.degraded", { detail: reason })
+		/**
+		* Verification cadence while an execution is open. It matches the interval the
+		* transport already uses to recover from a stream error, so a missed frame and
+		* a broken stream converge within the same bound.
+		*/
+		const PENDING_VERIFICATION_MS = 15e3;
+		/**
+		* Watch the mirror and re-read the Host snapshot while it shows work in flight.
+		* @param face - the mirror, the read, and the seams the loop runs on.
+		* @param intervalMs - verification cadence in milliseconds.
+		* @returns the disposer that releases the timer and the subscription.
+		*/
+		function startPendingVerification(face, intervalMs = PENDING_VERIFICATION_MS) {
+			const schedule = face.schedule ?? ((run) => globalThis.setInterval(run, intervalMs));
+			const cancel = face.cancel ?? ((handle) => {
+				globalThis.clearInterval(handle);
+			});
+			const visible = face.visible ?? pageVisible;
+			let handle;
+			const stop = () => {
+				if (handle === void 0) return;
+				const current = handle;
+				handle = void 0;
+				cancel(current);
 			};
-			return {
-				failure: "ledger-locked",
-				message: t("board.hostError.ledgerLocked", {
-					pid: String(pid),
-					detail: reason
-				})
+			const tick = () => {
+				if (!face.pending()) {
+					stop();
+					return;
+				}
+				if (!visible()) return;
+				face.refresh();
+			};
+			const arm = () => {
+				if (handle !== void 0 || !face.pending()) return;
+				handle = schedule(tick);
+			};
+			const unsubscribe = face.subscribe(arm);
+			arm();
+			return () => {
+				unsubscribe();
+				stop();
 			};
 		}
-		/**
-		* The degraded record the family shell holds for THIS board, or undefined when
-		* the row is healthy, the shell is absent, or the answer is unusable. The
-		* lookup is best-effort by contract: any uncertainty keeps the caller's own
-		* failure text instead of replacing it with a weaker one.
-		* @param fetchImpl - fetch implementation (injected for tests).
-		* @returns the ledger's reason for this row, or undefined when it names none.
-		*/
-		async function fetchDegradedReason(fetchImpl) {
-			const controller = new AbortController();
-			const timer = globalThis.setTimeout(() => {
-				controller.abort();
-			}, DEGRADED_LOOKUP_TIMEOUT_MS);
-			try {
-				const response = await fetchImpl(FAMILY_DEGRADED_ROUTE, {
-					signal: controller.signal,
-					headers: { accept: "application/json" },
-					cache: "no-store"
-				});
-				if (!response.ok) return void 0;
-				return degradedRowOf(await response.json(), TASK_BOARD_PACKAGE)?.reason;
-			} catch {
-				return;
-			} finally {
-				globalThis.clearTimeout(timer);
-			}
+		/** Whether the page is being looked at; a composition without a document counts as visible. */
+		function pageVisible() {
+			const state = globalThis.document?.visibilityState;
+			return state === void 0 || state === "visible";
 		}
-		/**
-		* Name the real reason this board's routes are missing (issue #1730).
-		*
-		* The core webserver answers an unmounted route with a bare 404, which cannot
-		* distinguish "this deployment never loaded the plugin" from "this row
-		* degraded during start" — a second DSH process holding `ledger-v2.lock` is
-		* the case that matters, because the panel's advice ("restart the service")
-		* is then false: the lock belongs to the other process, and restarting cannot
-		* win it. The family health route knows the difference, so the 404 is
-		* disambiguated there before anything is shown.
-		* @param fallback - copy for the plain "routes are not there" failure, which
-		*   is route-specific (the board's state route and the AI-parse route phrase
-		*   their own absence); it is also what is shown when the ledger names nothing.
-		* @param fetchImpl - fetch implementation (injected for tests).
-		* @returns the HostApiError to throw for a missing board route.
-		*/
-		async function missingRouteFailure(fallback = t("board.hostError.notMounted"), fetchImpl = fetch) {
-			const absent = () => new HostApiError("not-mounted", fallback, 404);
-			const reason = await fetchDegradedReason(fetchImpl);
-			if (reason === void 0 || reason === "") return absent();
-			const described = degradedFailureMessage(reason);
-			return new HostApiError(described.failure, described.message, 404);
-		}
-		function uuid() {
-			return globalThis.crypto?.randomUUID?.() ?? `browser-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-		}
-		/**
-		* Read one Host response without ever handing a non-JSON body to JSON.parse:
-		* the core webserver answers an unmounted `/api/*` path with the plain text
-		* "not found", which used to surface as a JavaScript parse error in the panel.
-		*/
-		async function readJson(response) {
-			const text = await response.text();
-			let parsed;
-			let readable = false;
-			if (text.trim() !== "") try {
-				parsed = JSON.parse(text);
-				readable = true;
-			} catch {
-				readable = false;
-			}
-			const hostError = readable && typeof parsed === "object" && parsed !== null && typeof parsed.error === "string" ? parsed.error : void 0;
-			if (response.ok) {
-				if (!readable) throw new HostApiError("unexpected", t("board.hostError.unexpected", { status: String(response.status) }), response.status);
-				return parsed;
-			}
-			if (hostError !== void 0) {
-				if (hostError === "forbidden") throw new HostApiError("forbidden", t("board.hostError.forbidden"), response.status);
-				if (response.status === 503 || /lock/i.test(hostError)) throw new HostApiError("locked", t("board.hostError.locked", { detail: hostError }), response.status);
-				throw new HostApiError("rejected", hostError, response.status);
-			}
-			if (response.status === 404) throw await missingRouteFailure();
-			if (response.status === 403) throw new HostApiError("forbidden", t("board.hostError.forbidden"), 403);
-			if (response.status === 401) throw new HostApiError("unauthorized", t("board.hostError.unauthorized"), 401);
-			throw new HostApiError("unexpected", t("board.hostError.unexpected", { status: String(response.status) }), response.status);
-		}
-		var HttpTaskBoardHostTransport = class {
-			storage;
-			constructor(storage = globalThis.localStorage) {
-				this.storage = storage;
-			}
-			async bootstrap(legacy) {
-				const initial = await this.state();
-				const ledgerId = initial.scheduler.ledgerId;
-				if (legacy.length > 0 && ledgerId !== void 0 && this.storage?.getItem(IMPORT_MARKER) !== ledgerId) {
-					let sourceId = this.storage?.getItem(SOURCE_KEY);
-					if (sourceId === null || sourceId === void 0 || sourceId === "") {
-						sourceId = uuid();
-						this.storage?.setItem(SOURCE_KEY, sourceId);
-					}
-					let requestId = this.storage?.getItem(IMPORT_REQUEST_KEY);
-					if (requestId === null || requestId === void 0 || requestId === "") {
-						requestId = uuid();
-						this.storage?.setItem(IMPORT_REQUEST_KEY, requestId);
-					}
-					const snapshot = await this.post(requestId, {
-						kind: "import",
-						sourceId,
-						tasks: [...legacy]
-					});
-					this.storage?.setItem(IMPORT_MARKER, snapshot.scheduler.ledgerId ?? ledgerId);
-					return snapshot;
-				}
-				return initial;
-			}
-			async state() {
-				return await this.request(`${CLIENT_API_PREFIX}/state`, { cache: "no-store" });
-			}
-			async action(action, initiator) {
-				return await this.post(uuid(), action, initiator);
-			}
-			async post(requestId, action, initiator) {
-				const envelope = {
-					requestId,
-					action,
-					...initiator === void 0 || initiator === "" ? {} : { initiator }
-				};
-				return await this.request(`${CLIENT_API_PREFIX}/action`, {
-					method: "POST",
-					headers: { "content-type": "application/json" },
-					body: JSON.stringify(envelope)
-				});
-			}
-			async request(url, init) {
-				const controller = new AbortController();
-				const timeout = globalThis.setTimeout(() => {
-					controller.abort();
-				}, REQUEST_TIMEOUT_MS);
-				try {
-					return await readJson(await fetch(url, {
-						...init,
-						signal: controller.signal
-					}));
-				} catch (error) {
-					if (error instanceof HostApiError) throw error;
-					if (controller.signal.aborted) throw new HostApiError("timeout", t("board.hostError.timeout", { seconds: String(REQUEST_TIMEOUT_MS / 1e3) }));
-					throw new HostApiError("unreachable", t("board.hostError.unreachable"));
-				} finally {
-					globalThis.clearTimeout(timeout);
-				}
-			}
-			/**
-			* Ask the Host to turn pasted text into task fields. The route answers a
-			* typed failure (no model, timeout, unparseable reply) already phrased for
-			* the form, so the UI never renders a raw status code (issue #1540).
-			*/
-			async parseDraft(request, signal) {
-				let response;
-				try {
-					response = await fetch(`${CLIENT_API_PREFIX}/parse`, {
-						method: "POST",
-						headers: { "content-type": "application/json" },
-						body: JSON.stringify(request),
-						...signal === void 0 ? {} : { signal }
-					});
-				} catch {
-					throw new HostApiError("unreachable", t("board.hostError.unreachable"));
-				}
-				const text = await response.text();
-				let parsed;
-				let readable = false;
-				if (text.trim() !== "") try {
-					parsed = JSON.parse(text);
-					readable = true;
-				} catch {
-					readable = false;
-				}
-				const record = readable && typeof parsed === "object" && parsed !== null ? parsed : void 0;
-				if (response.ok) {
-					if (record !== void 0 && isTaskParseDraft(record.draft)) return record.draft;
-					throw new HostApiError("unexpected", t("new.aiParseFailed", { error: t("board.hostError.unexpected", { status: String(response.status) }) }), response.status);
-				}
-				if (response.status === 404) throw await missingRouteFailure(t("new.aiParseUnavailable"));
-				if (response.status === 403) throw new HostApiError("forbidden", t("board.hostError.forbidden"), 403);
-				if (response.status === 401) throw new HostApiError("unauthorized", t("board.hostError.unauthorized"), 401);
-				const code = typeof record?.code === "string" ? record.code : void 0;
-				if (code === "no-model") throw new HostApiError("rejected", t("new.aiParseNoModel"), response.status);
-				if (code === "timeout") throw new HostApiError("timeout", t("new.aiParseTimeout", { seconds: String(TASK_PARSE_TIMEOUT_SECONDS) }), response.status);
-				throw new HostApiError("rejected", t("new.aiParseFailed", { error: typeof record?.error === "string" && record.error !== "" ? record.error : String(response.status) }), response.status);
-			}
-			subscribe(listener) {
-				const events = new EventSource(`${CLIENT_API_PREFIX}/events`);
-				let lastStreamErrorNotify = 0;
-				events.onmessage = (message) => {
-					try {
-						const parsed = JSON.parse(message.data);
-						if (parsed === null || typeof parsed !== "object" || typeof parsed.revision !== "number") throw new Error("invalid event frame");
-						listener(parsed);
-					} catch {
-						listener();
-					}
-				};
-				events.onerror = () => {
-					const now = Date.now();
-					if (now - lastStreamErrorNotify < STREAM_ERROR_NOTIFY_MS) return;
-					lastStreamErrorNotify = now;
-					listener();
-				};
-				const onVisible = () => {
-					if (document.visibilityState === "visible") listener();
-				};
-				document.addEventListener("visibilitychange", onVisible);
-				return () => {
-					document.removeEventListener("visibilitychange", onVisible);
-					events.close();
-				};
-			}
-		};
 		//#endregion
 		//#region src/client/plugin-card-seat.ts
 		/**
@@ -12432,6 +15347,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				if (reconciling) return;
 				const target = familyGroupLoaded(ctx) ? FAMILY_PLUGIN_CARD_SEAT : OFFICIAL_PLUGIN_CARD_SEAT;
 				if (current === target) return;
+				if (typeof slots.spec === "function" && slots.spec(target) === void 0) return;
 				reconciling = true;
 				const previous = dispose;
 				dispose = void 0;
@@ -12461,9 +15377,9 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				}
 			};
 			if (typeof ctx.on === "function") try {
-				ctx.on("slots/changed", () => {
+				ctx.on("slots/changed", (() => {
 					reconcile();
-				});
+				}));
 			} catch {}
 			reconcile();
 		}
@@ -12477,8 +15393,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				base: void 0,
 				user: void 0,
 				revision: void 0,
-				writable: false,
-				mode: "host"
+				writable: false
 			};
 		}
 		/**
@@ -12565,6 +15480,8 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			unsubscribeController;
 			/** Predicates registered before the controller exists, replayed on attach. */
 			pendingVisibility = [];
+			/** Source selectors registered before the controller exists, replayed on attach. */
+			pendingGrouping = [];
 			listeners = /* @__PURE__ */ new Set();
 			/** Bind the live board controller (called when the UI mounts). */
 			attach(controller) {
@@ -12575,6 +15492,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					this.notify();
 				});
 				for (const predicate of this.pendingVisibility.splice(0)) controller.registerVisibility(predicate);
+				for (const registration of this.pendingGrouping.splice(0)) if (registration.active) registration.dispose = controller.registerGrouping(registration.selector);
 				this.notify();
 			}
 			/** Release the current controller (called when the UI unmounts). */
@@ -12601,6 +15519,20 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				return () => {
 					const index = this.pendingVisibility.indexOf(predicate);
 					if (index !== -1) this.pendingVisibility.splice(index, 1);
+				};
+			}
+			registerGrouping(selector) {
+				if (this.controller !== void 0) return this.controller.registerGrouping(selector);
+				const registration = {
+					selector,
+					active: true
+				};
+				this.pendingGrouping.push(registration);
+				return () => {
+					registration.active = false;
+					registration.dispose?.();
+					const index = this.pendingGrouping.indexOf(registration);
+					if (index !== -1) this.pendingGrouping.splice(index, 1);
 				};
 			}
 			subscribe(callback) {
@@ -12670,25 +15602,6 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			"layout"
 		];
 		/**
-		* Read the agent-preset roster through the generated api-remotes face. The
-		* caller passes the namespace resolved inside its scoped inject, so a host
-		* that serves no such namespace never reaches here; a host that serves it
-		* answers `ok: false` instead, which leaves the picker options untouched.
-		* @param remote - the `remote.agentPresets` namespace.
-		* @returns the roster, or a failed read the caller ignores.
-		*/
-		async function readPresetRoster(remote) {
-			const response = await remote.list();
-			if (!response.ok) return {
-				ok: false,
-				presets: []
-			};
-			return {
-				ok: true,
-				presets: response.value.presets
-			};
-		}
-		/**
 		* Mount the task board.
 		* @param ctx - client root context (services: sessions, workspaces).
 		*/
@@ -12730,6 +15643,31 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 			ctx.effect(() => () => {
 				settingsCard.dispose();
 			}, "task-board: settings card");
+			let presetRoster;
+			let liveController;
+			const pushPresetOptions = async (presetRemote) => {
+				try {
+					const roster = await readPresetRoster(presetRemote);
+					if (!roster.ok) return;
+					const presets = presetOptionsFromRoster(roster.presets);
+					presetRoster = presets;
+					settingsCard.setPresetRoster(presets);
+					liveController?.setExecutionOptions({ presets });
+				} catch (error) {
+					console.error("[dsh-task-board] agent preset roster read failed", error);
+				}
+			};
+			const presetRosterFeed = ctx.inject(["remote.agentPresets"], (inner) => {
+				const presetRemote = inner.get("remote.agentPresets");
+				if (presetRemote === void 0) return;
+				pushPresetOptions(presetRemote);
+				return inner.on("connection/reset", () => {
+					pushPresetOptions(presetRemote);
+				});
+			});
+			ctx.effect(() => () => {
+				presetRosterFeed.dispose();
+			}, "task-board: agent preset roster");
 			let uiDisposer;
 			const mountUi = () => {
 				if (uiDisposer !== void 0) return;
@@ -12751,6 +15689,22 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				controller.start();
 				clientService.attach(controller);
 				const disposers = [];
+				liveController = controller;
+				if (presetRoster !== void 0) controller.setExecutionOptions({ presets: presetRoster });
+				disposers.push(startPendingVerification({
+					pending: () => controller.getSnapshot().tasks.some(hasOpenExecution),
+					refresh: () => {
+						controller.refreshHostState();
+					},
+					subscribe: (listener) => controller.subscribe(listener)
+				}));
+				let followedDefaults = cardDefaultSignature(settingsForm.getSnapshot().value);
+				disposers.push(settingsForm.subscribe(() => {
+					const next = cardDefaultSignature(settingsForm.getSnapshot().value);
+					if (next === followedDefaults) return;
+					followedDefaults = next;
+					controller.refreshHostState();
+				}));
 				const pushWorkspaceOptions = () => {
 					const snapshot = workspaces.list.getSnapshot();
 					controller.setExecutionOptions({ workspaces: snapshot.items.map((item) => ({
@@ -12763,32 +15717,6 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				controller.setWorkspaceCreator(async (path) => {
 					return { workspaceId: (await workspaces.create({ path })).workspaceId };
 				});
-				const pushPresetOptions = async (presetRemote) => {
-					try {
-						const roster = await readPresetRoster(presetRemote);
-						if (!roster.ok) return;
-						controller.setExecutionOptions({ presets: roster.presets.map((preset) => ({
-							id: preset.id,
-							name: preset.name,
-							description: preset.description,
-							broken: preset.broken,
-							isDefault: preset.isDefault
-						})) });
-					} catch (error) {
-						console.error("[dsh-task-board] agent preset roster read failed", error);
-					}
-				};
-				const presetRosterFeed = ctx.inject(["remote.agentPresets"], (inner) => {
-					const presetRemote = inner.get("remote.agentPresets");
-					if (presetRemote === void 0) return;
-					pushPresetOptions(presetRemote);
-					return inner.on("connection/reset", () => {
-						pushPresetOptions(presetRemote);
-					});
-				});
-				disposers.push(() => {
-					presetRosterFeed.dispose();
-				});
 				const pushModelOptions = async () => {
 					try {
 						let models = [];
@@ -12800,43 +15728,14 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 						}
 						if (typeof sessionRemote?.modelCatalog === "function") {
 							const res = await sessionRemote.modelCatalog();
-							if (res.ok && Array.isArray(res.value?.groups)) for (const g of res.value.groups) {
-								const provider = g.id ?? g.provider;
-								for (const m of g.models ?? []) {
-									const qualifiedId = provider ? `${provider}/${m.id}` : m.id;
-									models.push({
-										id: qualifiedId,
-										name: m.name ?? m.id,
-										provider
-									});
-								}
-							}
+							if (res.ok) models = modelOptionsFromCatalog(res.value);
 						}
 						if (models.length === 0) {
 							const conn = ctx.get("connection");
 							if (conn?.api) {
-								if (typeof conn.api.llm?.discoverModels === "function") {
-									const list = (await conn.api.llm.discoverModels())?.result?.value?.models;
-									if (Array.isArray(list)) models = list.map((m) => ({
-										id: m.id,
-										name: m.name
-									}));
-								}
+								if (typeof conn.api.llm?.discoverModels === "function") models = modelOptionsFromDiscoveredModels((await conn.api.llm.discoverModels())?.result?.value?.models);
 								const catalogFn = typeof conn.api.session?.modelCatalog === "function" ? conn.api.session.modelCatalog : typeof conn.api.sessions?.modelCatalog === "function" ? conn.api.sessions.modelCatalog : void 0;
-								if (models.length === 0 && catalogFn !== void 0) {
-									const groups = (await catalogFn())?.result?.value?.groups;
-									if (Array.isArray(groups)) for (const g of groups) {
-										const provider = g.id ?? g.provider;
-										for (const m of g.models ?? []) {
-											const qualifiedId = provider ? `${provider}/${m.id}` : m.id;
-											models.push({
-												id: qualifiedId,
-												name: m.name ?? m.id,
-												provider
-											});
-										}
-									}
-								}
+								if (models.length === 0 && catalogFn !== void 0) models = modelOptionsFromCatalog((await catalogFn())?.result?.value);
 							}
 						}
 						if (models.length > 0) controller.setExecutionOptions({ models });
@@ -12866,6 +15765,7 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 					for (const dispose of disposers.splice(0)) dispose();
 					clientService.detach();
 					controller.dispose();
+					liveController = void 0;
 					uiDisposer = void 0;
 				};
 			};
@@ -12905,6 +15805,26 @@ Please report this to https://github.com/markedjs/marked.`, e) {
 				forms: ctx.configForms,
 				entryIds: TASK_BOARD_ENTRY_IDS
 			});
+		}
+		/**
+		* The four new-card defaults one settings document holds, as a change
+		* signature.
+		*
+		* Deliberately nothing but those four keys: the settings form also carries the
+		* board's own switches and the acceptance configuration, and an edit to one of
+		* those says nothing about the defaults the create dialog prefills from. Not a
+		* second normalization of Host state — the value never leaves this comparison.
+		* @param value - the settings form's effective section, if it has one.
+		* @returns a stable string that changes exactly when the defaults do.
+		*/
+		function cardDefaultSignature(value) {
+			const section = value ?? {};
+			return JSON.stringify([
+				section.cardDefaultMode,
+				section.cardDefaultPermission,
+				section.cardDefaultModel,
+				section.cardDefaultReasoningEffort
+			]);
 		}
 		/**
 		* The profile entry id this package's own row carries, for a page that serves

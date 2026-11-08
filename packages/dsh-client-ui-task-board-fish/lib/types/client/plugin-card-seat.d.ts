@@ -47,6 +47,8 @@ export declare const FAMILY_GROUP_SERVICE = "webUiSettings";
 export interface PluginCardSlots {
     /** Contribution of one card entry. */
     register(options: never, component: never): unknown;
+    /** Declaration probe: a target seat may appear after this plugin applies. */
+    spec?(key: string): unknown;
 }
 /** The slice of the client context a card contribution needs. */
 export interface PluginCardContext {
@@ -54,7 +56,7 @@ export interface PluginCardContext {
     /** Service lookup; absent on a context double that only models the slots. */
     get?(name: string): unknown;
     /** Event subscription seat; absent on an event-less test double. */
-    on?(event: string, listener: (...args: never[]) => void): unknown;
+    on?(event: never, listener: never): unknown;
 }
 /** Owner share of a family list-seat card (that seat supplies nothing). */
 export interface SettingsPluginItemOwnerProps {

@@ -1,4 +1,5 @@
-import { type ExecutionOutcome, type ExecutionRecord, type ScheduleMode, type TaskRecord } from './core/tasks.ts';
+import { type ExecutionOutcome, type ExecutionRecord, type ExecutionSummary, type ScheduleMode, type TaskRecord } from './core/tasks.ts';
+import type { CardDefaults } from './core/card-defaults.ts';
 import { type TaskBoardAction, type TaskBoardSchedulerSnapshot } from './protocol.ts';
 import { type ExecutionVerification } from './core/verification.ts';
 import { type TaskPermission } from './core/handover.ts';
@@ -10,14 +11,13 @@ export interface LedgerState {
 export interface OpenedRun {
     task: TaskRecord;
     execution: ExecutionRecord;
-    /**
-     * How the Host obtains this run's session. Absent or `session` launches a
-     * fresh (or reused) execution session; `teammate` means the run belongs to a
-     * team-mode cascade, where the Host asks the root's Lead session to spawn a
-     * teammate instead of launching a session of its own.
-     */
-    dispatch?: 'session' | 'teammate';
 }
+/**
+ * Prefix of the `initiatedBy` an inherited descendant verdict carries. The Host
+ * recorded it on the run card's behalf (see `inheritVerdictForDescendants`), not
+ * an outside agent that reported its own work.
+ */
+export declare const PARENT_RUN_INITIATOR_PREFIX = "parent-run:";
 /** Minimal value copy used by the Host session monitor. */
 export interface OpenExecutionReference {
     readonly taskId: string;
@@ -51,7 +51,7 @@ export interface LedgerRuntimeView {
      * Session ids of every open execution, including the ones
      * {@link openExecutions} skips because their own outcome is already
      * recorded. A caller that asks whether the board still observes any session
-     * must use this list: a deferred cascade parent is settled by its members,
+     * must use this list: a stored run-group parent is settled by its members,
      * but it is still an open execution.
      */
     readonly openSessionIds: readonly string[];
@@ -95,7 +95,7 @@ export declare function win32StartTimeMs(pid: number, probe?: PowerShellProbe): 
  * missing, cyclic, or names an archived parent while the child is on board is
  * dropped (the task becomes a root) instead of dropping the task. A chain
  * deeper than the current `maxSubtaskDepth` is deliberately KEPT: the limit
- * gates new links, it never deletes a stored one, and every cascade walk is
+ * gates new links, it never deletes a stored one, and every lineage walk is
  * bounded by the limit anyway. The Host is the only writer of these links, so
  * this is a last-resort guard against a hand-edited or imported document.
  */
@@ -125,9 +125,22 @@ export declare class HostTaskLedger {
      * instead of remounting the row.
      */
     private depthLimit;
+    /** Live reader of the deployment's new-card defaults (a volatile config read). */
+    private readonly cardDefaults;
+    /**
+     * Live reader of the daily token cap (0 = no gate). The scheduled path asks it
+     * per due occurrence, so a cap raised after a skipped occurrence admits the
+     * next one without a restart.
+     */
+    private readonly spendBudget;
+    /** Today's measured spend in tokens, or undefined when nothing can be measured. */
+    private readonly spendUsed;
     constructor(dir?: string, now?: () => number, options?: {
         sessionDefaultPermission?: TaskPermission | (() => TaskPermission);
         maxSubtaskDepth?: number;
+        cardDefaults?: () => CardDefaults;
+        spendBudgetTokens?: () => number;
+        spendUsedToday?: (now: number) => number | undefined;
     });
     /** Current subtask depth limit (1..3). */
     get maxSubtaskDepth(): number;
@@ -171,10 +184,10 @@ export declare class HostTaskLedger {
         runs?: OpenedRun[];
     };
     /**
-     * Open the cascade one due schedule triggers: an empty array means nothing
-     * ran (already running, or a participant whose elevated permission is still
-     * unconfirmed, a one-shot whose instant was missed, or an exhausted budget),
-     * and the rule's own state says which.
+     * Open the one run a due schedule triggers: an empty array means nothing ran
+     * (already running, a card whose elevated permission is still unconfirmed, a
+     * one-shot whose instant was missed, or an exhausted budget), and the rule's
+     * own state says which.
      *
      * The run budget is enforced HERE, inside the single ledger writer: a rule
      * whose counter already reached its cap is stopped instead of opened, so no
@@ -184,6 +197,14 @@ export declare class HostTaskLedger {
      * @returns the executions this occurrence opened.
      */
     openScheduled(taskId: string, triggeredAt: number): OpenedRun[];
+    /**
+     * Why a due occurrence may not open a run because the day already spent the
+     * cap, or undefined when it may. A cap of 0 — the default — answers before the
+     * measurement is read, so a board with no gate reads no ledger file.
+     * @param now - clock instant (ms epoch).
+     * @returns the refusal message, when the cap is reached.
+     */
+    private spendRefusal;
     /**
      * Record a due occurrence that opened no execution: roll a recurring rule to
      * its next occurrence (budget untouched), or stop it when there is none. A
@@ -197,8 +218,8 @@ export declare class HostTaskLedger {
      * failed without creating a session (see
      * {@link applyScheduleRefund}). Called by the service on the failed-launch
      * path only; a manual run and a launch that did reach a session are never
-     * refunded. A no-op for a task with no rule, so a failed cascade member does
-     * not touch anything.
+     * refunded. A no-op for a task with no rule, so a failed run does not touch
+     * anything.
      * @param taskId - the task whose occurrence is being refunded.
      * @param now - clock instant (ms epoch).
      */
@@ -215,12 +236,46 @@ export declare class HostTaskLedger {
     skipMissed(now: number): void;
     setScheduler(patch: Partial<TaskBoardSchedulerSnapshot>): void;
     /**
-     * Settle one execution. A cascade participant first records its OWN outcome
-     * and only finalizes once every child execution in its run group has
-     * settled, so a parent card leaves 'running' with the whole tree's verdict
-     * rather than its own turn alone.
+     * Settle one execution. A NEW run is a single-member group, so it settles on
+     * its own turn. A run group the Host opened before it stopped spreading one
+     * run across a subtree is folded here instead: a stored participant records
+     * its OWN outcome and only finalizes once every child execution in its group
+     * has settled, so a parent card leaves 'running' with the whole group's
+     * verdict rather than its own turn alone.
+     *
+     * `summary` is what the run left behind (see `ExecutionSummary`), passed in
+     * by whichever reader observed the session. It is informational: a caller
+     * without one settles exactly as before, and a settlement never waits on it.
      */
-    settle(taskId: string, executionId: string, outcome: ExecutionOutcome, error?: string): void;
+    settle(taskId: string, executionId: string, outcome: ExecutionOutcome, error?: string, summary?: ExecutionSummary): void;
+    /**
+     * Record the run's verdict on the outstanding descendants its root was asked
+     * to dispatch.
+     *
+     * A card with unfinished subtasks runs as an autonomous dispatcher: its
+     * session reads the subtasks, dispatches them with subagents, and is asked to
+     * write their conclusions back with
+     * `task_board_manage({action:'record-external-outcome'})` before it finishes.
+     * A run that never wrote one back would leave those cards parked with no
+     * record of what the parent decided about them, so once the RUN CARD's
+     * execution reached a decisive terminal record, every outstanding descendant
+     * this run opened no execution for inherits that verdict as an external
+     * record.
+     *
+     * Idempotent by construction: a card that already carries an execution in
+     * this run group (the fold owns it), an open execution (it is running on its
+     * own), or a terminal record stamped after this run started (the dispatching
+     * agent's own backfill, or an earlier pass of this one) is left alone. Only a
+     * decisive verdict is inherited: a cancelled run judged nothing about the
+     * subtasks, and a subtask already in the done column has nothing left to
+     * inherit.
+     * @param taskId - the card whose execution just settled.
+     * @param executionId - that execution.
+     * @param groupId - its run group.
+     * @param now - clock instant (ms epoch).
+     * @returns whether the document changed.
+     */
+    private inheritVerdictForDescendants;
     attachSession(taskId: string, executionId: string, sessionId: string): void;
     allTasks(): readonly TaskRecord[];
     getTask(id: string): TaskRecord | undefined;
@@ -237,46 +292,57 @@ export declare class HostTaskLedger {
     /**
      * The binding that makes a run illegal, if any.
      *
-     * A plain cascade launches one session per participant, so every participant
-     * carries its own resolved binding and each one gates the run. A team run
-     * launches only the Lead session: the Lead's binding gates it, and a
-     * teammate inherits that session's permission, so a subtask's OWN pin is
-     * refused exactly when the Lead session does not already carry it — the
-     * teammate could never be given that authority, and dropping the pin
-     * silently would misreport the work (an inherited binding is the Lead's own
-     * and stays allowed once the Lead is confirmed).
+     * Only the card being run gets a session, so only ITS resolved binding gates
+     * the run: a subtask's own elevated permission is that subtask's gate when the
+     * subtask is run, and no longer blocks its parent from running.
      * @param root - the task being run.
      * @returns the first refusal, or undefined when the run may start.
      */
     private bindingRefusal;
     /**
-     * The tasks a cascade from `rootId` would actually open executions for, with
-     * their effective execution targets resolved. Archived members never run, and
-     * a member that already has an open execution is skipped (a task cannot run
-     * twice), so the result is the participant set the launch will use.
+     * The rework block a rework request opens its execution with, or the refusal
+     * that names why there is nothing to rework.
+     *
+     * Read from the ledger alone: a card that never ran, and a card whose runs
+     * recorded no session, have no conversation to send the reviewer's
+     * instructions into. Minting one would hand those instructions to an agent
+     * that never saw the work being sent back, which is the opposite of what a
+     * rework asks for.
+     * @param task - the card being reworked.
+     * @param instructions - the reviewer's instructions, already validated.
+     * @returns the block recorded on the opened execution.
      */
-    private cascadeParticipants;
+    private reworkInput;
     /** Whether a task or any of its subtasks still has an open execution. */
     private subtreeHasOpenExecution;
+    /** The descendants of a card that still hold work, as the launch prompt names them. */
+    outstandingDescendants(taskId: string): TaskRecord[];
+    /** Whether a card still has a subtask outside the done column. */
+    hasOutstandingDescendants(taskId: string): boolean;
     /**
-     * Open one execution per cascade participant (the requested task and its
-     * on-board descendants, within the depth limit) under a single run group, and
-     * commit the ledger once. The returned runs are ordered root-first, so the
-     * Host launches the parent before its subtasks.
+     * Open ONE execution for the requested card, under a fresh run group, and
+     * commit the ledger once. The group stays single-member on purpose: a run
+     * never opens a session for a subtask (that card's own agent dispatches
+     * subagents inside this session), and the group id is what later lets the
+     * settlement fold a HISTORICAL multi-member group it opened before this
+     * behavior changed.
      * @param root - the task the user ran.
      * @param now - clock instant (ms epoch).
      * @param initiator - the DSH session that asked for the run (audit only).
      * @param rerun - true to reset the root to 'todo' before starting it.
      * @param progress - when set, this run was a due occurrence and the root's
      *   rule is advanced (counter, next target, stop/skip record) in the same
-     *   atomic commit that opened the executions.
+     *   atomic commit that opened the execution.
+     * @param rework - the reviewer's instructions, when this run redoes previous
+     *   work; recorded on the execution it opens.
      */
-    private startCascade;
+    private startRun;
     /**
-     * Finalize every cascade parent that is ready, walking from `taskId` up the
-     * lineage: a member settles once its own outcome is recorded and none of its
-     * group children is still open, and its verdict folds those children in
-     * (failure dominates, then cancellation).
+     * Finalize every stored run-group parent that is ready, walking from `taskId`
+     * up the lineage: a member settles once its own outcome is recorded and none
+     * of its group children is still open, and its verdict folds those children in
+     * (failure dominates, then cancellation). A single-member group — every run
+     * this Host opens now — settles on its own turn exactly as any plain run does.
      */
     private settleCascade;
     /**
@@ -284,11 +350,12 @@ export declare class HostTaskLedger {
      * members are all settled. The Host poll calls this on every tick, so a run
      * can no longer be left in the running column by a settle nobody observed:
      *
-     * - A team run is governed by its Lead. Once the Lead's own outcome is
+     * - A stored team run is governed by its Lead. Once the Lead's own outcome is
      *   recorded, its still-open members are settled with that verdict. A
      *   teammate is a durable member of the Team and may never report a turn of
-     *   its own, and without this the whole lineage waits on it forever.
-     * - A cascade parent whose members are all settled is finalized here even
+     *   its own, and without this the whole lineage waits on it forever. New runs
+     *   never start a team, so this only closes a group the ledger already holds.
+     * - A stored group parent whose members are all settled is finalized here even
      *   when the settle that completed the tree happened in another process, or
      *   was interrupted between its child write and its parent write.
      *

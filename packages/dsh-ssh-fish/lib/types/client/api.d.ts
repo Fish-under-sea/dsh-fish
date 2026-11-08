@@ -135,6 +135,27 @@ export declare class SshApi {
      * @param rows - the view's current height.
      */
     attachTerminal(sessionId: string, cols: number, rows: number): TerminalConnection;
+    /**
+     * End a host session this view is not attached to (closing a background
+     * tab). The session has no other handle from the browser: giving it a
+     * dedicated HTTP route would widen the host's surface for one frame, so this
+     * opens one short-lived attach instead and sends the close frame as soon as
+     * the socket is open.
+     *
+     * The answer is "is this session no longer running", which has three
+     * truthful answers and one lie to avoid:
+     *   - the frame went out on an open socket: the host ends the session;
+     *   - the host answered with an exit frame: an unknown id is reported as
+     *     `terminal session expired` and an ended shell also exits, and in both
+     *     cases nothing is running, so the tab really is closed;
+     *   - the socket errored, closed before opening, or never settled inside
+     *     `timeoutMs`: delivery is unproven, so the session may still be alive and
+     *     the caller must keep the tab instead of claiming it closed.
+     * @param sessionId - the session id the host reported on its ready frame.
+     * @param timeoutMs - bounded wait for the delivery signal (default 5000).
+     * @returns true when the session is known to be gone.
+     */
+    closeTerminalSession(sessionId: string, timeoutMs?: number): Promise<boolean>;
     /** One terminal socket over either an alias (open) or a session id (attach). */
     private terminalSocket;
 }

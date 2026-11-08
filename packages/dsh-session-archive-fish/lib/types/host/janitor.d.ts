@@ -12,7 +12,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import { planDelete } from '../core/cascade.ts';
 import { type ResolvedAutoConfig } from '../core/config.ts';
-import type { AutoPreviewView, AutoStateView, BatchResponse, InventoryView, RunStats, SessionPreviewView } from '../core/types.ts';
+import type { ArchiveSessionRow, AutoPreviewView, AutoStateView, BatchResponse, InventoryView, RunStats, SessionPreviewView } from '../core/types.ts';
 import { type LedgerDocument } from './ledger.ts';
 /** Thrown when the caller's expected delete total disagrees with the host plan. */
 export declare class PlanMismatchError extends Error {
@@ -26,6 +26,32 @@ export declare class BusyError extends Error {
 export interface ArchiveServiceOptions {
     dshHome?: string;
 }
+/**
+ * Ids whose archive time is unknown to the ledger even though the session is
+ * archived - sessions archived from the official sidebar, which never reaches
+ * this plugin. Their rows carry no `archivedAt`, so the retention clock cannot
+ * start for them (`autoDeleteSeedCandidates` skips them) until something
+ * records one. The order follows the row order, so a backfill is deterministic.
+ *
+ * Rows flagged `unreadable` or `no-data` are deliberately excluded. Those flags
+ * say the plugin could not read the session's data on this pass, which is
+ * usually transient (an unmounted volume, a drive that is not ready, a failed
+ * read on a busy host) - the session itself is still there. Recording an
+ * archive time for such a row would start a clock that ends in an
+ * unrecoverable physical delete, turning a temporary read failure into
+ * permanent data loss. They keep "archive time unknown" and stay outside
+ * auto-delete, exactly as before this switch existed; once the data reads
+ * again the flag clears and the next pass can record the time.
+ */
+export declare function observedArchiveIds(rows: readonly ArchiveSessionRow[]): string[];
+/**
+ * Project a set of just-backfilled ids onto a row array: the named rows gain the
+ * observation time and its `observed` source, every other row is returned as the
+ * very same object. Pure - this is the read-side half of a backfill, so the
+ * candidate rules of one cycle see the archive time that cycle records without a
+ * second inventory pass, and the preview can show it without writing.
+ */
+export declare function projectObservedArchives(rows: readonly ArchiveSessionRow[], backfilled: ReadonlySet<string>, now: number): ArchiveSessionRow[];
 export declare class ArchiveService {
     private readonly ctx;
     private readonly dshHome;
@@ -69,10 +95,34 @@ export declare class ArchiveService {
     private readFile;
     private flushLedger;
     private flushState;
+    /**
+     * Record an `observed` ledger entry for every archived row whose archive
+     * time is unknown, then persist once - and only when something was written,
+     * so a backfill that finds nothing never touches the ledger file.
+     *
+     * The recorded time is the moment of observation, which is a lower bound on
+     * the real archive moment (the session was archived at or before it). Because
+     * `autoDeleteSeedCandidates` skips archive times at or after the run start,
+     * this also keeps a row out of the delete set of the very cycle that records
+     * it.
+     *
+     * Callers inside a cycle must NOT hold the operation lock (runAutoCycle holds
+     * it); this method deliberately takes none.
+     * @returns the ids written, in row order.
+     */
+    private recordObservedArchives;
     private sources;
     private serviceFace;
     /** Live session ids (attached in this host process) — treated as in-use. */
     private liveSessionIds;
+    /**
+     * Row-level host protection facts the browser half cannot observe: live-store
+     * members are `attached`, sessions a mutating operation owns are `in-flight`.
+     * `running` (feed flag) and `current` (the client's own session) travel on
+     * their own, so the wire carries only what the client cannot see. The
+     * `in-flight` write lands last, matching {@link protectedReason}'s precedence.
+     */
+    private hostProtectedReasons;
     /** Protection map shared by manual delete and auto cycles. */
     private protectedReason;
     private statsFrom;
@@ -112,6 +162,15 @@ export declare class ArchiveService {
      * session archived by this very cycle is never deleted in it.
      */
     runAutoCycle(kind: 'archive' | 'delete', currentSessionId?: string): Promise<RunStats>;
+    /**
+     * The backfill-only scheduler step: take the lock, run one inventory pass and
+     * record the observed archives. Used when the backfill is the only automatic
+     * behaviour this deployment enables, so the recorded archive times still reach
+     * the list without an auto-delete cycle. It takes the lock itself and must
+     * therefore never be called from inside a cycle (where the lock is held).
+     * @returns the number of entries written.
+     */
+    private cycleObservedArchives;
     /** Archive without re-acquiring the lock (used inside cycles). */
     private archiveInternal;
     private armScheduler;

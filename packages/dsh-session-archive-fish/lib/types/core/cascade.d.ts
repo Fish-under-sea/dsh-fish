@@ -21,8 +21,16 @@ export declare function descendantsOf(rows: readonly ArchiveSessionRow[], id: st
  */
 export declare function planDelete(rows: readonly ArchiveSessionRow[], directIds: readonly string[], protectedReason: ReadonlyMap<string, string>): DeletePlanView;
 /**
- * Protected-reason map for preview surfaces. `running` and `current` are the
- * two facts the browser half knows; the host adds `in-flight` and re-checks
- * everything authoritatively.
+ * Protected-reason map for preview surfaces. `running` and `current` are facts
+ * the browser half observes itself; `attached` and `in-flight` come from the
+ * row's {@link ArchiveSessionRow.hostProtectedReason}, which an older host does
+ * not send — those rows simply stay unprotected here, and the host still
+ * refuses them authoritatively.
  */
 export declare function clientProtectedReason(rows: readonly ArchiveSessionRow[], currentSessionId: string | undefined): Map<string, string>;
+/**
+ * True when the host protects every selected session. The batch delete
+ * affordance is disabled in exactly that case: a selection the host would skip
+ * whole has nothing left to act on.
+ */
+export declare function selectionFullyProtected(ids: readonly string[], protectedReason: ReadonlyMap<string, string>): boolean;

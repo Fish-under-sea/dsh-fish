@@ -1,21 +1,18 @@
 /**
- * The usage statistics settings section: three tabs (用量: today's usage,
- * balances, trend; 个人套餐: per-provider plan quota windows; Token 银行:
- * the whale-yuan voucher minted from the DeepSeek official family's usage)
- * plus a compact settings row. Data comes from the host's loopback-fenced
- * /api/dsh-usage/overview document; polling runs only while the section is
- * mounted and the tab is visible.
+ * The usage statistics settings page: one family settings card whose header
+ * carries the plugin switch, whose body holds three tabs (用量: today's
+ * usage, balances, trend; 个人套餐: per-provider plan quota windows; Token
+ * 银行: the whale-yuan voucher minted from every provider's ledger usage)
+ * and, under them, the display rows. Data comes from the host's
+ * loopback-fenced /api/dsh-usage/overview document; polling runs only while
+ * the section is mounted and the tab is visible.
  * @module @fish-under-sea/dsh-usage-fish/client/UsageSectionCard
  */
 import { type ReactNode } from 'react';
-import type { ConfigForm } from '@deepseek-ai/dsh-client-ui-settings/client';
 import type { UsageStoreInstance } from './usage-store.ts';
+import type { UsageSettingsCardFace } from './usage-settings-card.ts';
 import type { UsageDayView } from '../core/types.ts';
-/** The settings fields this section edits (immediate-apply semantics). */
-export interface UsageSettings {
-    enabled?: boolean;
-    pollIntervalSec?: number;
-}
+export type { UsageSettings } from './usage-settings-card.ts';
 /** The registration-side face the section's slot entry injects. */
 export interface UsageSectionFace {
     /** The section-local store (overview snapshot + lifecycle). */
@@ -30,8 +27,8 @@ export interface UsageSectionFace {
      * is one small on-demand request.
      */
     loadDay: (date: string) => Promise<UsageDayView>;
-    /** The shared configuration form this section's settings row reads and writes. */
-    settings: ConfigForm<UsageSettings>;
+    /** The settings card over the usage namespace: the plugin switch and the display rows. */
+    settingsCard: UsageSettingsCardFace;
 }
 export interface UsageSectionProps extends UsageSectionFace {
     /** Close the settings panel (the shell owns the open state). */

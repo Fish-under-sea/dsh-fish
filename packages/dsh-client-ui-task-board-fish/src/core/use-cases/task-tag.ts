@@ -15,6 +15,13 @@
  * Renaming onto a name that is already in use MERGES the two: a task carrying
  * both keeps the row it already had (with its execution hint) and loses the
  * duplicate, which is the only reading that cannot lose a hint the user typed.
+ *
+ * Clearing up is the third ledger-wide transition, and it is a SELECTION rather
+ * than a fourth rewrite: {@link cleanupCandidates} names the labels that are
+ * both rarely used and attached only to finished tasks, and each of them then
+ * leaves through {@link applyDeleteTag} like any other delete. One delete path,
+ * one meaning — a label never disappears by a second rule written beside the
+ * first.
  */
 
 import { TAG_NAME_MAX_LENGTH, collectKnownTags, normalizeTags, type TaskRecord, type TaskTag } from '../tasks.ts'
@@ -107,4 +114,53 @@ export function applyDeleteTag(
     return { ...task, tags: normalizeTags(tags.filter(tag => tag.name !== target)), updatedAt: now }
   })
   return { tasks: changed ? next : tasks, changed }
+}
+
+/** One label the manager offers to clear, with the tasks it would be taken from. */
+export interface TagCleanupCandidate {
+  /** The label name. */
+  name: string
+  /** Tasks carrying the label right now, board and archive alike. */
+  count: number
+}
+
+/**
+ * Labels that are both rarely used and finished with: fewer tasks carry them
+ * than `threshold`, and every one of those tasks is done or failed.
+ *
+ * The judgement reads the whole ledger it is given — the board's label row and
+ * the archive draw from the same set, so an archived card counts towards a
+ * label's usage and can keep it alive on its own. Archiving alone decides
+ * nothing: an archived card in a finished column lets its label through, while
+ * an archived card still in backlog, todo or running holds it back, because a
+ * label that live work still points at is not junk.
+ *
+ * A non-finite threshold selects nothing (a missing number has no reading that
+ * is safe to act on); a threshold at or below one selects nothing either, since
+ * a label by definition sits on at least one task and none can carry fewer.
+ *
+ * Order follows {@link collectKnownTags}, which is the order the manager lists
+ * labels in, and the count is the same number the manager shows per label.
+ * @param tasks - the whole ledger (board and archive).
+ * @param threshold - exclusive upper bound on the usage count.
+ * @returns the labels a cleanup may remove, in listing order.
+ */
+export function cleanupCandidates(tasks: readonly TaskRecord[], threshold: number): TagCleanupCandidate[] {
+  if (!Number.isFinite(threshold)) return []
+  const counts = new Map<string, number>()
+  const unfinished = new Set<string>()
+  for (const task of tasks) {
+    const settled = task.status === 'done' || task.status === 'failed'
+    for (const tag of task.tags ?? []) {
+      counts.set(tag.name, (counts.get(tag.name) ?? 0) + 1)
+      if (!settled) unfinished.add(tag.name)
+    }
+  }
+  const candidates: TagCleanupCandidate[] = []
+  for (const tag of collectKnownTags(tasks)) {
+    const count = counts.get(tag.name) ?? 0
+    if (count >= threshold || unfinished.has(tag.name)) continue
+    candidates.push({ name: tag.name, count })
+  }
+  return candidates
 }

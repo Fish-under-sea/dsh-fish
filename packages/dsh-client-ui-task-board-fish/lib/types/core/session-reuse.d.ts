@@ -19,6 +19,12 @@ import type { TaskRecord } from './tasks.ts';
  * @param task - the task about to run.
  * @param idleSessionIds - ids the last roster saw as present and not running;
  *   undefined when that roster is unknown.
+ * @param options.force - continue the settled session regardless of the card's
+ *   own `reuseSession` opt-in. A rework is exactly that case: the reviewer read
+ *   the previous run's session and sent it back. Every condition above still
+ *   applies — the force waives the opt-in, never the evidence.
  * @returns the session id to continue in, or undefined for a fresh session.
  */
-export declare function reusableSessionId(task: TaskRecord, idleSessionIds: ReadonlySet<string> | undefined): string | undefined;
+export declare function reusableSessionId(task: TaskRecord, idleSessionIds: ReadonlySet<string> | undefined, options?: {
+    force?: boolean;
+}): string | undefined;

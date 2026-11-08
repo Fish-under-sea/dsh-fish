@@ -13,6 +13,13 @@ export interface SessionArchiveConfig {
     autoDeleteEnabled?: boolean;
     /** Archive retention in days for auto-delete (1-3650). */
     autoDeleteDays?: number;
+    /**
+     * Default off. When enabled, a session found already archived with no ledger
+     * entry (archived from the official sidebar, which never reaches this
+     * plugin) gets one backfilled `observed` entry at the moment the plugin
+     * observes it, so the retention clock starts for that session.
+     */
+    recordManualArchive?: boolean;
     /** Scheduler cadence in minutes (15-1440). */
     checkIntervalMin?: number;
 }
@@ -38,6 +45,7 @@ export interface SessionArchiveConfigFields {
     autoArchiveDays?: ConfigField<number>;
     autoDeleteEnabled?: ConfigField<boolean>;
     autoDeleteDays?: ConfigField<number>;
+    recordManualArchive?: ConfigField<boolean>;
     checkIntervalMin?: ConfigField<number>;
 }
 /**
@@ -59,6 +67,7 @@ export interface ResolvedAutoConfig {
     autoArchiveDays: number;
     autoDeleteEnabled: boolean;
     autoDeleteDays: number;
+    recordManualArchive: boolean;
     checkIntervalMin: number;
 }
 export declare const AUTO_ARCHIVE_DAYS_MIN = 1;

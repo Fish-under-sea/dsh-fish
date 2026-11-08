@@ -35,6 +35,13 @@ export declare class ArchiveController {
     getCurrentSessionId(): string | undefined;
     private currentSessionId;
     load(): Promise<void>;
+    /**
+     * Protection map over the current inventory snapshot: the same input the
+     * confirm-dialog plan is computed from, and what the list reads to disable the
+     * affordances the host would refuse. Rows carrying no host fact degrade to
+     * what the browser half observes itself.
+     */
+    protectedReason(): Map<string, string>;
     /** The delete plan the confirm dialog shows, from the current snapshot. */
     planDeleteFor(directIds: readonly string[]): {
         plan: DeletePlanView;

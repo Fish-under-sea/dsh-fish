@@ -118,7 +118,7 @@ function mountOnce(packageName, fn) {
 	return mount;
 }
 //#endregion
-//#region ../../node_modules/.pnpm/@deepseek-ai+dsh-brand@0.2.0-rc.2_@deepseek-ai+cordis@4.0.4/node_modules/@deepseek-ai/dsh-brand/lib/index.js
+//#region ../../node_modules/@deepseek-ai/dsh-brand/lib/index.js
 /**
 * Duplicate-install-safe nominal primitive helpers.
 *
@@ -141,7 +141,7 @@ function brandString(value) {
 	return value;
 }
 //#endregion
-//#region ../../node_modules/.pnpm/@deepseek-ai+dsh-credential_13783eb73d2217c5a4a149b781a9cc49/node_modules/@deepseek-ai/dsh-credentials/lib/index.js
+//#region ../../node_modules/@deepseek-ai/dsh-credentials/lib/index.js
 /**
 * Service Definition for the credential-reference capability seam (`ctx.credentials`). Settings and composition files carry
 * *references* to secrets — environment-variable names — while providers own
@@ -746,30 +746,6 @@ function isDeepSeekProviderRoute(provider) {
 	return DEEPSEEK.familyOnlyIds?.includes(provider) === true;
 }
 /**
-* Whether one ledger model id denotes a DeepSeek model, whichever route served
-* it. Consumption of a DeepSeek model through an aggregator or a relay is still
-* DeepSeek consumption, so the Token Bank's price-book scenario counts it — the
-* route-family predicate alone only ever sees the official account.
-*
-* The match is deliberately narrow: `deepseek` must appear in the id. Every
-* real naming observed in this machine's ledger keeps the vendor token —
-* `deepseek-v4.1-flash` (bailian), `loomy/DeepSeek-V4.1-Flash` (a relay),
-* `our-free-model/deepseek-ai/deepseek-v4.1-flash` — and the official routes log
-* `deepseek-flash`.
-*/
-function isDeepSeekModelId(model) {
-	return /deepseek/i.test(model);
-}
-/**
-* Whether one ledger row (route + model) counts as DeepSeek consumption. The
-* route clause keeps an official route honest even if it ever logged a model id
-* without the vendor token; the model clause is what reaches relay and
-* aggregator traffic.
-*/
-function countsAsDeepSeekUsage(provider, model) {
-	return isDeepSeekProviderRoute(provider) || isDeepSeekModelId(model);
-}
-/**
 * Best-effort human message from a provider error body, for the per-provider
 * error line. Never throws; truncated to one short sentence.
 */
@@ -1281,7 +1257,6 @@ function totalTokens(totals) {
 */
 function summarizeDays(days) {
 	const merged = /* @__PURE__ */ new Map();
-	const deepseek = emptyTotals();
 	for (const day of days) for (const [provider, models] of Object.entries(day)) {
 		if (!isSafeBucketKey(provider) || typeof models !== "object" || models === null) continue;
 		let modelMap = merged.get(provider);
@@ -1294,7 +1269,6 @@ function summarizeDays(days) {
 			const bucket = modelMap.get(model) ?? emptyTotals();
 			addTotals(bucket, totals);
 			modelMap.set(model, bucket);
-			if (countsAsDeepSeekUsage(provider, model)) addTotals(deepseek, totals);
 		}
 	}
 	const providers = [];
@@ -1317,8 +1291,7 @@ function summarizeDays(days) {
 	for (const row of providers) addTotals(totals, row.totals);
 	return {
 		totals,
-		providers,
-		deepseek
+		providers
 	};
 }
 /** All local-date keys in the ledger, ascending. */
@@ -1376,6 +1349,30 @@ function deserializeLedger(value) {
 		}
 	}
 	return doc;
+}
+//#endregion
+//#region src/core/spend.ts
+/**
+* The rate used when the row configures none: a plain default, so an
+* unconfigured display still has a defined美元 figure instead of a blank card.
+* The plugin never fetches a live rate (its host routes are loopback-fenced and
+* its browser half has no network), so there is no fetch that could fail and
+* leave the card empty.
+*/
+const DEFAULT_CNY_PER_USD = 7.2;
+/**
+* Normalize a configured display.
+* An unknown currency reads as CNY, and a rate that is not a positive finite
+* number falls back to the default rate — the display must never be able to
+* blank the card.
+* @param input - the configured currency and rate, if any.
+* @returns a display that can always render.
+*/
+function resolveSpendDisplay(input) {
+	return {
+		currency: input?.currency === "USD" ? "USD" : "CNY",
+		cnyPerUsd: typeof input?.cnyPerUsd === "number" && Number.isFinite(input.cnyPerUsd) && input.cnyPerUsd > 0 ? input.cnyPerUsd : DEFAULT_CNY_PER_USD
+	};
 }
 //#endregion
 //#region src/host/usage-service.ts
@@ -1582,6 +1579,7 @@ var UsageService = class {
 		const all = summarizeDays(allKeys.map((key) => this.ledger.days[key] ?? {}));
 		return {
 			updatedAt: Date.now(),
+			display: resolveSpendDisplay(this.options.display),
 			providers,
 			current: this.currentView(),
 			usage: {
@@ -1596,16 +1594,14 @@ var UsageService = class {
 					from: days[0] ?? todayKey,
 					to: days[days.length - 1] ?? todayKey,
 					totals: range.totals,
-					providers: range.providers,
-					deepseek: range.deepseek
+					providers: range.providers
 				},
 				availableDays: allKeys,
 				all: {
 					from: allKeys[0] ?? todayKey,
 					to: allKeys[allKeys.length - 1] ?? todayKey,
 					totals: all.totals,
-					providers: all.providers,
-					deepseek: all.deepseek
+					providers: all.providers
 				},
 				...this.spendWatch !== void 0 && this.spendWatch.accruedCny > 0 ? { observedSpend: {
 					cny: this.spendWatch.accruedCny,
@@ -1653,12 +1649,11 @@ var UsageService = class {
 	}
 	/** One local day aggregated per provider. */
 	daySummary(dateKey) {
-		const { totals, providers, deepseek } = summarizeDays([this.ledger.days[dateKey] ?? {}]);
+		const { totals, providers } = summarizeDays([this.ledger.days[dateKey] ?? {}]);
 		return {
 			date: dateKey,
 			totals,
-			providers,
-			deepseek
+			providers
 		};
 	}
 	/**
@@ -2055,12 +2050,26 @@ function isLoopbackHostname(hostname) {
 	return isIPv4Loopback(hostname);
 }
 /**
+* Whether a reverse proxy stood between the client and this host: the request
+* carries CF-Connecting-IP or X-Forwarded-For. Either header is stamped by a
+* hop that forwards traffic, so the request did not originate on this machine.
+* @param request - node HTTP request.
+* @returns true when a forwarding header is present.
+*/
+function isProxiedRequest(request) {
+	return request.headers["cf-connecting-ip"] !== void 0 || request.headers["x-forwarded-for"] !== void 0;
+}
+/**
 * Request-level trust fence: a loopback socket address AND a loopback Host
 * header, plus browser same-origin markers. The socket address is
-* authoritative; X-Forwarded-For is never trusted.
+* authoritative for a direct connection; a request that carries a forwarding
+* header is refused outright, because a proxy in front of the host makes both
+* the socket address and the Host header describe the proxy rather than the
+* client. X-Forwarded-For is therefore never evidence *for* loopback.
 */
 function isLoopbackRequest(request) {
 	if (!isLoopbackAddress(request.socket.remoteAddress)) return false;
+	if (isProxiedRequest(request)) return false;
 	const host = request.headers.host;
 	if (typeof host !== "string") return false;
 	let hostUrl;
@@ -2089,8 +2098,31 @@ function isLoopbackRequest(request) {
 */
 function isPairedOrLoopbackAllowed(ctx, request) {
 	if (isLoopbackRequest(request)) return true;
-	const fromGet = typeof ctx.get === "function" ? ctx.get("remoteWebUiPairing", false) : void 0;
-	return (isPairingAccess(fromGet) ? fromGet : ctx.remoteWebUiPairing)?.isPairedDevice(request) === true;
+	return lookupPairing(ctx)?.isPairedDevice(request) === true;
+}
+/**
+* The pairing service, or undefined when this composition does not expose it.
+*
+* Two lookups exist because the fence is shared with test harnesses that hand
+* over a bare object: a real cordis context resolves services through `get`, a
+* harness may carry the property directly. `get(name, false)` is the
+* non-strict form, so an unloaded service answers undefined rather than
+* throwing. Reading an un-injected service as a PROPERTY throws instead
+* (`cannot get property "remoteWebUiPairing" without inject`); a trust fence
+* must answer "not paired" in that case, never leak the error into the route
+* handler, where the host web server turns it into an empty-body 400 (#1942).
+*/
+function lookupPairing(ctx) {
+	if (typeof ctx.get === "function") {
+		const viaGet = ctx.get("remoteWebUiPairing", false);
+		return isPairingAccess(viaGet) ? viaGet : void 0;
+	}
+	try {
+		const viaProperty = ctx.remoteWebUiPairing;
+		return isPairingAccess(viaProperty) ? viaProperty : void 0;
+	} catch {
+		return;
+	}
 }
 function isPairingAccess(value) {
 	return value !== void 0 && value !== null && typeof value.isPairedDevice === "function";
@@ -2238,7 +2270,9 @@ const USAGE_SETTINGS_NAMESPACE = "dsh-usage";
 const Config = z.object({
 	enabled: z.boolean().default(true).volatile(),
 	pollIntervalSec: z.number().min(30).max(3600).default(60).volatile(),
-	retainDays: z.number().min(7).max(730).default(180).volatile()
+	retainDays: z.number().min(7).max(730).default(180).volatile(),
+	spendCurrency: z.union(["CNY", "USD"]).default("CNY").volatile(),
+	cnyPerUsd: z.number().min(.01).max(1e3).default(DEFAULT_CNY_PER_USD).volatile()
 });
 /** Read one config field, following the live reference the schema produces. */
 function readConfigField(field) {
@@ -2262,7 +2296,11 @@ function resolveConfig(config) {
 	return {
 		enabled: readConfigField(config?.enabled) ?? true,
 		pollIntervalSec: readNumber(config?.pollIntervalSec, 60),
-		retainDays: readNumber(config?.retainDays, 180)
+		retainDays: readNumber(config?.retainDays, 180),
+		display: resolveSpendDisplay({
+			currency: readConfigField(config?.spendCurrency),
+			cnyPerUsd: readNumber(config?.cnyPerUsd, DEFAULT_CNY_PER_USD)
+		})
 	};
 }
 /**

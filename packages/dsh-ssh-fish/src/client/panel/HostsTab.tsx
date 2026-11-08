@@ -187,6 +187,9 @@ export function HostsTab({ api, onConnect }: HostsTabProps) {
           {host.proxyCommand !== undefined && (
             <span className={css.badge} data-kind="proxy" title={host.proxyCommand}>{tt('hosts.proxyBadge')}</span>
           )}
+          {host.forwardAgent === true && (
+            <span className={css.badge} data-kind="forward-agent" title={tt('hosts.forwardAgentHint')}>{tt('hosts.forwardAgentBadge')}</span>
+          )}
         </td>
         <td>{host.user}</td>
         <td><span className={css.badge} data-kind={host.auth}>{host.auth === 'key' ? tt('form.auth.key') : host.auth === 'password' ? tt('form.auth.password') : tt('form.auth.agent')}</span></td>
