@@ -1,6 +1,6 @@
 # @fish-under-sea/dsh-settings-nav-order
 
-**1.0.2 · Settings Navigation and Command Menu Order**
+**1.1.0 · Settings Navigation and Command Menu Order**
 
 [简体中文](README.md)
 
@@ -8,7 +8,7 @@
 
 Reorders and hides settings navigation entries and persists presentation preferences.
 
-Version `1.0.2` adds icons, localized titles and a default order for four extension commands. Each row displays an icon, a localized title and its original command name, matching the desktop pet commands.
+Version `1.1.0` adds icons, localized titles and a default order for four extension commands. Each row displays an icon, a localized title and its original command name, matching the desktop pet commands.
 
 | Default order | English title | Command |
 | --- | --- | --- |
@@ -22,10 +22,10 @@ The `acp` and `acp-cache` descriptions also follow the Chinese or English interf
 ## Installation
 
 ```sh
-dsh plugin --profile <profile> add @fish-under-sea/dsh-settings-nav-order@1.0.2
+dsh plugin --profile <profile> add @fish-under-sea/dsh-settings-nav-order@1.1.0
 ```
 
-Also included in `@fish-under-sea/dsh-fish@1.0.2`. Do not expand duplicate rows through both aggregate and standalone bundles. Restart DSH after installation; use the desktop plugin manager when no CLI is available.
+Also included in `@fish-under-sea/dsh-fish@1.1.0`. Do not expand duplicate rows through both aggregate and standalone bundles. Restart DSH after installation; use the desktop plugin manager when no CLI is available.
 
 ## Configuration and Safety
 
@@ -35,10 +35,10 @@ State is stored in `$DSH_HOME/dsh-settings-nav-order/state.json` with browser-lo
 
 Hiding a section does not disable its plugin.
 
-Node requirement: `>=20`. Host compatibility follows this package manifest; the aggregate does not override Host checks.
+Node requirement: `>=24.9`. Host compatibility follows this package manifest; the aggregate does not override Host checks.
 
 ## Maintenance and Attribution
 
-1.0.2 is a coordinated release number, not a claim that all latest upstream commits are merged. Historical documentation remains in Git; see [aggregate changelog](https://github.com/Fish-under-sea/dsh-fish/blob/main/CHANGELOG.en.md).
+1.1.0 is a coordinated release number, not a claim that all latest upstream commits are merged. Historical documentation remains in Git; see [aggregate changelog](https://github.com/Fish-under-sea/dsh-fish/blob/main/CHANGELOG.en.md).
 
 Fish-native plugin. License: MIT.

@@ -4,6 +4,17 @@
 
 ---
 
+## 1.1.0 (2026-11-08)
+
+- **Adapted to DSH 0.2.2-rc.1**: every member’s `dsh.engines.dsh` and peer declaration move to `>=0.2.2-rc.1`, `engines.node` moves to `>=24.9` (DSH 0.2.2’s minimum Node), and type dependencies plus build targets move to `@deepseek-ai/* 0.2.2-rc.1`. Upstream dsh-web has built against 0.2.2’s types and runtime contracts since v0.4.15 (including asynchronous Session Projection registration), and this sync brings those changes in.
+- **Upstream sync**: Task Board, Session Archive, SSH Operations and Usage Monitor move to `zhu1090093659/dsh-web` v0.4.16; AgentTeams moves to `NanmiCoder/dsh-agent-teams` v0.1.29 (member model fallback, output-limit failure handling, per-session activity polling, background deliverable audits). Skill Lens’s upstream `x-feichen/dsh-skill-lens` has had no new commits since 2026-09-03 and only receives Host adaptation.
+- **Git Graph retired**: upstream dsh-web removed the `dsh-git-graph` plugin in v0.4.14 (2026-11-03), so this bundle retires it too and drops from 11 to 10 members (10 to 9 in-repository). The `ui-git-graph` row leaves `cordis.patch.yml` and the dependency list; install `@fish-under-sea/dsh-client-ui-git-graph-fish@1.0.2` separately when needed.
+- **Version**: all ten members and the aggregate are unified at `1.1.0`, with exact dependency pins.
+- The release contract follows: member version 1.1.0, nine in-repository package directories, and the Git Graph member removed.
+- Both READMEs are updated: install example, Host and Node requirements, what’s new, member table without Git Graph, migration and coexistence notes, and upstream attribution.
+- **Usage Monitor trade-off**: the “assumed pricing” explanation row and `deepseek` bucket that Fish 1.0.2 added are not replayed onto the 0.4.16 structure; the new baseline routes price wording through `core/spend.ts` currency rendering. Restoring that row requires a separate port onto 0.4.16.
+- **Verification**: `typecheck` and `build` pass for the four synced packages; the task-board `host-runner` regression passes 4/4; 162 native-package tests pass (Approval Guide 12, Git Sync 37, Settings Navigation, Visual Companion and Skill Lens 113); the release contract passes 7/7; standalone AgentTeams `typecheck` and `build` pass, artwork suites pass 21/21 and 42/42, and the compatibility check passes for 11 targets. This host’s sandbox forbids piped child processes, so the full `pnpm verify` and multi-file `node --test` runs are incomplete and are noted in the delivery report.
+
 ## 1.0.5 (2026-10-21)
 
 - **Jailbreak is no longer bundled**: `@fish-under-sea/dsh-purge-fish` is removed from both `dependencies` and `cordis.patch.yml`. npm subjects that new package name to staged publishing review, so `1.0.2` and `1.0.4` only produced a `0.0.0-stage` placeholder and the real versions never shipped; the bundle then failed dependency resolution and could not be installed at all, so this release takes it out.

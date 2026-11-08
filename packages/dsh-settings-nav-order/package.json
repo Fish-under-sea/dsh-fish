@@ -1,6 +1,6 @@
 {
   "name": "@fish-under-sea/dsh-settings-nav-order",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "DeepSeek Harness 设置导航与斜杠菜单顺序：重排、隐藏设置侧栏；为 agent-teams、companion、acp、acp-cache 补充图标和中文标题，支持自定义默认顺序。偏好随浏览器本地状态及 $DSH_HOME/dsh-settings-nav-order/state.json 持久化。",
   "type": "module",
   "main": "./lib/index.js",
@@ -25,7 +25,7 @@
     "access": "public"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=24.9"
   },
   "keywords": [
     "deepseek-harness",
@@ -42,7 +42,7 @@
   },
   "dsh": {
     "engines": {
-      "dsh": ">=0.2.0-rc.2"
+      "dsh": ">=0.2.2-rc.1"
     },
     "bundle": {
       "patch": "./cordis.patch.yml"

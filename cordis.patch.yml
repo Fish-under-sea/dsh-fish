@@ -1,4 +1,4 @@
-# Fish 1.0.5 mounts eleven separately addressable packages.
+# Fish 1.1.0 mounts ten separately addressable packages.
 # Full package names are required by the client scanner.
 # Keep stable row ids to preserve existing profile overrides.
 - insert:
@@ -19,8 +19,6 @@
       name: '@fish-under-sea/dsh-skill-lens-fish'
     - id: ui-task-board
       name: '@fish-under-sea/dsh-client-ui-task-board-fish'
-    - id: ui-git-graph
-      name: '@fish-under-sea/dsh-client-ui-git-graph-fish'
     - id: ssh
       name: '@fish-under-sea/dsh-ssh-fish'
     - id: usage

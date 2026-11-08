@@ -1,6 +1,6 @@
 {
   "name": "@fish-under-sea/dsh-approval-guide",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "在 DSH Web GUI 的审批弹窗里追加中文说明：这次审批会做什么、有什么风险、依据是什么。原英文理由与命令原文保留显示。",
   "type": "module",
   "main": "./lib/index.js",
@@ -25,7 +25,7 @@
     "access": "public"
   },
   "engines": {
-    "node": "^22.19.0 || >=24.0.0"
+    "node": ">=24.9"
   },
   "keywords": [
     "dsh",
@@ -44,7 +44,7 @@
   },
   "dsh": {
     "engines": {
-      "dsh": ">=0.2.0-rc.2"
+      "dsh": ">=0.2.2-rc.1"
     },
     "bundle": {
       "patch": "./cordis.patch.yml"

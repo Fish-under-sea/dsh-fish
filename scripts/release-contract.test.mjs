@@ -8,18 +8,17 @@ const json = path => JSON.parse(readFileSync(new URL(path, root), 'utf8'))
 const require = createRequire(new URL('packages/dsh-skill-lens-fish/package.json', root))
 const { parse } = require('yaml')
 
-// 本聚合插入的成员版本。聚合包自身版本独立推进（1.0.5），
+// 本聚合插入的成员版本。聚合包自身版本独立推进（1.1.0），
 // 成员按各自发布版本精确固定。
-const MEMBER_VERSION = '1.0.2'
+const MEMBER_VERSION = '1.1.0'
 // 不在本仓库的成员：自带 patch 无法在仓库内校验，只校验挂载行本身。
 const externalMembers = [
   '@fish-under-sea/dsh-agent-teams-fish',
 ]
 const workspaceMembers = [
-  'dsh-approval-guide', 'dsh-client-ui-git-graph-fish',
-  'dsh-client-ui-task-board-fish', 'dsh-git-sync', 'dsh-session-archive-fish',
-  'dsh-settings-nav-order', 'dsh-skill-lens-fish', 'dsh-ssh-fish',
-  'dsh-usage-fish', 'dsh-visual-companion',
+  'dsh-approval-guide', 'dsh-client-ui-task-board-fish', 'dsh-git-sync',
+  'dsh-session-archive-fish', 'dsh-settings-nav-order', 'dsh-skill-lens-fish',
+  'dsh-ssh-fish', 'dsh-usage-fish', 'dsh-visual-companion',
 ].map(name => `@fish-under-sea/${name}`)
 const members = [...workspaceMembers, ...externalMembers]
 
@@ -27,9 +26,9 @@ const parsePatch = path => parse(readFileSync(new URL(path, root), 'utf8'), {
   customTags: [{ tag: 'tag:yaml.org,2002:js', resolve: value => value }],
 })
 
-test('aggregate pins exactly eleven scoped members at their published version', () => {
+test('aggregate pins exactly ten scoped members at their published version', () => {
   const pkg = json('package.json')
-  assert.equal(pkg.version, '1.0.5')
+  assert.equal(pkg.version, '1.1.0')
   assert.equal(pkg.publishConfig.access, 'public')
   assert.deepEqual(Object.keys(pkg.dependencies).sort(), [...members].sort())
   for (const [name, version] of Object.entries(pkg.dependencies)) {
@@ -40,7 +39,7 @@ test('aggregate pins exactly eleven scoped members at their published version', 
 test('all in-repository packages use scoped member identities', () => {
   const directories = readdirSync(new URL('packages/', root), { withFileTypes: true })
     .filter(entry => entry.isDirectory())
-  assert.equal(directories.length, 10)
+  assert.equal(directories.length, 9)
   for (const entry of directories) {
     const pkg = json(`packages/${entry.name}/package.json`)
     assert.ok(workspaceMembers.includes(pkg.name), pkg.name)

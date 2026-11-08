@@ -1,7 +1,7 @@
 {
   "name": "@fish-under-sea/dsh-fish",
-  "version": "1.0.5",
-  "description": "Fish DSH 插件聚合包：十个本仓库子包与独立 AgentTeams，共十一个 @fish-under-sea 成员，成员精确固定各自版本；破甲不内置，需单独安装。",
+  "version": "1.1.0",
+  "description": "Fish DSH 插件聚合包：九个本仓库子包与独立 AgentTeams，共十个 @fish-under-sea 成员，成员精确固定各自版本；破甲不内置，需单独安装。",
   "type": "module",
   "main": "./lib/index.js",
   "exports": {
@@ -23,17 +23,16 @@
     "access": "public"
   },
   "dependencies": {
-    "@fish-under-sea/dsh-approval-guide": "1.0.2",
-    "@fish-under-sea/dsh-client-ui-git-graph-fish": "1.0.2",
-    "@fish-under-sea/dsh-client-ui-task-board-fish": "1.0.2",
-    "@fish-under-sea/dsh-git-sync": "1.0.2",
-    "@fish-under-sea/dsh-session-archive-fish": "1.0.2",
-    "@fish-under-sea/dsh-settings-nav-order": "1.0.2",
-    "@fish-under-sea/dsh-skill-lens-fish": "1.0.2",
-    "@fish-under-sea/dsh-ssh-fish": "1.0.2",
-    "@fish-under-sea/dsh-usage-fish": "1.0.2",
-    "@fish-under-sea/dsh-visual-companion": "1.0.2",
-    "@fish-under-sea/dsh-agent-teams-fish": "1.0.2"
+    "@fish-under-sea/dsh-approval-guide": "1.1.0",
+    "@fish-under-sea/dsh-client-ui-task-board-fish": "1.1.0",
+    "@fish-under-sea/dsh-git-sync": "1.1.0",
+    "@fish-under-sea/dsh-session-archive-fish": "1.1.0",
+    "@fish-under-sea/dsh-settings-nav-order": "1.1.0",
+    "@fish-under-sea/dsh-skill-lens-fish": "1.1.0",
+    "@fish-under-sea/dsh-ssh-fish": "1.1.0",
+    "@fish-under-sea/dsh-usage-fish": "1.1.0",
+    "@fish-under-sea/dsh-visual-companion": "1.1.0",
+    "@fish-under-sea/dsh-agent-teams-fish": "1.1.0"
   },
   "devDependencies": {
     "lightningcss": "^1.32.0",
@@ -41,7 +40,7 @@
     "typescript": "~5.7.2"
   },
   "engines": {
-    "node": "^22.19.0 || >=24"
+    "node": ">=24.9"
   },
   "keywords": [
     "deepseek-harness",
@@ -54,7 +53,7 @@
   ],
   "dsh": {
     "engines": {
-      "dsh": ">=0.2.0-rc.2"
+      "dsh": ">=0.2.2-rc.1"
     },
     "bundle": {
       "patch": "./cordis.patch.yml"

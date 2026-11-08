@@ -1,6 +1,6 @@
 {
   "name": "@fish-under-sea/dsh-visual-companion",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "把「视觉伴侣页面上的提交」变成一条用户消息：用户在网页上点选、写备注、按提交，DSH 会话自动起一轮继续工作，不必回终端复述。",
   "type": "module",
   "main": "./lib/index.js",
@@ -23,11 +23,11 @@
     "access": "public"
   },
   "engines": {
-    "node": "^22.19.0 || >=24.0.0"
+    "node": ">=24.9"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-llm": ">=0.2.0-rc.2",
-    "@deepseek-ai/dsh-tools": ">=0.2.0-rc.2",
+    "@deepseek-ai/dsh-llm": ">=0.2.2-rc.1",
+    "@deepseek-ai/dsh-tools": ">=0.2.2-rc.1",
     "@deepseek-ai/schemastery": "^3.18.2"
   },
   "peerDependenciesMeta": {
@@ -42,8 +42,8 @@
     }
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-llm": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-tools": "0.2.0-rc.2",
+    "@deepseek-ai/dsh-llm": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-tools": "0.2.2-rc.1",
     "@deepseek-ai/schemastery": "^3.18.2"
   },
   "keywords": [
@@ -68,7 +68,7 @@
   },
   "dsh": {
     "engines": {
-      "dsh": ">=0.2.0-rc.2"
+      "dsh": ">=0.2.2-rc.1"
     },
     "bundle": {
       "patch": "./cordis.patch.yml"
