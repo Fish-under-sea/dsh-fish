@@ -183,9 +183,8 @@ test('命令配置去重、保留未知命令名并补齐出厂四条，旧版�
   assert.deepEqual(fixture.module.loadConfig().commands, {
     enabled: false, order: ['acp', 'removed', 'agent-teams', 'companion', 'acp-cache'],
   });
-  // 宿主半边（本任务不允许改）仍按旧白名单落盘，这是跨机同步的已知边界。
-  assert.deepEqual(normalizeState(saved).commands,
-    { enabled: false, order: ['acp', 'agent-teams', 'companion', 'acp-cache'] });
+  // 宿主半边（2.0.0 起）与客户端同一口径：任意命令名保留、去重、补齐出厂四条。
+  assert.deepEqual(normalizeState(saved).commands, fixture.module.loadConfig().commands);
 });
 
 test('可选命令服务延迟到达后装饰，卸载清除轮询并恢复原方法', async () => {
@@ -254,6 +253,28 @@ function saveCommandOrder(fixture, commandOrder) {
   });
 }
 
+/**
+ * 1.x 宿主半边的落盘结果：命令顺序被旧四项白名单裁掉。
+ * 新版客户端仍要能面对这种「旧宿主回包」（升级顺序不一致、配置仓里留着旧文件），
+ * 所以用它验证合并保护。
+ */
+function legacyState(config) {
+  const defaults = ['agent-teams', 'companion', 'acp', 'acp-cache'];
+  const input = Array.isArray(config?.commands?.order) ? config.commands.order : [];
+  const state = {
+    enabled: config?.enabled !== false,
+    order: Array.isArray(config?.order) ? config.order : [],
+    hidden: Array.isArray(config?.hidden) ? config.hidden : [],
+  };
+  if (config && config.commands) {
+    state.commands = {
+      enabled: config.commands.enabled !== false,
+      order: [...new Set([...input.filter((name) => defaults.includes(name)), ...defaults])],
+    };
+  }
+  return state;
+}
+
 test('任意行都能按保存顺序重排，且不跨分区标题', async () => {
   const fixture = load({ rows: menuRows() });
   const saved = ['terminal', 'review', 'file', 'browser', 'git', 'acp-cache', 'companion', 'agent-teams', 'acp'];
@@ -313,21 +334,21 @@ test('保存的全量顺序经 localStorage 重载后仍然生效（重启恢复
   assert.deepEqual((await second.ui.candidates({}, req)).map((row) => row.name), saved);
 });
 
-test('宿主文件只装得下旧四条时，启动对账不会截断其余行的顺序', async () => {
+test('旧版宿主回包只含出厂四条时，启动对账不会截断本地其余行的顺序', async () => {
   const saved = ['terminal', 'file', 'review', 'browser', 'git', 'acp-cache', 'agent-teams', 'companion', 'acp'];
   const first = load({ rows: menuRows() });
   saveCommandOrder(first, saved);
   let hostState = null;
   first.window.fetch = async (_url, options) => {
     if (options?.method === 'POST') {
-      // 宿主半边的白名单会丢掉新命令：只留下旧四条（本任务不改 lib/index.js）。
-      hostState = normalizeState(JSON.parse(options.body));
+      // 1.x 宿主半边：白名单把新命令裁掉，只留下旧四条。
+      hostState = legacyState(JSON.parse(options.body));
       return { ok: true, json: async () => ({ ok: true }) };
     }
     return { ok: true, json: async () => ({ ok: true, state: hostState }) };
   };
   assert.equal(await first.module.pushState(), true);
-  assert.equal(hostState.commands.order.length, order.length, '前置条件：宿主只存得下旧四条');
+  assert.equal(hostState.commands.order.length, order.length, '前置条件：旧宿主只存得下旧四条');
 
   // 同一台机器重启：本地没动过，宿主回的是被裁剪过的那份 —— 不能照着它截断本地。
   const second = load({ rows: menuRows(), store: first.store });
@@ -370,6 +391,35 @@ test('旧版宿主文件没有 commands 字段时，本地命令偏好不被清�
   fixture.window.fetch = async () => ({ ok: true, json: async () => ({ ok: true, state: oldHost }) });
   await fixture.module.reconcile(fixture.document);
   assert.deepEqual(fixture.module.loadConfig().commands.order, saved);
+});
+
+test('换机复原：宿主文件带回来的全量顺序原样写回本地并立即生效', async () => {
+  const saved = ['terminal', 'file', 'review', 'browser', 'git', 'acp-cache', 'agent-teams', 'companion', 'acp'];
+  // 2.0.0 起宿主半边不再裁剪：另一台机器保存后，state.json 里就是这份全量顺序。
+  const hostState = normalizeState({
+    enabled: true, order: [], hidden: [], commands: { enabled: true, order: saved },
+  });
+  assert.deepEqual(hostState.commands.order, saved, '前置条件：宿主文件里是全量顺序');
+
+  const fixture = load({ rows: menuRows() });
+  fixture.window.fetch = async () => ({ ok: true, json: async () => ({ ok: true, state: hostState }) });
+  assert.equal(await fixture.module.reconcile(fixture.document), true, '本地没有配置，应采用宿主快照');
+  assert.deepEqual(fixture.module.loadConfig().commands.order, saved, '全量顺序写回本地');
+  assert.deepEqual((await fixture.ui.candidates({}, req)).map((row) => row.name), saved, '开始页立即按它渲染');
+});
+
+test('宿主半边与客户端同一口径：全量命令顺序经 normalizeState 逐字往返', () => {
+  const full = ['terminal', 'file', 'review', 'browser', 'git', 'acp-cache', 'agent-teams', 'companion', 'acp'];
+  const state = {
+    enabled: false,
+    order: [{ name: '模型', index: 0 }],
+    hidden: [],
+    commands: { enabled: false, order: full },
+  };
+  assert.deepEqual(normalizeState(state), state, '任意命令名不再被宿主白名单裁掉');
+  const client = load({ rows: menuRows() });
+  client.module.saveConfig(state);
+  assert.deepEqual(normalizeState(state).commands, client.module.loadConfig().commands, '两端规范化结果一致');
 });
 
 test('命令行列缓存跨会话保留：没打开命令菜单也能列出全部命令', async () => {

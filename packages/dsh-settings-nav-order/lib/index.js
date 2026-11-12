@@ -15,7 +15,8 @@
  *  - 零 npm 依赖，只用 node 内置模块（宿主不导出 Config schema，见 cordis 的
  *    `if (!runtime.Config) return config`）；
  *  - 只读写这一个固定路径，不接受调用方指定路径 —— 否则这就是一个任意写接口；
- *  - 形状守卫：只接受 { enabled, order, hidden }，坏数据一律拒收，不写进文件；
+ *  - 形状守卫：只接受 { enabled, order, hidden, commands } 这一种形状，其余字段丢弃；
+ *    commands.order 收任意合法命令名（非空、长度有界、去重、拒原型污染键），坏值丢弃；
  *  - 不因为宿主半边出错而影响浏览器里已经生效的顺序。
  *
  * 路由（同源，挂在 webServer 上）：
@@ -41,6 +42,39 @@ const STATE_FILE = 'state.json';
 /** 请求体上限：一份顺序偏好只有几百字节，64 KB 已经宽到不可能误伤。 */
 const MAX_BODY_BYTES = 64 * 1024;
 
+/** 命令名长度上限：state.json 会被 dsh-git-sync 采集，名字长度必须有界。 */
+export const MAX_COMMAND_NAME_LENGTH = 64;
+
+/** 出厂四条：旧配置没记全时补在末尾（与浏览器半边的 normalizeCommands 同一口径）。 */
+export const DEFAULT_COMMANDS = Object.freeze(['agent-teams', 'companion', 'acp', 'acp-cache']);
+
+/**
+ * 会污染原型链、或让下游「按名字建普通对象」时出事的键，一律不收。
+ * 宿主自己只把名字放进数组，但这份文件会被别的工具读，防御放在入口更省心。
+ */
+const RESERVED_COMMAND_NAMES = new Set(['__proto__', 'prototype', 'constructor']);
+
+/**
+ * 把 `commands.order` 洗成「合法的命令名列表」：只收非空 string，限长、去重，
+ * 坏值一律丢弃。
+ *
+ * 不抛异常：非数组、非字符串（null / 数字 / 对象）、超长名字、原型污染键都只是被跳过，
+ * 调用方拿到的永远是一个可安全写入 state.json 的数组。
+ * @param input - 配置里 commands.order 的原始值（任何形状都可能）
+ */
+function normalizeCommandNames(input) {
+  if (!Array.isArray(input)) return [];
+  const names = [];
+  for (const value of input) {
+    if (typeof value !== 'string') continue;
+    const name = value.trim();
+    if (!name || name.length > MAX_COMMAND_NAME_LENGTH) continue;
+    if (RESERVED_COMMAND_NAMES.has(name)) continue;
+    if (!names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
 /** DSH home：与 @deepseek-ai/dsh-home-paths 的解析口径一致（同 dsh-git-sync）。 */
 export function resolveHome() {
   const configured = process.env.DSH_HOME;
@@ -54,10 +88,15 @@ export function statePath(home) {
 }
 
 /**
- * 形状守卫 + 规范化：只接受 { enabled, order, hidden } 这一种形状，其余字段丢弃。
+ * 形状守卫 + 规范化：只接受 { enabled, order, hidden, commands } 这一种形状，其余字段丢弃。
  *
  * 写进文件的字段与顺序因此永远一致 —— 这份文件会被 dsh-git-sync 采集进配置仓，
  * 形状稳定，git 里的 diff 才稳定。
+ *
+ * `commands.order` 从 2.0.0 起不再按旧四条白名单裁剪：开始页命令菜单的全部行都要能
+ * 落盘，否则换机复原（dsh-git-sync 只搬 state.json）会丢掉非出厂命令的顺序。安全边界
+ * 仍然保留 —— 只收非空、长度有界的 string 名字，去重，丢掉原型污染键与坏值；出厂四条
+ * 照旧补在末尾，这样只记了这四条的老配置行为不变。
  *
  * 返回 null 表示「不是一份可用的偏好」：调用方据此拒收，而不是把垃圾写进文件。
  * 口径与浏览器半边的 loadConfig 一致（`enabled` 只有显式的 false 才算停用，
@@ -73,12 +112,15 @@ export function normalizeState(value) {
   };
   const state = { enabled: value.enabled !== false, order: rows(value.order), hidden: rows(value.hidden) };
   if (value.commands && typeof value.commands === 'object' && !Array.isArray(value.commands)) {
-    const defaults = ['agent-teams', 'companion', 'acp', 'acp-cache'];
-    const input = Array.isArray(value.commands.order) ? value.commands.order : [];
-    state.commands = {
-      enabled: value.commands.enabled !== false,
-      order: [...new Set([...input.filter((name) => defaults.includes(name)), ...defaults])],
-    };
+    // 形状守卫不该成为异常源：属性访问炸掉的坏对象按「没有 commands」处理，
+    // 既不会把半截数据写进文件，也不会让 GET/POST 变成 500。
+    try {
+      const order = normalizeCommandNames(value.commands.order);
+      for (const name of DEFAULT_COMMANDS) if (!order.includes(name)) order.push(name);
+      state.commands = { enabled: value.commands.enabled !== false, order };
+    } catch {
+      /* 忽略：读不动的 commands 当作没有 */
+    }
   }
   return state;
 }

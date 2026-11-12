@@ -155,6 +155,131 @@ test('POST 之后再 GET，读回同一份偏好（跨机复原读的就是这�
   fs.rmSync(home, { recursive: true, force: true });
 });
 
+// ------------------------- 2.0.0：命令顺序不再按旧四项白名单裁剪（任意合法 name 可往返）
+
+/** 开始页命令菜单全量顺序的代表集：三个分区，含出厂四条之外的命令名。 */
+const COMMAND_ORDER_FULL = [
+  'git', 'file', 'terminal', 'browser',
+  'agent-teams', 'companion', 'acp', 'acp-cache', 'wallpaper-engine',
+];
+
+test('任意命令名经 state.json 往返不丢（换机复原走同一条路径）', async () => {
+  const home = makeHome();
+  const { route } = loadHost(home);
+  const state = {
+    enabled: true,
+    order: [{ name: '模型', index: 0 }],
+    hidden: [],
+    commands: { enabled: true, order: COMMAND_ORDER_FULL },
+  };
+
+  const post = await call(route, { method: 'POST', body: state });
+  assert.equal(post.statusCode, 200);
+  assert.deepEqual(JSON.parse(fs.readFileSync(host.statePath(home), 'utf8')), state,
+    '落盘的就是全量顺序，不裁剪非出厂命令');
+
+  const get = await call(route, { method: 'GET' });
+  assert.deepEqual(get.json().state, state, 'GET 读回同一份');
+
+  // 换机：新机器上只有配置仓带来的 state.json，别的什么都没有。
+  const another = makeHome();
+  fs.mkdirSync(path.dirname(host.statePath(another)), { recursive: true });
+  fs.copyFileSync(host.statePath(home), host.statePath(another));
+  const fresh = loadHost(another);
+  const restored = await call(fresh.route, { method: 'GET' });
+  assert.deepEqual(restored.json().state, state, '搬走 state.json 后顺序完整复原');
+  assert.deepEqual(host.readState(another).state.commands.order, COMMAND_ORDER_FULL);
+
+  fs.rmSync(home, { recursive: true, force: true });
+  fs.rmSync(another, { recursive: true, force: true });
+});
+
+test('normalizeState：任意合法命令名都保留，坏值丢弃、去重、限长', () => {
+  const tooLong = 'x'.repeat(host.MAX_COMMAND_NAME_LENGTH + 1);
+  const state = host.normalizeState({
+    commands: {
+      order: ['git', 'file', '', '   ', null, 42, {}, [], tooLong, '__proto__', 'constructor', 'git', ' terminal '],
+    },
+  });
+  assert.deepEqual(state.commands.order, ['git', 'file', 'terminal', ...host.DEFAULT_COMMANDS],
+    '合法名字按原顺序保留，坏值/重复/原型污染键丢弃，出厂四条补在末尾');
+  assert.equal(state.commands.enabled, true, '缺省是启用');
+
+  // 恰好等于上限的名字要收下（边界不算超长）。
+  const max = 'y'.repeat(host.MAX_COMMAND_NAME_LENGTH);
+  assert.equal(host.normalizeState({ commands: { order: [max] } }).commands.order[0], max);
+});
+
+test('normalizeState：非数组 order 与坏 commands 退回出厂顺序，不抛异常', () => {
+  for (const bad of ['nope', 42, null, { length: 3 }, new Set(['git']), () => {}]) {
+    assert.doesNotThrow(() => host.normalizeState({ commands: { order: bad } }));
+    assert.deepEqual(host.normalizeState({ commands: { order: bad } }).commands.order, [...host.DEFAULT_COMMANDS],
+      `order=${String(bad)} 应退回出厂四条`);
+  }
+  for (const commands of [null, 'x', 42, [], true]) {
+    const state = host.normalizeState({ commands });
+    assert.equal(Object.hasOwn(state, 'commands'), false, `commands=${String(commands)} 整段丢弃`);
+  }
+});
+
+test('原型污染键被丢弃，不会污染对象原型', () => {
+  const parsed = JSON.parse('{"enabled":true,"commands":{"enabled":true,"order":["__proto__","prototype","constructor","git"]}}');
+  const state = host.normalizeState(parsed);
+  assert.deepEqual(state.commands.order, ['git', ...host.DEFAULT_COMMANDS]);
+  assert.equal({}.polluted, undefined, '普通对象原型没被写脏');
+  assert.equal(Object.prototype.polluted, undefined);
+  assert.equal(JSON.stringify(state).includes('__proto__'), false);
+});
+
+test('POST 落盘前把命令名洗干净：坏值丢弃、合法名字保留', async () => {
+  const home = makeHome();
+  const { route } = loadHost(home);
+  const tooLong = 'x'.repeat(host.MAX_COMMAND_NAME_LENGTH + 1);
+
+  const res = await call(route, {
+    method: 'POST',
+    body: {
+      enabled: true,
+      order: [],
+      hidden: [],
+      commands: { enabled: true, order: [' git ', 7, null, tooLong, '__proto__', 'constructor', 'git', 'acp'] },
+    },
+  });
+  assert.equal(res.statusCode, 200, res.body());
+  const written = JSON.parse(fs.readFileSync(host.statePath(home), 'utf8'));
+  assert.deepEqual(written.commands, {
+    enabled: true,
+    order: ['git', 'acp', 'agent-teams', 'companion', 'acp-cache'],
+  });
+  assert.equal(JSON.stringify(written).includes('__proto__'), false);
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
+test('旧 state 文件（只记了出厂四条命令 / 没有 commands 字段）读取不报错', async () => {
+  const home = makeHome();
+  const file = host.statePath(home);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const legacy = {
+    enabled: false,
+    order: [{ name: '模型', index: 0 }],
+    hidden: [{ name: '账户', index: 0 }],
+    commands: { enabled: false, order: ['acp', 'agent-teams', 'companion', 'acp-cache'] },
+  };
+  fs.writeFileSync(file, JSON.stringify(legacy), 'utf8');
+
+  const { route } = loadHost(home);
+  const res = await call(route, { method: 'GET' });
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.json().state, legacy, '旧文件原样读出，顺序不变');
+
+  // 更老的、根本没有 commands 字段的 state.json 同样能读，且不会凭空长出字段。
+  fs.writeFileSync(file, JSON.stringify({ enabled: true, order: [], hidden: [] }), 'utf8');
+  const older = await call(route, { method: 'GET' });
+  assert.equal(older.statusCode, 200);
+  assert.deepEqual(older.json().state, { enabled: true, order: [], hidden: [] });
+  fs.rmSync(home, { recursive: true, force: true });
+});
+
 test('文件不存在时 GET 返回 state=null 且 exists=false（不是报错）', async () => {
   const home = makeHome();
   const { route } = loadHost(home);
