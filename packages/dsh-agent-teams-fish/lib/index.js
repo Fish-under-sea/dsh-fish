@@ -30,7 +30,7 @@ import { leadIdentityOfAsync } from "./lineage.js";
 import { formatProfilesForPrompt } from "./profiles.js";
 import { parseToolPolicies } from "./tool-policies.js";
 import { installTeamCapabilities } from "./capabilities.js";
-import { agentTeamsSource, observedSessionFormatVersion } from "./harness-compat.js";
+import { agentTeamsSource, memberModelSelectionPolicy, observedSessionFormatVersion } from "./harness-compat.js";
 import { TEAM_TOOL_NAMES } from "./tool-names.js";
 import { artworkCandidates, findCustomArtwork, findPackagedArtwork } from "./artwork-source.js";
 import { authenticatedWebRoutes, readJsonRequest, RequestBodyError, writeJsonWithEtag } from "./web-routes.js";
@@ -314,6 +314,39 @@ export function apply(ctx, config) {
                 }
             },
         }), 'agent-teams: halt route');
+        // Read-only view of the official subagent allowed-model policy for this
+        // captain session. The plan editor filters its model picker with this so a
+        // member route can only be chosen from the same allowlist the host will
+        // enforce at spawn time.
+        ctx.effect(() => webServer.register({
+            kind: 'exact',
+            path: '/plugins/dsh-agent-teams/model-policy',
+            handler: async (req, res) => {
+                const url = new URL(req.url ?? '/', 'http://x');
+                const sessionId = url.searchParams.get('session')?.trim() || undefined;
+                if (sessionId === undefined) {
+                    res.writeHead(400, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+                    res.end(JSON.stringify({ error: 'session is required' }));
+                    return;
+                }
+                const captain = ctx.agents.get(sessionId);
+                if (captain === undefined) {
+                    res.writeHead(409, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+                    res.end(JSON.stringify({ error: 'captain session is not attached' }));
+                    return;
+                }
+                try {
+                    const allowedModels = memberModelSelectionPolicy(ctx, captain.session);
+                    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+                    res.end(JSON.stringify({ enabled: allowedModels !== undefined, allowedModels: allowedModels ?? null }));
+                }
+                catch (error) {
+                    ctx.logger.warn(`agent-teams: model-policy read failed: ${String(error)}`);
+                    res.writeHead(500, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+                    res.end(JSON.stringify({ error: 'failed to read model policy' }));
+                }
+            },
+        }), 'agent-teams: model policy route');
         ctx.effect(() => webServer.register({
             kind: 'exact',
             path: '/plugins/dsh-agent-teams/plan',

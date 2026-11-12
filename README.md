@@ -2,33 +2,34 @@
 
 <img src="icon.png" alt="Fish" width="96">
 
-**2.0.0 · 十一个插件，一个聚合入口**
+**2.0.1 · 十一个插件，一个聚合入口**
 
 [English](README.en.md)
 
 ## 安装
 
 ```sh
-dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@2.0.0
+dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@2.0.1
 ```
 
 安装后重启 DSH。桌面版无 CLI 时在插件管理器添加同名包。需要 Node `>=24.9`；宿主最低 `0.2.2-rc.1`。各成员的宿主声明分别生效。
 
 ## 本次更新
 
-**2.0.0：十一个成员全部收进本仓库，统一版本、统一图标、统一说明。**
+**2.0.1：十一个成员全部收进本仓库，统一版本、统一图标、统一说明。**
 
+- **2.0.1 修复**：skill-lens 在热更新/禁用时释放 `/skill-lens/api` 路由，更新不再因 `duplicate prefix route` 失败；AgentTeams 模型选择器按官方 subagent 允许名单过滤，避免选到名单外路由。
 - **effort 并入**：`dsh-better-reasoning-effort-fish` 从独立仓库迁入 `packages/`，成为聚合成员。它在「模型」页卡片内编辑每个模型的思考档位与输入模态，带八大模型家族主题。
 - **AgentTeams 并入**：`dsh-agent-teams-fish` 从独立仓库迁入 `packages/`，不再作为外部依赖。行 id `agent-teams`、状态目录 `.agent-teams` 与配置键保持不变。
 - **开始页命令菜单排序**：设置导航顺序插件把「文件、代码审查和变更、新建终端、Git、浏览器、任务管理、侧边对话、本地模型、会话数据诊断、壁纸引擎」这列做成全量可排序；按分区重排，搜索态不打扰，顺序写入 `state.json`，换机可恢复。
 - **空输入发送增强**：审批说明插件新增——输入框为空时点发送按钮，自动填入并发送「继续任务，并梳理进度」，让「继续」不再需要先打字。非空输入、停止按钮、附件、上传中与输入法组合态完全不接管。
 - **统一外观**：十一个成员共用聚合包 `icon.png`；每个包补齐 `locale/{zh,en}.json` 的标题与一句话说明，插件列表里显示的是同一套中文定位。
-- **版本**：十一个成员与聚合包统一为 **2.0.0**，依赖逐项精确固定。
+- **版本**：十一个成员与聚合包统一为 **2.0.1**，依赖逐项精确固定。
 - **仍不内置**：Git 图谱继续退役；破甲仍需单独安装。
 
 ## 插件清单
 
-以下 11 个成员当前均为 **2.0.0**，全部在本仓库 `packages/`。聚合包本身也是 **2.0.0**，依赖逐项精确固定。
+以下 11 个成员当前均为 **2.0.1**，全部在本仓库 `packages/`。聚合包本身也是 **2.0.1**，依赖逐项精确固定。
 
 | 插件 | npm | 功能 |
 | --- | --- | --- |
@@ -60,7 +61,7 @@ dsh plugin --profile <profile> add https://github.com/Fish-under-sea/dsh-purge/a
 - **effort 与 AgentTeams 已改为聚合成员**：如果 profile 里单独装过 `@fish-under-sea/dsh-better-reasoning-effort-fish`（0.5.x）或 `@fish-under-sea/dsh-agent-teams-fish`（1.1.0），先移除单独安装与对应 bundle 行，避免与聚合重复挂载。包名、行 id、状态目录不变。
 - **Git 图谱仍不在聚合**：需要时单装 `@fish-under-sea/dsh-client-ui-git-graph-fish@1.0.2`，不要与聚合同时挂载。
 - **破甲仍单装**：`dsh-purge` 四行与 `system-prompt` 改写由它自己负责；聚合不注入。
-- 旧版本（`<2.0.0`）已在 npm 上标记 deprecated，安装时请使用 `@fish-under-sea/dsh-fish@2.0.0`。
+- 旧版本（`<2.0.1`）已在 npm 上标记 deprecated，安装时请使用 `@fish-under-sea/dsh-fish@2.0.1`。
 - 更新聚合包不会自动清掉 profile 中单独添加的旧包、bundle 或覆盖行；请在插件管理器核对并移除对应旧项后再重启。
 
 ## 共存与数据
@@ -81,7 +82,7 @@ pnpm -r --if-present test
 pnpm -r --if-present build
 ```
 
-聚合自身是空实现，挂载入口是 `cordis.patch.yml`。十一个成员都在 `packages/`，lib 已提交，可独立构建、独立发布；浏览器模块必须以实际包名重新构建。聚合包与成员统一版本 2.0.0。
+聚合自身是空实现，挂载入口是 `cordis.patch.yml`。十一个成员都在 `packages/`，lib 已提交，可独立构建、独立发布；浏览器模块必须以实际包名重新构建。聚合包与成员统一版本 2.0.1。
 
 Fish 原生：审批说明、Git 同步、设置排序、视觉伴侣。Fork 来源：
 

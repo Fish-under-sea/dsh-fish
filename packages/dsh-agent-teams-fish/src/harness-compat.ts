@@ -259,19 +259,19 @@ export function outputLimitTurn(event: SessionEvent): number | undefined {
   }
 }
 
-/** 读取宿主冻结的会话策略，旧版没有投影服务时检查本会话日志。 */
-export function assertMemberModelSelection(ctx: Context, captain: Agent, route: { provider: string; model: string }): void {
+/** 读取官方 subagent 冻结在本会话的允许模型名单；没有策略时返回 undefined。 */
+export function memberModelSelectionPolicy(ctx: Context, session: Session): { provider: string; model: string }[] | undefined {
   const projections = ctx.get?.('sessionProjections') as {
     stateOf(session: Session, key: string): unknown
   } | undefined
-  const session = captain.session as unknown as { ownEvents?: () => readonly SessionEvent[]; events?: readonly SessionEvent[] }
-  const projected = projections?.stateOf(captain.session, 'subagentModelSelectionPolicy')
+  const hostSession = session as unknown as { ownEvents?: () => readonly SessionEvent[]; events?: readonly SessionEvent[] }
+  const projected = projections?.stateOf(session, 'subagentModelSelectionPolicy')
   const policy = projected === undefined
-    ? (typeof session.ownEvents === 'function' || Array.isArray(session.events))
-      ? (sessionOwnEvents(captain.session) as readonly { type: string; data: unknown }[]).find(event => event.type === 'subagent/model-selection-policy')?.data
+    ? (typeof hostSession.ownEvents === 'function' || Array.isArray(hostSession.events))
+      ? (sessionOwnEvents(session) as readonly { type: string; data: unknown }[]).find(event => event.type === 'subagent/model-selection-policy')?.data
       : undefined
     : projected
-  if (policy === undefined || policy === null) return
+  if (policy === undefined || policy === null) return undefined
   const routes: unknown = projected === undefined
     ? (policy as { allowedModels?: unknown }).allowedModels
     : policy
@@ -280,6 +280,13 @@ export function assertMemberModelSelection(ctx: Context, captain: Agent, route: 
     || !('provider' in candidate) || typeof candidate.provider !== 'string' || candidate.provider.length === 0
     || !('model' in candidate) || typeof candidate.model !== 'string' || candidate.model.length === 0
   ))) throw new Error('agent-teams: invalid captured subagent model selection policy')
+  return routes.map(candidate => ({ provider: candidate.provider, model: candidate.model }))
+}
+
+/** 读取宿主冻结的会话策略，旧版没有投影服务时检查本会话日志。 */
+export function assertMemberModelSelection(ctx: Context, captain: Agent, route: { provider: string; model: string }): void {
+  const routes = memberModelSelectionPolicy(ctx, captain.session)
+  if (routes === undefined) return
   if (!routes.some(candidate => candidate.provider === route.provider && candidate.model === route.model)) {
     throw new Error(`agent-teams: child LLM route "${route.provider}/${route.model}" is not allowed for this Session; choose a route from list_subagent_models`)
   }

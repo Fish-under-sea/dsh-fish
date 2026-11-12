@@ -129,6 +129,11 @@ export declare function onAgentReady(ctx: Context, listener: (agent: Agent, veto
 export declare function sessionOwnEvents(session: Session): readonly SessionEvent[];
 /** Legacy hosts log each chunk separately; current hosts embed the committed stream. */
 export declare function outputLimitTurn(event: SessionEvent): number | undefined;
+/** 读取官方 subagent 冻结在本会话的允许模型名单；没有策略时返回 undefined。 */
+export declare function memberModelSelectionPolicy(ctx: Context, session: Session): {
+    provider: string;
+    model: string;
+}[] | undefined;
 /** 读取宿主冻结的会话策略，旧版没有投影服务时检查本会话日志。 */
 export declare function assertMemberModelSelection(ctx: Context, captain: Agent, route: {
     provider: string;

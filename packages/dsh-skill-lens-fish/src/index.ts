@@ -51,7 +51,7 @@ interface WebServerService {
     kind: "prefix";
     path: string;
     handler(req: IncomingMessage, res: ServerResponse): Promise<void> | void;
-  }): void;
+  }): () => void;
 }
 
 /** sessions 服务最小契约（对齐 better-sidebar sessionCwdOf 的用法） */
@@ -62,6 +62,8 @@ interface SessionsService {
 interface HostContext {
   webServer: WebServerService;
   sessions?: SessionsService;
+  /** cordis effect scope: the disposer runs when this plugin fiber unloads. */
+  effect(dispose: () => void, name?: string): void;
 }
 
 /**
@@ -532,7 +534,10 @@ async function collectDirFiles(dirPath: string, prefix: string): Promise<ZipEntr
 }
 
 export function apply(ctx: HostContext): void {
-  ctx.webServer.register({
+  // 必须把 webServer.register 返回的 disposer 交给 effect 作用域：
+  // 热重载或禁用时先释放旧前缀路由，否则同一路径再注册会抛
+  // `duplicate prefix route "/skill-lens/api"`，让 fiber 进入 failed。
+  ctx.effect(() => ctx.webServer.register({
     kind: "prefix",
     path: "/skill-lens/api",
     async handler(req, res) {
@@ -1152,5 +1157,5 @@ export function apply(ctx: HostContext): void {
         writeError(res, 500, `internal error: ${(err as Error).message}`);
       }
     },
-  });
+  }), "dsh-skill-lens: api route");
 }

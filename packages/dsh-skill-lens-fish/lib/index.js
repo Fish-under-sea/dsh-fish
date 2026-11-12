@@ -389,7 +389,7 @@ async function collectDirFiles(dirPath, prefix) {
   return entries;
 }
 function apply(ctx) {
-  ctx.webServer.register({
+  ctx.effect(() => ctx.webServer.register({
     kind: "prefix",
     path: "/skill-lens/api",
     async handler(req, res) {
@@ -959,7 +959,7 @@ description:
         writeError(res, 500, `internal error: ${err.message}`);
       }
     }
-  });
+  }), "dsh-skill-lens: api route");
 }
 export {
   apply,

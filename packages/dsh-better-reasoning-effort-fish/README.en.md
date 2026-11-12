@@ -16,7 +16,7 @@
 
 </div>
 
-> **2.0.0: this package now lives in the [`dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) monorepo as the `packages/dsh-better-reasoning-effort-fish` workspace member, built and released together with the aggregation package `@fish-under-sea/dsh-fish` 2.0.0.** Features are the upstream v0.5.4 sync plus the eight runner themes. See [Installation](#installation) for install and upgrade commands. Browser interaction and real-DSH verification are still pending; see [Development & Testing](#development--testing).
+> **2.0.1: this package now lives in the [`dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) monorepo as the `packages/dsh-better-reasoning-effort-fish` workspace member, built and released together with the aggregation package `@fish-under-sea/dsh-fish` 2.0.1.** Features are the upstream v0.5.4 sync plus the eight runner themes. See [Installation](#installation) for install and upgrade commands. Browser interaction and real-DSH verification are still pending; see [Development & Testing](#development--testing).
 
 ## Original Author & Attribution (Please Read First)
 
@@ -27,10 +27,10 @@
 | Original repository | <https://github.com/HaoyueQin/dsh-better-reasoning-effort> |
 | Upstream npm package | `dsh-better-reasoning-effort` (**belongs to the original author; this fork cannot reuse the name**) |
 | This fork's npm package | **`@fish-under-sea/dsh-better-reasoning-effort-fish`** |
-| Location since 2.0.0 | [`packages/dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-fish/tree/main/packages/dsh-better-reasoning-effort-fish) in the [`dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) monorepo, built and released with the other members |
+| Location since 2.0.1 | [`packages/dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-fish/tree/main/packages/dsh-better-reasoning-effort-fish) in the [`dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) monorepo, built and released with the other members |
 | License | **MIT**; upstream [`LICENSE`](LICENSE) is unmodified; see [`NOTICE.md`](NOTICE.md) for the visual source's separate MIT notice |
 | Fork baseline | [HaoyueQin/dsh-better-reasoning-effort](https://github.com/HaoyueQin/dsh-better-reasoning-effort) `master` = **v0.5.4** (commit [`2d68b65cc641cd85e95384c859a2bc3de23d9e08`](https://github.com/HaoyueQin/dsh-better-reasoning-effort/commit/2d68b65cc641cd85e95384c859a2bc3de23d9e08); synced from v0.5.2 `52b584c`) |
-| Nature of this fork | **Personal customization (fork)** — neither original nor official; from 2.0.0 the source is maintained in the `dsh-fish` monorepo, while the standalone repository keeps only the 0.5.x release history; the upstream README is preserved intact as [`README.original.md`](README.original.md) / [`README_ZH.original.md`](README_ZH.original.md) |
+| Nature of this fork | **Personal customization (fork)** — neither original nor official; from 2.0.1 the source is maintained in the `dsh-fish` monorepo, while the standalone repository keeps only the 0.5.x release history; the upstream README is preserved intact as [`README.original.md`](README.original.md) / [`README_ZH.original.md`](README_ZH.original.md) |
 
 > Full details on attribution and the scope of changes are in [`NOTICE.md`](NOTICE.md). Please preserve the original author's credit when redistributing.
 
@@ -83,22 +83,22 @@ This plugin brings both configuration surfaces back into the UI: edit them insid
 
 ## Installation
 
-Since 2.0.0 this package follows the rest of the monorepo: DSH **≥ 0.2.2-rc.1**, with peer and development dependencies at `^0.2.2-rc.1`; Node **≥ 24.9**. **Dependency alignment does not mean this release has been verified on every DSH version.**
+Since 2.0.1 this package follows the rest of the monorepo: DSH **≥ 0.2.2-rc.1**, with peer and development dependencies at `^0.2.2-rc.1`; Node **≥ 24.9**. **Dependency alignment does not mean this release has been verified on every DSH version.**
 
 ### Aggregation package (recommended)
 
 ```sh
 # Desktop
-dsh plugin --profile desktop add @fish-under-sea/dsh-fish@2.0.0
+dsh plugin --profile desktop add @fish-under-sea/dsh-fish@2.0.1
 
 # Web
-dsh plugin --profile web add @fish-under-sea/dsh-fish@2.0.0
+dsh plugin --profile web add @fish-under-sea/dsh-fish@2.0.1
 ```
 
 The aggregation package pins all ten members to exact versions, so installing it brings every plugin released alongside this one. If you only need this plugin, install it on its own:
 
 ```sh
-dsh plugin --profile web add @fish-under-sea/dsh-better-reasoning-effort-fish@2.0.0
+dsh plugin --profile web add @fish-under-sea/dsh-better-reasoning-effort-fish@2.0.1
 ```
 
 DSH's bundled pnpm uses a 24-hour `minimum-release-age`, so unpinned installs may temporarily resolve to an older release; pinning bypasses that wait. **Restart DSH** and hard-refresh the browser after installation.
@@ -204,7 +204,7 @@ See [`docs/compatibility-notes.md`](docs/compatibility-notes.md) for more compat
 
 ## Development & Testing
 
-Local checks when the package was merged into the monorepo for 2.0.0 (Node 24.14.0): `npm run typecheck` and `npm run build` passed; the `lib/` artifacts are committed, so a clone packs and publishes without a build. Browser interaction and real-DSH verification are still unverified; these release notes do not treat dependency alignment or asset previews as runtime evidence.
+Local checks when the package was merged into the monorepo for 2.0.1 (Node 24.14.0): `npm run typecheck` and `npm run build` passed; the `lib/` artifacts are committed, so a clone packs and publishes without a build. Browser interaction and real-DSH verification are still unverified; these release notes do not treat dependency alignment or asset previews as runtime evidence.
 
 ```sh
 npm run typecheck   # tsc strict check
@@ -218,7 +218,7 @@ When developing under the DSH file sandbox, `vitest` cannot load its vite config
 
 ## Relationship to the Aggregation Package
 
-Since 2.0.0 this package lives in the [`dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) monorepo and is built and released with the other members; the aggregation package [`@fish-under-sea/dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) pins it at an exact version, and it can also be installed on its own as described in [Installation](#installation). The former standalone repository (<https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish>) keeps only the 0.5.x tags and published versions and is no longer updated; upgrade to 2.0.0.
+Since 2.0.1 this package lives in the [`dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) monorepo and is built and released with the other members; the aggregation package [`@fish-under-sea/dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) pins it at an exact version, and it can also be installed on its own as described in [Installation](#installation). The former standalone repository (<https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish>) keeps only the 0.5.x tags and published versions and is no longer updated; upgrade to 2.0.1.
 
 ## License
 

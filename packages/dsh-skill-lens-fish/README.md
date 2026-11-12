@@ -1,6 +1,6 @@
 # @fish-under-sea/dsh-skill-lens-fish
 
-**2.0.0 · 技能中心**
+**2.0.1 · 技能中心**
 
 浏览、编辑本机 Skill 并画出共享资源依赖图。
 
@@ -13,10 +13,10 @@
 ## 安装
 
 ```sh
-dsh plugin --profile <profile> add @fish-under-sea/dsh-skill-lens-fish@2.0.0
+dsh plugin --profile <profile> add @fish-under-sea/dsh-skill-lens-fish@2.0.1
 ```
 
-也可安装聚合包 `@fish-under-sea/dsh-fish@2.0.0`。聚合与独立安装不要重复展开相同插件行；安装完成后重启 DSH。桌面环境无 CLI 时使用插件管理器。
+也可安装聚合包 `@fish-under-sea/dsh-fish@2.0.1`。聚合与独立安装不要重复展开相同插件行；安装完成后重启 DSH。桌面环境无 CLI 时使用插件管理器。
 
 ## 配置与边界
 
@@ -26,6 +26,6 @@ Node 要求: `>=24.9`. DSH 支持范围以本包声明为准；聚合包不覆�
 
 ## 维护与来源
 
-2.0.0 统一发布版本，不表示已合并上游所有最新提交。历史说明保留在 Git 历史中；聚合变更见 [聚合变更记录](https://github.com/Fish-under-sea/dsh-fish/blob/main/CHANGELOG.md).
+2.0.1 统一发布版本，不表示已合并上游所有最新提交。历史说明保留在 Git 历史中；聚合变更见 [聚合变更记录](https://github.com/Fish-under-sea/dsh-fish/blob/main/CHANGELOG.md).
 
 派生自 [x-feichen/dsh-skill-lens](https://github.com/x-feichen/dsh-skill-lens). 上游 package.json 声明 MIT，但未提供独立 LICENSE 或 NOTICE。本包补充 MIT 标准文本及来源声明，保留原项目署名；Fish 修改包括包名与对应适配。许可证: MIT。

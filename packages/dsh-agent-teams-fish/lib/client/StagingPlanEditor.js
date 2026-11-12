@@ -68,11 +68,40 @@ function effortMenuId(effort) {
  * reads only catalog metadata: choosing a member route must not change the
  * captain session's composer model.
  */
-function StagedModelPicker({ directory, provider, model, reasoningEffort, busy, onChange, t, }) {
+function StagedModelPicker({ directory, sessionId, provider, model, reasoningEffort, busy, onChange, t, }) {
     const state = useSyncExternalStore(directory.store.subscribe, directory.store.getSnapshot);
     const [open, setOpen] = useState(false);
     const [pane, setPane] = useState('root');
-    const catalogRoutes = state.groups.flatMap((group) => group.models.map((candidate) => ({
+    // null = no official policy captured for this session: keep the full catalog.
+    const [allowedModels, setAllowedModels] = useState(null);
+    useEffect(() => {
+        if (sessionId === '')
+            return;
+        let cancelled = false;
+        void fetch(`/plugins/dsh-agent-teams/model-policy?session=${encodeURIComponent(sessionId)}`, { credentials: 'same-origin' })
+            .then((response) => response.ok ? response.json() : undefined)
+            .then((data) => {
+            if (cancelled)
+                return;
+            const models = data?.allowedModels;
+            setAllowedModels(Array.isArray(models)
+                ? models.filter((candidate) => (typeof candidate === 'object' && candidate !== null
+                    && typeof candidate.provider === 'string'
+                    && typeof candidate.model === 'string'))
+                : null);
+        })
+            .catch(() => { });
+        return () => { cancelled = true; };
+    }, [sessionId]);
+    const visibleGroups = allowedModels === null
+        ? state.groups
+        : state.groups
+            .map((group) => ({
+            ...group,
+            models: group.models.filter((candidate) => allowedModels.some((route) => route.provider === group.id && route.model === candidate.id)),
+        }))
+            .filter((group) => group.models.length > 0);
+    const catalogRoutes = visibleGroups.flatMap((group) => group.models.map((candidate) => ({
         key: routeKey(group.id, candidate.id),
         provider: group.id,
         providerName: group.name,
@@ -123,7 +152,7 @@ function StagedModelPicker({ directory, provider, model, reasoningEffort, busy, 
         });
     }
     else {
-        for (const group of state.groups) {
+        for (const group of visibleGroups) {
             modelItems.push({ type: 'label', id: `provider:${group.id}`, text: group.name });
             for (const candidate of group.models) {
                 modelItems.push({
@@ -290,7 +319,7 @@ function StagedMemberEditor({ team, member, modelDirectory, onPendingChange, t }
         await persist();
     };
     const route = `${provider}/${model}`.replace(/^\//u, '');
-    return (_jsxs("article", { className: css.planCard, "data-plan-member": member.name, "data-open": open, children: [_jsxs("button", { type: "button", className: css.planCardHeader, "aria-expanded": open, "aria-controls": bodyId, onClick: () => { setOpen((current) => !current); }, children: [_jsxs("span", { className: css.planCardIdentity, children: [_jsx("strong", { children: member.name }), _jsx("span", { children: role || t('plan.member.roleFallback') })] }), _jsx("span", { className: css.planCardMeta, title: route, children: route }), dirty && _jsx("em", { className: css.planDirty, children: t('plan.unsaved') }), _jsx(DisclosureChevron, { open: open })] }), open && (_jsxs("form", { id: bodyId, className: css.planCardBody, onSubmit: (event) => { void save(event); }, children: [_jsxs("fieldset", { disabled: busy, children: [_jsxs("label", { children: [t('plan.member.role'), _jsx("input", { name: "role", value: role, onChange: (event) => { setRole(event.currentTarget.value); markEdited(); } })] }), _jsx(StagedModelPicker, { directory: modelDirectory, provider: provider, model: model, reasoningEffort: reasoningEffort, busy: busy, onChange: (selection) => { void persist(selection); }, t: t }), _jsxs("label", { children: [t('plan.member.prompt'), _jsx("textarea", { name: "executionPrompt", value: executionPrompt, onChange: (event) => { setExecutionPrompt(event.currentTarget.value); markEdited(); }, rows: 3 })] })] }), _jsxs("span", { className: css.planActions, children: [_jsx(Feedback, { value: feedback }), _jsx("button", { type: "submit", disabled: busy || !dirty || provider.trim() === '' || model.trim() === '', children: busy ? t('plan.saving') : t('plan.save') })] })] }))] }));
+    return (_jsxs("article", { className: css.planCard, "data-plan-member": member.name, "data-open": open, children: [_jsxs("button", { type: "button", className: css.planCardHeader, "aria-expanded": open, "aria-controls": bodyId, onClick: () => { setOpen((current) => !current); }, children: [_jsxs("span", { className: css.planCardIdentity, children: [_jsx("strong", { children: member.name }), _jsx("span", { children: role || t('plan.member.roleFallback') })] }), _jsx("span", { className: css.planCardMeta, title: route, children: route }), dirty && _jsx("em", { className: css.planDirty, children: t('plan.unsaved') }), _jsx(DisclosureChevron, { open: open })] }), open && (_jsxs("form", { id: bodyId, className: css.planCardBody, onSubmit: (event) => { void save(event); }, children: [_jsxs("fieldset", { disabled: busy, children: [_jsxs("label", { children: [t('plan.member.role'), _jsx("input", { name: "role", value: role, onChange: (event) => { setRole(event.currentTarget.value); markEdited(); } })] }), _jsx(StagedModelPicker, { directory: modelDirectory, sessionId: team.captainSessionId, provider: provider, model: model, reasoningEffort: reasoningEffort, busy: busy, onChange: (selection) => { void persist(selection); }, t: t }), _jsxs("label", { children: [t('plan.member.prompt'), _jsx("textarea", { name: "executionPrompt", value: executionPrompt, onChange: (event) => { setExecutionPrompt(event.currentTarget.value); markEdited(); }, rows: 3 })] })] }), _jsxs("span", { className: css.planActions, children: [_jsx(Feedback, { value: feedback }), _jsx("button", { type: "submit", disabled: busy || !dirty || provider.trim() === '' || model.trim() === '', children: busy ? t('plan.saving') : t('plan.save') })] })] }))] }));
 }
 function StagedTaskEditor({ team, task, onPendingChange, t }) {
     const bodyId = useId();

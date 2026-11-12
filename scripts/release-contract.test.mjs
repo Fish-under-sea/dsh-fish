@@ -9,7 +9,7 @@ const require = createRequire(new URL('packages/dsh-skill-lens-fish/package.json
 const { parse } = require('yaml')
 
 // 2.0.0 起十一个成员全部在本仓库内，聚合包与成员统一版本。
-const MEMBER_VERSION = '2.0.0'
+const MEMBER_VERSION = '2.0.1'
 const workspaceMembers = [
   'dsh-approval-guide', 'dsh-better-reasoning-effort-fish',
   'dsh-client-ui-task-board-fish', 'dsh-git-sync', 'dsh-session-archive-fish',
@@ -24,7 +24,7 @@ const parsePatch = path => parse(readFileSync(new URL(path, root), 'utf8'), {
 
 test('aggregate pins exactly eleven scoped members at their published version', () => {
   const pkg = json('package.json')
-  assert.equal(pkg.version, '2.0.0')
+  assert.equal(pkg.version, '2.0.1')
   assert.equal(pkg.publishConfig.access, 'public')
   assert.deepEqual(Object.keys(pkg.dependencies).sort(), [...members].sort())
   for (const [name, version] of Object.entries(pkg.dependencies)) {

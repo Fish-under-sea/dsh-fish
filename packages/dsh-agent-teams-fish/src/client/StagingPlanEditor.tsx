@@ -113,6 +113,7 @@ function effortMenuId(effort: string): string {
  */
 function StagedModelPicker({
   directory,
+  sessionId,
   provider,
   model,
   reasoningEffort,
@@ -121,6 +122,7 @@ function StagedModelPicker({
   t,
 }: {
   readonly directory: ModelDirectory
+  readonly sessionId: string
   readonly provider: string
   readonly model: string
   readonly reasoningEffort: string
@@ -131,7 +133,36 @@ function StagedModelPicker({
   const state = useSyncExternalStore(directory.store.subscribe, directory.store.getSnapshot)
   const [open, setOpen] = useState(false)
   const [pane, setPane] = useState<ModelMenuPane>('root')
-  const catalogRoutes = state.groups.flatMap((group) => group.models.map((candidate) => ({
+  // null = no official policy captured for this session: keep the full catalog.
+  const [allowedModels, setAllowedModels] = useState<readonly { provider: string; model: string }[] | null>(null)
+  useEffect(() => {
+    if (sessionId === '') return
+    let cancelled = false
+    void fetch(`/plugins/dsh-agent-teams/model-policy?session=${encodeURIComponent(sessionId)}`, { credentials: 'same-origin' })
+      .then((response) => response.ok ? response.json() as Promise<unknown> : undefined)
+      .then((data) => {
+        if (cancelled) return
+        const models = (data as { allowedModels?: unknown } | undefined)?.allowedModels
+        setAllowedModels(Array.isArray(models)
+          ? models.filter((candidate): candidate is { provider: string; model: string } => (
+            typeof candidate === 'object' && candidate !== null
+            && typeof (candidate as { provider?: unknown }).provider === 'string'
+            && typeof (candidate as { model?: unknown }).model === 'string'
+          ))
+          : null)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [sessionId])
+  const visibleGroups = allowedModels === null
+    ? state.groups
+    : state.groups
+      .map((group) => ({
+        ...group,
+        models: group.models.filter((candidate) => allowedModels.some((route) => route.provider === group.id && route.model === candidate.id)),
+      }))
+      .filter((group) => group.models.length > 0)
+  const catalogRoutes = visibleGroups.flatMap((group) => group.models.map((candidate) => ({
     key: routeKey(group.id, candidate.id),
     provider: group.id,
     providerName: group.name,
@@ -201,7 +232,7 @@ function StagedModelPicker({
       disabled: true,
     })
   } else {
-    for (const group of state.groups) {
+    for (const group of visibleGroups) {
       modelItems.push({ type: 'label', id: `provider:${group.id}`, text: group.name })
       for (const candidate of group.models) {
         modelItems.push({
@@ -453,6 +484,7 @@ function StagedMemberEditor({ team, member, modelDirectory, onPendingChange, t }
             <label>{t('plan.member.role')}<input name="role" value={role} onChange={(event) => { setRole(event.currentTarget.value); markEdited() }} /></label>
             <StagedModelPicker
               directory={modelDirectory}
+              sessionId={team.captainSessionId}
               provider={provider}
               model={model}
               reasoningEffort={reasoningEffort}

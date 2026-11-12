@@ -1,6 +1,6 @@
 {
   "name": "@fish-under-sea/dsh-fish",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Fish DSH 插件聚合包：十一个本仓库成员（含思考强度与 AgentTeams）统一 2.0.0，依赖逐项精确固定；破甲不内置，需单独安装。",
   "type": "module",
   "main": "./lib/index.js",
@@ -23,17 +23,17 @@
     "access": "public"
   },
   "dependencies": {
-    "@fish-under-sea/dsh-approval-guide": "2.0.0",
-    "@fish-under-sea/dsh-client-ui-task-board-fish": "2.0.0",
-    "@fish-under-sea/dsh-git-sync": "2.0.0",
-    "@fish-under-sea/dsh-session-archive-fish": "2.0.0",
-    "@fish-under-sea/dsh-settings-nav-order": "2.0.0",
-    "@fish-under-sea/dsh-skill-lens-fish": "2.0.0",
-    "@fish-under-sea/dsh-ssh-fish": "2.0.0",
-    "@fish-under-sea/dsh-usage-fish": "2.0.0",
-    "@fish-under-sea/dsh-visual-companion": "2.0.0",
-    "@fish-under-sea/dsh-agent-teams-fish": "2.0.0",
-    "@fish-under-sea/dsh-better-reasoning-effort-fish": "2.0.0"
+    "@fish-under-sea/dsh-approval-guide": "2.0.1",
+    "@fish-under-sea/dsh-client-ui-task-board-fish": "2.0.1",
+    "@fish-under-sea/dsh-git-sync": "2.0.1",
+    "@fish-under-sea/dsh-session-archive-fish": "2.0.1",
+    "@fish-under-sea/dsh-settings-nav-order": "2.0.1",
+    "@fish-under-sea/dsh-skill-lens-fish": "2.0.1",
+    "@fish-under-sea/dsh-ssh-fish": "2.0.1",
+    "@fish-under-sea/dsh-usage-fish": "2.0.1",
+    "@fish-under-sea/dsh-visual-companion": "2.0.1",
+    "@fish-under-sea/dsh-agent-teams-fish": "2.0.1",
+    "@fish-under-sea/dsh-better-reasoning-effort-fish": "2.0.1"
   },
   "devDependencies": {
     "lightningcss": "^1.32.0",

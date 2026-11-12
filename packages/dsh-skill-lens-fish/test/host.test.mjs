@@ -39,6 +39,7 @@ host.apply({
   sessions: {
     get: (id) => (id === 'smoke' ? { header: { cwd: sessionCwd } } : undefined),
   },
+  effect: (fn) => { fn() },
 });
 const route = routes[0];
 
@@ -475,4 +476,26 @@ test('batch-export：单文件（扁平）技能也能导出', async () => {
   assert.ok(res.body.length > 0);
   const name = res.body.subarray(30, 30 + res.body.readUInt16LE(26)).toString('utf8');
   assert.equal(name, 'flat-export.md');
+});
+
+test('热重载：apply 的 route disposer 会释放前缀路由', () => {
+  const registered = [];
+  let dispose;
+  const ctx = {
+    webServer: {
+      register(route) {
+        if (registered.length > 0) throw new Error('duplicate prefix route "/skill-lens/api"');
+        registered.push(route);
+        return () => { registered.pop(); };
+      },
+    },
+    effect(fn) { dispose = fn(); },
+  };
+  host.apply(ctx);
+  assert.equal(registered.length, 1);
+  assert.equal(typeof dispose, 'function');
+  dispose();
+  // 释放后再次 apply 不应与旧路由冲突（旧实现会在这里抛 duplicate）。
+  host.apply(ctx);
+  assert.equal(registered.length, 1);
 });

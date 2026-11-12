@@ -4,6 +4,12 @@
 
 ---
 
+## 2.0.1（2026-11-13）
+
+- **skill-lens 路由释放**：`apply()` 现在把 `webServer.register` 返回的 disposer 交给 `ctx.effect`，热重载/禁用时先释放 `/skill-lens/api`，修复 `duplicate prefix route` 导致 skill-lens fiber failed、插件更新与回滚都失败的问题；新增「释放后再次 apply 不冲突」回归测试。
+- **AgentTeams 模型策略**：新增只读 `/plugins/dsh-agent-teams/model-policy` 接口，返回官方 `subagentModelSelectionPolicy`；计划编辑器按该名单过滤模型选择器，成员路由与官方 `list_subagent_models` 保持一致。
+- **统一版本**：11 个成员与聚合包全部升到 `2.0.1`，即使本版无代码改动也重新发布，保证版本统一。
+
 ## 2.0.0（2026-11-13）
 
 - **十一个成员全部收进本仓库**：`dsh-better-reasoning-effort-fish` 与 `dsh-agent-teams-fish` 分别从独立仓库迁入 `packages/`，与原有 9 个成员同等构建、发布；聚合包与十一个成员统一为 `2.0.0`，依赖逐项精确固定。

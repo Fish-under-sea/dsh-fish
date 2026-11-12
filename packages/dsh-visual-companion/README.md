@@ -1,6 +1,6 @@
 # @fish-under-sea/dsh-visual-companion
 
-**2.0.0 · 视觉伴侣**
+**2.0.1 · 视觉伴侣**
 
 把网页上提交的选择变成一条唤醒会话的用户消息。
 
@@ -13,10 +13,10 @@
 ## 安装
 
 ```sh
-dsh plugin --profile <profile> add @fish-under-sea/dsh-visual-companion@2.0.0
+dsh plugin --profile <profile> add @fish-under-sea/dsh-visual-companion@2.0.1
 ```
 
-也可安装聚合包 `@fish-under-sea/dsh-fish@2.0.0`。聚合与独立安装不要重复展开相同插件行；安装完成后重启 DSH。桌面环境无 CLI 时使用插件管理器。
+也可安装聚合包 `@fish-under-sea/dsh-fish@2.0.1`。聚合与独立安装不要重复展开相同插件行；安装完成后重启 DSH。桌面环境无 CLI 时使用插件管理器。
 
 ## 配置与边界
 
@@ -26,6 +26,6 @@ Node 要求: `>=24.9`. DSH 支持范围以本包声明为准；聚合包不覆�
 
 ## 维护与来源
 
-2.0.0 统一发布版本，不表示已合并上游所有最新提交。历史说明保留在 Git 历史中；聚合变更见 [聚合变更记录](https://github.com/Fish-under-sea/dsh-fish/blob/main/CHANGELOG.md).
+2.0.1 统一发布版本，不表示已合并上游所有最新提交。历史说明保留在 Git 历史中；聚合变更见 [聚合变更记录](https://github.com/Fish-under-sea/dsh-fish/blob/main/CHANGELOG.md).
 
 Fish 原生插件。 许可证: MIT.

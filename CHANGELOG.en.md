@@ -4,6 +4,12 @@
 
 ---
 
+## 2.0.1 (2026-11-13)
+
+- **Skill Lens route disposal**: `apply()` now hands the `webServer.register` disposer to `ctx.effect`, releasing `/skill-lens/api` on hot reload/disable. This fixes the `duplicate prefix route` failure that broke both the Skill Lens fiber and the plugin update/rollback path; a regression test covers re-applying after disposal.
+- **AgentTeams model policy**: a read-only `/plugins/dsh-agent-teams/model-policy` endpoint returns the official `subagentModelSelectionPolicy`; the plan editor filters its model picker by that allowlist so member routes match `list_subagent_models`.
+- **Uniform version**: all eleven members and the aggregate move to `2.0.1`, republished even when a package has no code change, so versions stay aligned.
+
 ## 2.0.0 (2026-11-13)
 
 - **All eleven members now live in this repository**: `dsh-better-reasoning-effort-fish` and `dsh-agent-teams-fish` move from their standalone repositories into `packages/`, built and published like the original nine; the aggregate and all eleven members share version `2.0.0` with exact dependency pins.
