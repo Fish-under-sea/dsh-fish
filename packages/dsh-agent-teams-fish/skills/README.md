@@ -1,0 +1,63 @@
+# 项目维护 Skills
+
+本目录是 canonical source。`.dsh/skills/` 是完整文件镜像，`.agents/skills/` 通过相对符号链接供 Codex 发现。修改本项目自己的 skill 后运行 `pnpm sync:skill`；`pnpm verify:skill` 检查每个 skill 的正文、references、scripts、examples 和其他随附文件。
+
+## 来源与更新
+
+10 个上游 skill 来自 [oh-my-dsh/dsh-plugin-upgrade-skill](https://github.com/oh-my-dsh/dsh-plugin-upgrade-skill/tree/eeff1cdcffe4013e094d94c8d9b8651a65fbc79a)，固定 commit `eeff1cdcffe4013e094d94c8d9b8651a65fbc79a`，更新日期 2026-09-25。127 个上游文件保持原样。来源清单及每个文件的 SHA-256 见 [upstream-lock.json](upstream-lock.json)，MIT 许可见 [LICENSE.dsh-plugin-upgrade-skill](LICENSE.dsh-plugin-upgrade-skill)。首次导入基线为 `cd4d497588cdd4f16300622779b62a78fe803169`（2026-09-06，115 文件）。
+
+项目原有 `dsh-plugin-development` 单独维护；其历史 API 示例已加适用范围说明，不包含在上游 hash 清单中。
+
+更新时先审阅明确 commit 的差异，再更新 skill 目录、来源清单和镜像，并保留清单中 4 个上游脚本的执行权限。不要自动追随上游 `main`。同步器会报告额外镜像文件和已从 canonical 删除的旧 skill 目录，不会自动删除；须审阅来源后单独处理。新增或删除 skill 时也要同步 `.agents/skills/` 的发现链接。
+
+这批资料是开发维护工具，不是运行时依赖；当前 npm `files` 清单不包含这些目录。上游完整 benchmark 保留在独立 clone，不复制进应用。本次 clone 位于 `/tmp/dsh-plugin-upgrade-skill-20260924`；临时目录丢失后，可按固定 SHA 重新克隆。
+
+### 重复升级命令
+
+已有 clone 时先 `git -C /tmp/dsh-plugin-upgrade-skill-20260924 fetch origin main`，读取 `origin/main` 的完整 SHA，并审阅它相对 `upstream-lock.json` 中 commit 的差异。首次下载可运行 `git clone https://github.com/oh-my-dsh/dsh-plugin-upgrade-skill.git /tmp/dsh-plugin-upgrade-skill-20260924`。
+
+```sh
+# 默认只预览；将 SHA 换为本次已经审阅的完整 commit。
+pnpm update:skills /tmp/dsh-plugin-upgrade-skill-20260924 eeff1cdcffe4013e094d94c8d9b8651a65fbc79a
+pnpm update:skills /tmp/dsh-plugin-upgrade-skill-20260924 eeff1cdcffe4013e094d94c8d9b8651a65fbc79a --apply
+pnpm verify:skill
+pnpm test:skills-updater
+```
+
+更新器直接读取 Git commit 中的文件，不执行上游代码，也不导入 clone 的未提交修改。它核验当前锁定哈希、执行权限、镜像和发现链接，更新 canonical、镜像及锁定清单；拒绝覆盖本地修改。新增/删除 skill、删除文件、许可证变化及非后继 commit 需要单独审阅处理。它不是事务性安装器：如果磁盘写入中断，先用 Git diff 检查并恢复本次涉及的 skill 文件、镜像和锁定清单，再重试。每次更新后同步本 README 的来源 SHA、文件数与适用范围。
+
+上游推荐的通用安装方式是 `npx skills add oh-my-dsh/dsh-plugin-upgrade-skill`，Skills CLI 也提供 `npx skills update [skills]`。本项目采用自有 `skills/upstream-lock.json` 与 `skills/ → .agents/skills/ + .dsh/skills/` 布局，通用 CLI 不负责维护这些清单；本仓库使用上述项目命令，避免混合两套管理方式。
+
+本次同步新增通用 `generic-migration` skill，以及 `0.1.5-alpha.1` 至 `0.1.6-alpha.1` 的迁移卡和运行时验证记录；**仍未覆盖 `0.1.6-alpha.1 → 0.1.7-rc.2`**。新增 skill 已单独审阅并补全发现链接，其余文件通过项目更新器核验后导入。上游资料中的 dist-tag 快照是历史值，不能作为当前版本结论。资料同步不代表运行时适配完成。
+
+## 使用入口
+
+| 任务 | 项目内 skill | 用法 |
+| --- | --- | --- |
+| 统一编排 | [plugin-workflow](plugin-workflow/SKILL.md) | 组织阶段、验收项和状态；不凭空推定阶段已通过 |
+| 版本影响与迁移 | [plugin-upgrade](plugin-upgrade/SKILL.md) | 版本变更链、只读扫描、迁移计划和实现验证 |
+| 官方契约核对 | [dsh-upgrade-audit](dsh-upgrade-audit/SKILL.md) | 精确 tag/源码或 npm 产物对比，补全版本卡遗漏 |
+| 产品与包测试 | [plugin-test](plugin-test/SKILL.md) | 七类触点、真实宿主加载、tarball smoke 和自定义功能探针 |
+| 打包发布 | [plugin-release](plugin-release/SKILL.md) | 产物闭包、发布一致性检查；必须遵守下方项目规则 |
+| 编写插件 | [plugin-write](plugin-write/SKILL.md) | 目标接口、命名、配置与开发模板 |
+| 运行问题 | [plugin-runtime-debug](plugin-runtime-debug/SKILL.md) | 实际加载版本、服务、UI 和状态诊断 |
+| 大型前端依赖 | [plugin-heavy-dep](plugin-heavy-dep/SKILL.md) | 按需处理分包、加载与交互边界 |
+| 构造迁移评测 | [dsh-benchmark-case](dsh-benchmark-case/SKILL.md) | 将真实故障整理为 Harbor 题；执行还需上游完整 benchmark 仓库 |
+
+同名全局 skill 可能来自其他来源或版本；本项目任务明确读取上表的项目路径。用户当前已授权的任务不需要因为上游通用模板再重复征求确认；新增超出任务范围的发布等动作按会话指令处理。交互式浏览器操作使用 Ego Lite，遵守项目 `AGENTS.md`。
+
+## 本项目的适用规则
+
+2026-09-11 补充：维护者已明确将验收过的 `0.1.17-rc.1` 提升至 npm `latest`。RC 首发仍走 `next`，通过验收后可显式提升同一不可变产物；GitHub Release 保留预发布标志。此项目规则覆盖上游 skill 的“预发布只能进入非 latest”默认约定，流程见[维护指南](../docs/maintenance-workflow.md)。
+
+1. **版本卡是线索，不是完整 API 差异。** 当前库没有 `registerContinuableSetup`、`followup`、`sendMessage` 的专项迁移指导。`report → send_message` 工具卡不等同于子代理 runtime API 迁移。#130 必须继续用精确官方实现和本项目生命周期测试核验。
+2. **宿主、插件、发布渠道分别记录。** GitHub tag 不代表 npm 已发布；宿主 `latest` 与插件 `latest` 不保证兼容。普通用户默认组合只能来自 AgentTeams 验收矩阵；Alpha 预览须显式选择。
+3. **精确 CLI 版本还不够。** 固定并检查完整宿主依赖闭包和实际 profile。不要将 `npm install -g @deepseek-ai/dsh@<exact>` 视为所有分包已固定，也不要把宽 peer 范围当作支持承诺。
+4. **发布文档中的历史基线不直接采用。** 当前导入版本仍出现“npm 基线 0.1.1-rc.2”“所有 0.1.2-alpha.* 未发布”和宽 peer `<0.2.0` 的陈旧或矛盾说明。以当次 registry 查询、精确产物和实测矩阵为准。
+5. **发布校验需包含宿主支持证据。** 上游 `verify-release` 只校验插件自身版本/标签；无后缀插件可能仍然只支持 Alpha 宿主。通过该脚本不能直接进入 `latest`。它还强制无后缀版本使用 `latest`，因此并不支持所有候选包推广流程。
+6. **回退要区分对象。** Git tag、GitHub release、npm tarball、dist-tag、用户 profile 和持久化数据是不同对象。不要套用“删除/重指向 Git tag”来回滚 npm 包或用户安装。
+7. **测试通过要说明范围。** 52 道 Harbor 题测 AI 的迁移能力，不是 AgentTeams 的 52 项回归。Docker ready 或 HTTP 200 只证明特定启动条件；发布需要插件激活、队员唤醒/执行/回报、模型与推理力度、失败收尾、恢复和 UI 的项目探针。
+8. **只读扫描避开维护资料本身。** planner 会扫描代码、配置和脚本，也会命中 vendored skills 的示例。分析生产仓库时使用清楚标识的源码快照，或逐条排除这些维护资料带来的结果；零命中不等于没有风险。
+9. **新增检查器也有版本范围。** `inject-lint` 面向 alpha.2，并把 Cordis peer 必须等于 `^4.0.1` 写死；AgentTeams 已使用 `^4.0.2`，不能按其 `FIX-REQUIRED` 机械降级。新版 publish-playbook 的 amend/re-tag/force-push 历史修复配方也不适用于本项目已发布产物；修复应使用新插件版本并遵循项目发布规则。
+
+统一治理方案见 [兼容性与发布生命周期审查](../docs/compatibility-audit-2026-09-05/README.md)，本次研究与扫描证据见 [升级 skill 接入研究](../docs/upgrade-skill-study-2026-09-06/README.md)。二者均为审查/方案，不能视为已完成兼容修复或渠道发布。
