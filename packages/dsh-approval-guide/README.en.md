@@ -1,6 +1,6 @@
 # @fish-under-sea/dsh-approval-guide
 
-**2.0.1 · Approval Guide**
+**2.0.2 · Approval Guide**
 
 Adds Chinese action, risk and rationale notes to approval prompts.
 
@@ -17,10 +17,10 @@ When the composer is empty, clicking Send fills in and sends “继续任务，�
 ## Installation
 
 ```sh
-dsh plugin --profile <profile> add @fish-under-sea/dsh-approval-guide@2.0.1
+dsh plugin --profile <profile> add @fish-under-sea/dsh-approval-guide@2.0.2
 ```
 
-Also included in `@fish-under-sea/dsh-fish@2.0.1`. Do not expand duplicate rows through both aggregate and standalone bundles. Restart DSH after installation; use the desktop plugin manager when no CLI is available.
+Also included in `@fish-under-sea/dsh-fish@2.0.2`. Do not expand duplicate rows through both aggregate and standalone bundles. Restart DSH after installation; use the desktop plugin manager when no CLI is available.
 
 ## Configuration and Safety
 
@@ -30,6 +30,6 @@ Node requirement: `>=24.9`. Host compatibility follows this package manifest; th
 
 ## Maintenance and Attribution
 
-2.0.1 is a coordinated release number, not a claim that all latest upstream commits are merged. Historical documentation remains in Git; see [aggregate changelog](https://github.com/Fish-under-sea/dsh-fish/blob/main/CHANGELOG.en.md).
+2.0.2 is a coordinated release number, not a claim that all latest upstream commits are merged. Historical documentation remains in Git; see [aggregate changelog](https://github.com/Fish-under-sea/dsh-fish/blob/main/CHANGELOG.en.md).
 
 Fish-native plugin. License: MIT.

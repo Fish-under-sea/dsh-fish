@@ -4,6 +4,13 @@
 
 ---
 
+## 2.0.2 (2026-11-13)
+
+- **AgentTeams route derivation**: member defaults and fallback now read the official `subagentModelSelectionPolicy`. A configured fallback outside the list is replaced by another allowed route; no fallback configuration means no downgrade; `memberModel` / `memberLlmProvider` are optional, so the profile no longer needs a manually synchronised model allowlist.
+- **Default-route fallback**: when the captain's current route is outside the official list, the member default switches to the first allowed route; an explicit out-of-policy route still fails instead of being silently re-routed.
+- **Regression tests**: `scripts/model-policy-tdd.mjs` covers allowed fallback, out-of-policy fallback, out-of-policy default, and explicit out-of-policy selection.
+- **Uniform version**: all eleven members and the aggregate move to `2.0.2`.
+
 ## 2.0.1 (2026-11-13)
 
 - **Skill Lens route disposal**: `apply()` now hands the `webServer.register` disposer to `ctx.effect`, releasing `/skill-lens/api` on hot reload/disable. This fixes the `duplicate prefix route` failure that broke both the Skill Lens fiber and the plugin update/rollback path; a regression test covers re-applying after disposal.

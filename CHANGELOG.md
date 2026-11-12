@@ -4,6 +4,13 @@
 
 ---
 
+## 2.0.2（2026-11-13）
+
+- **AgentTeams 路由派生**：成员默认路由与 fallback 现在直接读取官方 `subagentModelSelectionPolicy`。配置的 fallback 不在名单内时自动换成名单内另一条路由；没有 fallback 配置则不降级；`memberModel` / `memberLlmProvider` 改为可选，profile 不再需要手工同步模型名单。
+- **默认路由兜底**：captain 当前路由不在官方名单内时，成员默认路由自动改用名单首项；显式指定的名单外路由仍然报错，不静默改路。
+- **回归测试**：新增 `scripts/model-policy-tdd.mjs`，覆盖名单内 fallback、名单外 fallback、默认路由越界、显式越界四种情况。
+- **统一版本**：11 个成员与聚合包全部升到 `2.0.2`。
+
 ## 2.0.1（2026-11-13）
 
 - **skill-lens 路由释放**：`apply()` 现在把 `webServer.register` 返回的 disposer 交给 `ctx.effect`，热重载/禁用时先释放 `/skill-lens/api`，修复 `duplicate prefix route` 导致 skill-lens fiber failed、插件更新与回滚都失败的问题；新增「释放后再次 apply 不冲突」回归测试。

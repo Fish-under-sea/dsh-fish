@@ -9,37 +9,37 @@ importers:
   .:
     dependencies:
       '@fish-under-sea/dsh-agent-teams-fish':
-        specifier: 2.0.1
+        specifier: 2.0.2
         version: link:packages/dsh-agent-teams-fish
       '@fish-under-sea/dsh-approval-guide':
-        specifier: 2.0.1
+        specifier: 2.0.2
         version: link:packages/dsh-approval-guide
       '@fish-under-sea/dsh-better-reasoning-effort-fish':
-        specifier: 2.0.1
+        specifier: 2.0.2
         version: link:packages/dsh-better-reasoning-effort-fish
       '@fish-under-sea/dsh-client-ui-task-board-fish':
-        specifier: 2.0.1
+        specifier: 2.0.2
         version: link:packages/dsh-client-ui-task-board-fish
       '@fish-under-sea/dsh-git-sync':
-        specifier: 2.0.1
+        specifier: 2.0.2
         version: link:packages/dsh-git-sync
       '@fish-under-sea/dsh-session-archive-fish':
-        specifier: 2.0.1
+        specifier: 2.0.2
         version: link:packages/dsh-session-archive-fish
       '@fish-under-sea/dsh-settings-nav-order':
-        specifier: 2.0.1
+        specifier: 2.0.2
         version: link:packages/dsh-settings-nav-order
       '@fish-under-sea/dsh-skill-lens-fish':
-        specifier: 2.0.1
+        specifier: 2.0.2
         version: link:packages/dsh-skill-lens-fish
       '@fish-under-sea/dsh-ssh-fish':
-        specifier: 2.0.1
+        specifier: 2.0.2
         version: link:packages/dsh-ssh-fish
       '@fish-under-sea/dsh-usage-fish':
-        specifier: 2.0.1
+        specifier: 2.0.2
         version: link:packages/dsh-usage-fish
       '@fish-under-sea/dsh-visual-companion':
-        specifier: 2.0.1
+        specifier: 2.0.2
         version: link:packages/dsh-visual-companion
     devDependencies:
       lightningcss:

@@ -16,7 +16,7 @@
 
 </div>
 
-> **2.0.1：本包已并入 `dsh-fish` 单仓，作为 `packages/dsh-better-reasoning-effort-fish` 工作区成员随聚合包 [`@fish-under-sea/dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) `2.0.1` 一同构建与发布。** 功能为上游 v0.5.4 同步与八款大肥鱼主题；安装与升级方式见[安装](#安装)。浏览器交互与真实 DSH 运行验证仍待补充，详见[开发与测试](#开发与测试)。
+> **2.0.2：本包已并入 `dsh-fish` 单仓，作为 `packages/dsh-better-reasoning-effort-fish` 工作区成员随聚合包 [`@fish-under-sea/dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) `2.0.2` 一同构建与发布。** 功能为上游 v0.5.4 同步与八款大肥鱼主题；安装与升级方式见[安装](#安装)。浏览器交互与真实 DSH 运行验证仍待补充，详见[开发与测试](#开发与测试)。
 
 ## 原作者与授权（请先读）
 
@@ -30,7 +30,7 @@
 | 本版位置 | [`dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) 单仓的 [`packages/dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-fish/tree/main/packages/dsh-better-reasoning-effort-fish)，与其余成员同批构建、同版本发布 |
 | 许可证 | **MIT**；上游 [`LICENSE`](LICENSE) 未修改，视觉来源的独立 MIT 声明见 [`NOTICE.md`](NOTICE.md) |
 | 本版基线 | [HaoyueQin/dsh-better-reasoning-effort](https://github.com/HaoyueQin/dsh-better-reasoning-effort) `master` = **v0.5.4**（commit [`2d68b65cc641cd85e95384c859a2bc3de23d9e08`](https://github.com/HaoyueQin/dsh-better-reasoning-effort/commit/2d68b65cc641cd85e95384c859a2bc3de23d9e08)；由 v0.5.2 `52b584c` 同步） |
-| 本版性质 | **个人客制化版（fork）**，非原创、非官方；2.0.1 起源码随 `dsh-fish` 单仓维护，历史独立仓库只保留 0.5.x 的发布记录；上游 README 完整保留为 [`README.original.md`](README.original.md) / [`README_ZH.original.md`](README_ZH.original.md) |
+| 本版性质 | **个人客制化版（fork）**，非原创、非官方；2.0.2 起源码随 `dsh-fish` 单仓维护，历史独立仓库只保留 0.5.x 的发布记录；上游 README 完整保留为 [`README.original.md`](README.original.md) / [`README_ZH.original.md`](README_ZH.original.md) |
 
 > 署名与改动范围的完整说明见 [`NOTICE.md`](NOTICE.md)。再分发时请保留原作者署名。
 
@@ -83,22 +83,22 @@
 
 ## 安装
 
-2.0.1 起本包与单仓其余成员对齐：DSH 要求 **≥ 0.2.2-rc.1**，`package.json` 的 peer 与开发依赖都是 `^0.2.2-rc.1`；Node 要求 **≥ 24.9**。**依赖对齐不表示本版已在所有 DSH 版本中验证。**
+2.0.2 起本包与单仓其余成员对齐：DSH 要求 **≥ 0.2.2-rc.1**，`package.json` 的 peer 与开发依赖都是 `^0.2.2-rc.1`；Node 要求 **≥ 24.9**。**依赖对齐不表示本版已在所有 DSH 版本中验证。**
 
 ### 聚合包（推荐）
 
 ```sh
 # 桌面版
-dsh plugin --profile desktop add @fish-under-sea/dsh-fish@2.0.1
+dsh plugin --profile desktop add @fish-under-sea/dsh-fish@2.0.2
 
 # Web 版
-dsh plugin --profile web add @fish-under-sea/dsh-fish@2.0.1
+dsh plugin --profile web add @fish-under-sea/dsh-fish@2.0.2
 ```
 
 聚合包以精确版本固定十个成员，安装它即得到与本包同批发布的其余插件。只需要这一个插件时，也可以单独安装：
 
 ```sh
-dsh plugin --profile web add @fish-under-sea/dsh-better-reasoning-effort-fish@2.0.1
+dsh plugin --profile web add @fish-under-sea/dsh-better-reasoning-effort-fish@2.0.2
 ```
 
 DSH 内置 pnpm 的 `minimum-release-age` 为 24 小时，不指定版本时可能暂时解析到更旧的版本；指定版本可跳过该等待。安装后**重启 DSH** 并强制刷新浏览器。
@@ -204,7 +204,7 @@ dsh plugin --profile web remove dsh-reasoning-effort
 
 ## 开发与测试
 
-2.0.1 并入单仓时的本地检查（Node 24.14.0）：`npm run typecheck` 与 `npm run build` 通过；`lib/` 产物已随仓库提交，克隆后无需构建即可打包发布。浏览器交互与真实 DSH 运行仍未验证，发布说明不把依赖对齐或素材预览当作运行证据。
+2.0.2 并入单仓时的本地检查（Node 24.14.0）：`npm run typecheck` 与 `npm run build` 通过；`lib/` 产物已随仓库提交，克隆后无需构建即可打包发布。浏览器交互与真实 DSH 运行仍未验证，发布说明不把依赖对齐或素材预览当作运行证据。
 
 ```sh
 npm run typecheck   # tsc 严格检查
@@ -218,7 +218,7 @@ npm run build       # lib/*.js + lib/client.js
 
 ## 与聚合包的关系
 
-2.0.1 起本包在 [`dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) 单仓内，与其余成员同批构建、同版本发布；聚合包 [`@fish-under-sea/dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) 以精确版本固定它，也可按[安装](#安装)一节单独安装本包。历史独立仓库（<https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish>）只保留 0.5.x 的 tag 与已发布版本，不再继续更新；升级请安装 2.0.1。
+2.0.2 起本包在 [`dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) 单仓内，与其余成员同批构建、同版本发布；聚合包 [`@fish-under-sea/dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) 以精确版本固定它，也可按[安装](#安装)一节单独安装本包。历史独立仓库（<https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish>）只保留 0.5.x 的 tag 与已发布版本，不再继续更新；升级请安装 2.0.2。
 
 ## 许可
 

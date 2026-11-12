@@ -59,8 +59,10 @@ const toolPolicyConfig = z.union([
 export const Config = z.object({
     stateDir: z.string().default('.agent-teams'),
     memberProvider: z.string().default('spawn'),
-    memberModel: z.string(),
-    memberLlmProvider: z.string(),
+    // Optional: when absent, the member route comes from the official subagent
+    // policy (or the captain's current route when no policy was captured).
+    memberModel: z.union([z.string(), z.const(undefined)]),
+    memberLlmProvider: z.union([z.string(), z.const(undefined)]),
     executionPrompt: z.string(),
     fallback: fallbackRouteConfig,
     profiles: z.dict(z.object({

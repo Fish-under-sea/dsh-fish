@@ -1,19 +1,19 @@
 # @fish-under-sea/dsh-agent-teams-fish
 
-**2.0.1 · 同步上游 v0.1.29 · dsh-fish 聚合成员 · 持久团队协作与 Fish 厂商美术**
+**2.0.2 · 同步上游 v0.1.29 · dsh-fish 聚合成员 · 持久团队协作与 Fish 厂商美术**
 
 [English](README.en.md)
 
 ## 安装与兼容
 
-自 2.0.1 起，本包并入 [Fish-under-sea/dsh-fish](https://github.com/Fish-under-sea/dsh-fish) 聚合仓库，作为工作区成员 `packages/dsh-agent-teams-fish` 与其它成员统一构建、统一版本、统一发布；原独立仓库不再单独演进。
+自 2.0.2 起，本包并入 [Fish-under-sea/dsh-fish](https://github.com/Fish-under-sea/dsh-fish) 聚合仓库，作为工作区成员 `packages/dsh-agent-teams-fish` 与其它成员统一构建、统一版本、统一发布；原独立仓库不再单独演进。
 
 ```sh
 # 聚合安装（推荐，含全部成员）
-dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@2.0.1
+dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@2.0.2
 
 # 或单独安装本成员
-dsh plugin --profile <profile> add @fish-under-sea/dsh-agent-teams-fish@2.0.1
+dsh plugin --profile <profile> add @fish-under-sea/dsh-agent-teams-fish@2.0.2
 ```
 
 聚合已包含本成员，不要重复挂载。安装后重启 DSH。Node 要求 `>=24.9`。推荐宿主 `0.2.2-rc.1`；`0.2.1-rc.2`、`0.2.1-alpha.2` 等旧版本仍在支持列表内。精确支持列表以 [compatibility.json](compatibility.json) 为唯一事实源，不以桌面应用版本推断核心版本。
@@ -47,9 +47,9 @@ pnpm --filter @fish-under-sea/dsh-agent-teams-fish verify
 
 ## 来源与记录
 
-基于 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams)（原作者 Relakkes / 程序员阿江）。MIT。保留上游 README、NOTICE 和历史发布说明。源码基线为上游 tag v0.1.29（commit 369c278）；自 2.0.1 起并入 dsh-fish 聚合仓库，版本随聚合统一。
+基于 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams)（原作者 Relakkes / 程序员阿江）。MIT。保留上游 README、NOTICE 和历史发布说明。源码基线为上游 tag v0.1.29（commit 369c278）；自 2.0.2 起并入 dsh-fish 聚合仓库，版本随聚合统一。
 
-- [2.0.1](release-notes/v2.0.1.md)
+- [2.0.2](release-notes/v2.0.2.md)
 - [1.1.0](release-notes/v1.1.0.md)
 - [1.0.2](release-notes/v1.0.2.md)
 - [1.0.1](release-notes/v1.0.1.md)

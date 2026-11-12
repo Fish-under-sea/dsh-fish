@@ -16,7 +16,7 @@ import { foldSubagentDescriptor } from '@deepseek-ai/dsh-subagent';
 import { createUserMessage, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { agentTeamsSource, assertMemberModelSelection, observedSessionFormatVersion, outputLimitTurn, guardSubagentCreation, installMemberModelSelection, startMember, usesManagedActivations, guardSubagentDelivery, installContinuableMemberSetup, memberToolFilter, queueMemberPrompt, restrictableToolNames, startMemberWithLenientFilter, steerMemberPrompt, sessionOwnEvents } from "./harness-compat.js";
+import { agentTeamsSource, assertMemberModelSelection, memberModelSelectionPolicy, observedSessionFormatVersion, outputLimitTurn, guardSubagentCreation, installMemberModelSelection, startMember, usesManagedActivations, guardSubagentDelivery, installContinuableMemberSetup, memberToolFilter, queueMemberPrompt, restrictableToolNames, startMemberWithLenientFilter, steerMemberPrompt, sessionOwnEvents } from "./harness-compat.js";
 import { markMailboxDelivered, appendMailbox, CAPTAIN_KEY, createMessage, readRetiredMemberIds, readTeamSync, readTeam, releaseMailboxDelivery, withTeamLock, writeTeam } from "./state.js";
 import { mailboxPrompt } from "./mailbox.js";
 import { nearestLiveLead } from "./lineage.js";
@@ -432,17 +432,39 @@ export async function resolveMemberLlmSelection(ctx, captain, request, signal) {
     // catalogs. A named provider (explicit or configured) is authoritative — a
     // model it does not advertise is a hard error, never a silent switch — and a
     // model the caller named keeps that caller's route.
-    const provider = composed.derivedProvider
+    const preferredProvider = composed.derivedProvider
         ? await resolveMemberModelOwner(ctx, currentProvider, composed.model.value, signal)
         : composed.provider.value;
     // Effort ids belong to one exact provider/model capability. Preserve the
     // captain's effort only on the same route; a changed route must resolve its
     // own default. Explicit effort still wins, while "default" forces that
     // target-default behavior even when the route did not change.
-    const model = composed.model.value;
+    let provider = preferredProvider;
+    let model = composed.model.value;
+    // The official subagent policy is the single source of truth for member
+    // routes. A configured/member-inherited route that falls outside the list is
+    // replaced by the first allowed route; an explicitly requested route is
+    // never silently re-routed and still fails the assertion below.
+    const policyRoutes = memberModelSelectionPolicy(ctx, captain.session);
+    const allowed = (candidate) => (policyRoutes === undefined
+        || policyRoutes.some((route) => route.provider === candidate.provider && route.model === candidate.model));
+    const explicitRoute = composed.provider.source === 'request' || composed.model.source === 'request';
+    if (policyRoutes !== undefined && !allowed({ provider, model }) && !explicitRoute) {
+        const first = policyRoutes[0];
+        if (first !== undefined) {
+            provider = first.provider;
+            model = first.model;
+        }
+    }
     assertMemberModelSelection(ctx, captain, { provider, model });
-    if (fallback !== undefined)
-        assertMemberModelSelection(ctx, captain, fallback);
+    // Fallback is derived from the same allowlist: keep the configured route when
+    // it is allowed, otherwise pick another allowed route, and drop it when none
+    // exists. This removes the need to synchronise a static fallback in the
+    // profile by hand.
+    let effectiveFallback = fallback;
+    if (policyRoutes !== undefined && fallback !== undefined && !allowed(fallback)) {
+        effectiveFallback = policyRoutes.find((candidate) => candidate.provider !== provider || candidate.model !== model);
+    }
     const sameRoute = provider === currentProvider && model === currentModel;
     const reasoningEffort = explicitEffort === undefined
         ? sameRoute
@@ -471,7 +493,7 @@ export async function resolveMemberLlmSelection(ctx, captain, request, signal) {
         ...resolved.reasoningEffort === undefined
             ? {}
             : { reasoningEffort: String(resolved.reasoningEffort) },
-        ...fallback === undefined ? {} : { fallback },
+        ...effectiveFallback === undefined ? {} : { fallback: effectiveFallback },
     };
 }
 /**

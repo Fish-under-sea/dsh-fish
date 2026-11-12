@@ -1,6 +1,6 @@
 # @fish-under-sea/dsh-session-archive-fish
 
-**2.0.1 · Session Archive**
+**2.0.2 · Session Archive**
 
 Search, batch-archive and clean up old sessions.
 
@@ -13,10 +13,10 @@ Central session inventory and filtering, batch archive/unarchive, guarded cascad
 ## Installation
 
 ```sh
-dsh plugin --profile <profile> add @fish-under-sea/dsh-session-archive-fish@2.0.1
+dsh plugin --profile <profile> add @fish-under-sea/dsh-session-archive-fish@2.0.2
 ```
 
-Also included in `@fish-under-sea/dsh-fish@2.0.1`. Do not expand duplicate rows through both aggregate and standalone bundles. Restart DSH after installation; use the desktop plugin manager when no CLI is available.
+Also included in `@fish-under-sea/dsh-fish@2.0.2`. Do not expand duplicate rows through both aggregate and standalone bundles. Restart DSH after installation; use the desktop plugin manager when no CLI is available.
 
 ## Configuration and Safety
 
@@ -26,6 +26,6 @@ Node requirement: `>=24.9.0`. Host compatibility follows this package manifest; 
 
 ## Maintenance and Attribution
 
-2.0.1 is a coordinated release number, not a claim that all latest upstream commits are merged. Historical documentation remains in Git; see [aggregate changelog](https://github.com/Fish-under-sea/dsh-fish/blob/main/CHANGELOG.en.md).
+2.0.2 is a coordinated release number, not a claim that all latest upstream commits are merged. Historical documentation remains in Git; see [aggregate changelog](https://github.com/Fish-under-sea/dsh-fish/blob/main/CHANGELOG.en.md).
 
 Forked from [zhu1090093659/dsh-web](https://github.com/zhu1090093659/dsh-web). Original authorship, LICENSE and NOTICE are preserved; Fish maintains naming and integration adaptations. License: Apache-2.0.
