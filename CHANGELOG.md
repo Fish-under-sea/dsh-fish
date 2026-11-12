@@ -4,6 +4,16 @@
 
 ---
 
+## 2.0.0（2026-11-13）
+
+- **十一个成员全部收进本仓库**：`dsh-better-reasoning-effort-fish` 与 `dsh-agent-teams-fish` 分别从独立仓库迁入 `packages/`，与原有 9 个成员同等构建、发布；聚合包与十一个成员统一为 `2.0.0`，依赖逐项精确固定。
+- **开始页命令菜单全量排序**：设置导航顺序插件把 `commandUi.candidates` 包装从固定四项扩展为全部行，按 `section` 分组重排，搜索态不重排；设置页提供分区化顺序编辑器；宿主 `normalizeState` 放开旧四项白名单，顺序可写入 `state.json` 并跨机恢复。
+- **空输入发送增强**：审批说明插件新增——输入框为空时点击发送按钮，自动填入并发送「继续任务，并梳理进度」；非空输入、停止按钮、附件、上传中与输入法组合态不接管，提交有重入保护与有界超时。
+- **统一说明与图标**：9 个既有成员补齐 `locale/{zh,en}.json` 的 `meta.title/description`，十一个成员统一使用聚合包 `icon.png`，README 全部更新到 2.0.0。
+- **发布契约与锁文件**：`scripts/release-contract.test.mjs` 同步为 11 成员、11 行 patch、2.0.0；`pnpm-lock.yaml` 更新为 12 个 workspace 工程。
+- **仍不内置**：Git 图谱继续退役；破甲仍需单独安装。
+- 发布后旧版本（`<2.0.0`）统一标记 deprecated，引导安装 `@fish-under-sea/dsh-fish@2.0.0`。
+
 ## 1.1.0（2026-11-08）
 
 - **适配 DSH 0.2.2-rc.1**：所有成员的 `dsh.engines.dsh` 与 peer 声明提到 `>=0.2.2-rc.1`，`engines.node` 提到 `>=24.9`（DSH 0.2.2 的最低 Node 要求）；类型依赖与构建目标升级到 `@deepseek-ai/* 0.2.2-rc.1`。上游 dsh-web 自 v0.4.15 起已按 0.2.2 的类型与运行时契约构建（Session Projection 异步注册等），本次同步一并带入。

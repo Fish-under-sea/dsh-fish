@@ -10,6 +10,10 @@ Adds Chinese action, risk and rationale notes to approval prompts.
 
 Adds Chinese action, risk and rationale explanations to approval prompts for files, commands, network access and privilege changes.
 
+### Empty-input send
+
+When the composer is empty, clicking Send fills in and sends “继续任务，并梳理进度” (continue the task and summarize progress). Non-empty input, the Stop button, attachments, pending uploads and IME composition are untouched; re-entry is guarded and the button wait is bounded to about 816 ms before a single warning.
+
 ## Installation
 
 ```sh

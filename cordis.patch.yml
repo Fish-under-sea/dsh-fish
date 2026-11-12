@@ -1,4 +1,4 @@
-# Fish 1.1.0 mounts ten separately addressable packages.
+# Fish 2.0.0 mounts eleven separately addressable packages.
 # Full package names are required by the client scanner.
 # Keep stable row ids to preserve existing profile overrides.
 - insert:
@@ -13,6 +13,8 @@
       config:
         stateDir: .agent-teams
         memberProvider: spawn
+    - id: dsh-better-reasoning-effort-fish
+      name: '@fish-under-sea/dsh-better-reasoning-effort-fish'
     - id: visual-companion
       name: '@fish-under-sea/dsh-visual-companion'
     - id: skill-lens

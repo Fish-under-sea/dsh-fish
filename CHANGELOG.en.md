@@ -4,6 +4,16 @@
 
 ---
 
+## 2.0.0 (2026-11-13)
+
+- **All eleven members now live in this repository**: `dsh-better-reasoning-effort-fish` and `dsh-agent-teams-fish` move from their standalone repositories into `packages/`, built and published like the original nine; the aggregate and all eleven members share version `2.0.0` with exact dependency pins.
+- **Full start-page command ordering**: Settings Navigation extends the `commandUi.candidates` wrapper from four fixed rows to every row, reorders per `section`, leaves search results untouched, adds a section-aware editor, and relaxes the host `normalizeState` whitelist so the order round-trips through `state.json` across machines.
+- **Empty-input send**: Approval Guide fills in and sends “继续任务，并梳理进度” when the composer is empty and Send is clicked; non-empty input, Stop, attachments, pending uploads and IME composition are untouched, with re-entry protection and a bounded timeout.
+- **Unified descriptions and icons**: the nine existing members gain `locale/{zh,en}.json` `meta.title/description`; all eleven members share the bundle `icon.png`; every README is updated to 2.0.0.
+- **Release contract and lockfile**: `scripts/release-contract.test.mjs` moves to 11 members, 11 patch rows and 2.0.0; `pnpm-lock.yaml` now covers 12 workspace projects.
+- **Still unbundled**: Git Graph remains retired; Jailbreak still installs separately.
+- After release, versions below `2.0.0` are deprecated and point users to `@fish-under-sea/dsh-fish@2.0.0`.
+
 ## 1.1.0 (2026-11-08)
 
 - **Adapted to DSH 0.2.2-rc.1**: every member’s `dsh.engines.dsh` and peer declaration move to `>=0.2.2-rc.1`, `engines.node` moves to `>=24.9` (DSH 0.2.2’s minimum Node), and type dependencies plus build targets move to `@deepseek-ai/* 0.2.2-rc.1`. Upstream dsh-web has built against 0.2.2’s types and runtime contracts since v0.4.15 (including asynchronous Session Projection registration), and this sync brings those changes in.
