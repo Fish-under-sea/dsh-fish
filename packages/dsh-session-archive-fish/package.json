@@ -1,7 +1,7 @@
 {
   "name": "@fish-under-sea/dsh-session-archive-fish",
   "version": "1.1.0",
-  "icon": "icon.svg",
+  "icon": "./icon.png",
   "description": "Session archive management for DSH Web: centralized inventory, batch archive/restore, physical delete with family cascade, and optional auto-archive / auto-cleanup policies.",
   "type": "module",
   "main": "lib/index.js",
@@ -53,7 +53,7 @@
     "lib/**/*.d.ts.map",
     "src",
     "cordis.patch.yml",
-    "icon.svg",
+    "icon.png",
     "locale",
     "README.en.md",
     "LICENSE",

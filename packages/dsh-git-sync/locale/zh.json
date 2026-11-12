@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Git 同步",
+    "description": "把选定配置同步进私有 Git 仓库并换机还原"
+  }
+}

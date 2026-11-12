@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Git Sync",
+    "description": "Syncs selected DSH configuration to a private Git repository and restores it."
+  }
+}

@@ -2,7 +2,7 @@
   "name": "@fish-under-sea/dsh-usage-fish",
   "description": "Usage statistics plugin for the dsh web GUI: per-provider balance and coding-plan quota detection plus a live token usage ledger, with a compact price glance card above the sidebar's Settings row",
   "version": "1.1.0",
-  "icon": "icon.svg",
+  "icon": "./icon.png",
   "type": "module",
   "packageManager": "pnpm@11.7.0",
   "engines": {
@@ -31,7 +31,7 @@
     "lib/**/*.d.ts.map",
     "src",
     "cordis.patch.yml",
-    "icon.svg",
+    "icon.png",
     "locale",
     "README.en.md",
     "LICENSE",
