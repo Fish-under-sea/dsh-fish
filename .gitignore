@@ -4,3 +4,5 @@ node_modules/
 *.log
 # Release 正文的本地草稿（release.yml 会用，但不随仓库发布）
 .github/releases/
+# 2.0.0 并行 worktree（位于主仓内，不随仓库发布）
+.worktrees/
