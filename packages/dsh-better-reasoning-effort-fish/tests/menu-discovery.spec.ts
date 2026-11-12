@@ -1,0 +1,177 @@
+/**
+ * Model-menu discovery tests: the composer slider mounts inside the OFFICIAL
+ * model menu, whose DOM shape changed in DeepSeek Harness 0.1.5-alpha.1.
+ *
+ *   - pre-portal: the menu renders inline inside [data-composer-card], right
+ *     after its trigger button (previousElementSibling is the trigger).
+ *   - 0.1.5: the menu is portaled to document.body; the seat trigger keeps it
+ *     linked via aria-controls="<menu id>".
+ *
+ * Both shapes keep aria-haspopup="menu" on the trigger and a stable id on the
+ * popover, so the controls link is the primary route and the sibling check
+ * stays as the fallback. Only 0.1.5+ is supported, but the finder stays
+ * shape-tolerant so a host rendering either shape keeps working.
+ *
+ * 0.2.0-rc.2 additionally swaps the popover's role to `group` while the model
+ * list pane is open (ModelSelect.tsx:484 -- its own list box takes
+ * role="menu"), so a role-only probe would lose the menu for as long as the
+ * user browses models. The popover is therefore identified by its ROLE plus
+ * its menu rows.
+ */
+
+// @vitest-environment jsdom
+import { beforeEach, describe, expect, it } from 'vitest'
+import { findModelMenu } from '../src/client/index.js'
+
+/** A seat trigger wired to a menu id, as the host renders it. */
+function trigger(menuId: string | null): HTMLButtonElement {
+  const button = document.createElement('button')
+  button.setAttribute('aria-haspopup', 'menu')
+  button.setAttribute('aria-expanded', 'true')
+  if (menuId !== null) button.setAttribute('aria-controls', menuId)
+  return button
+}
+
+function menu(id: string): HTMLElement {
+  const el = document.createElement('div')
+  el.id = id
+  el.setAttribute('role', 'menu')
+  return el
+}
+
+/** The drilled-in model list pane as 0.2.0-rc.2 renders it. */
+function modelPane(id: string): HTMLElement {
+  const el = document.createElement('div')
+  el.id = id
+  el.setAttribute('role', 'group')
+  el.innerHTML = `
+    <div class="searchRow"><input role="searchbox" /></div>
+    <div role="menu">
+      <section role="group" aria-labelledby="g-ds">
+        <div id="g-ds">DeepSeek</div>
+        <button role="menuitemradio" aria-checked="true">DeepSeek V4.1 Flash</button>
+      </section>
+    </div>`
+  return el
+}
+
+beforeEach(() => {
+  document.body.innerHTML = ''
+})
+
+describe('findModelMenu', () => {
+  it('finds the portaled 0.1.5 menu via the trigger aria-controls link', () => {
+    const card = document.createElement('div')
+    card.setAttribute('data-composer-card', '')
+    card.appendChild(trigger('tid-menu'))
+    document.body.appendChild(card)
+    const portaled = menu('tid-menu')
+    document.body.appendChild(portaled)
+
+    expect(findModelMenu()).toBe(portaled)
+  })
+
+  it('finds the pre-portal inline menu next to its trigger', () => {
+    const card = document.createElement('div')
+    card.setAttribute('data-composer-card', '')
+    const inline = menu('tid-menu')
+    card.appendChild(trigger('tid-menu'))
+    card.appendChild(inline)
+    document.body.appendChild(card)
+
+    expect(findModelMenu()).toBe(inline)
+  })
+
+  it('returns undefined when the linked menu id names nothing', () => {
+    const card = document.createElement('div')
+    card.setAttribute('data-composer-card', '')
+    card.appendChild(trigger('ghost-menu'))
+    document.body.appendChild(card)
+
+    expect(findModelMenu()).toBeUndefined()
+  })
+
+  it('ignores a linked element that is not a menu', () => {
+    const card = document.createElement('div')
+    card.setAttribute('data-composer-card', '')
+    card.appendChild(trigger('not-a-menu'))
+    document.body.appendChild(card)
+    const impostor = document.createElement('div')
+    impostor.id = 'not-a-menu'
+    document.body.appendChild(impostor)
+
+    expect(findModelMenu()).toBeUndefined()
+  })
+
+  it('finds the 0.2.0-rc.2 model pane, whose popover carries role="group"', () => {
+    const card = document.createElement('div')
+    card.setAttribute('data-composer-card', '')
+    card.appendChild(trigger('tid-menu'))
+    document.body.appendChild(card)
+    const portaled = modelPane('tid-menu')
+    document.body.appendChild(portaled)
+
+    expect(findModelMenu()).toBe(portaled)
+  })
+
+  it('ignores a linked group that carries no menu rows', () => {
+    const card = document.createElement('div')
+    card.setAttribute('data-composer-card', '')
+    card.appendChild(trigger('grouped'))
+    document.body.appendChild(card)
+    const impostor = document.createElement('div')
+    impostor.id = 'grouped'
+    impostor.setAttribute('role', 'group')
+    impostor.innerHTML = '<div><button>Not a model row</button></div>'
+    document.body.appendChild(impostor)
+
+    expect(findModelMenu()).toBeUndefined()
+  })
+
+  it('finds the pre-portal inline model pane rendered as a group', () => {
+    const card = document.createElement('div')
+    card.setAttribute('data-composer-card', '')
+    const inline = modelPane('tid-menu')
+    // No aria-controls: this is the sibling-check route, not the controls link.
+    card.appendChild(trigger(null))
+    card.appendChild(inline)
+    document.body.appendChild(card)
+
+    expect(findModelMenu()).toBe(inline)
+  })
+
+  it('returns undefined when no menu is open', () => {
+    const card = document.createElement('div')
+    card.setAttribute('data-composer-card', '')
+    const closed = trigger(null)
+    closed.removeAttribute('aria-expanded')
+    card.appendChild(closed)
+    document.body.appendChild(card)
+
+    expect(findModelMenu()).toBeUndefined()
+  })
+
+  it('returns undefined on a settings-only surface with no composer card (issue #24)', () => {
+    // A settings page/window renders no composer card. Its own header dropdown
+    // (a restart menu) is a linked role="menu" trigger; the finder must not
+    // treat it as the composer seat and let the slider replace its body.
+    const toolbar = document.createElement('div')
+    toolbar.appendChild(trigger('restart-menu'))
+    document.body.appendChild(toolbar)
+    const restartMenu = menu('restart-menu')
+    restartMenu.innerHTML = '<button role="menuitem">Restart</button>'
+    document.body.appendChild(restartMenu)
+
+    expect(findModelMenu()).toBeUndefined()
+  })
+
+  it('returns undefined for the sibling shape outside a composer card too', () => {
+    const toolbar = document.createElement('div')
+    toolbar.appendChild(trigger(null))
+    const restartMenu = menu('restart-menu-2')
+    toolbar.appendChild(restartMenu)
+    document.body.appendChild(toolbar)
+
+    expect(findModelMenu()).toBeUndefined()
+  })
+})
