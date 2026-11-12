@@ -1,0 +1,12 @@
+# Applied by the profile composer (dsh.bundle.patch) when this package is
+# added to a profile. Mounts the host half (settings auto-adaptation plus a
+# keepalive row) so the browser scanner discovers `dsh.client` and serves
+# `lib/client.js` as `/plugins/@fish-under-sea/dsh-better-reasoning-effort-fish/client.js`.
+#
+# The row name must equal this package's own name, and the id must equal the
+# plugin id in src/constants.ts: the harness loads the bundle by name and the
+# browser half registers under the same id. A mismatch loads the bundle
+# without registering it.
+- insert:
+    - id: dsh-better-reasoning-effort-fish
+      name: '@fish-under-sea/dsh-better-reasoning-effort-fish'
