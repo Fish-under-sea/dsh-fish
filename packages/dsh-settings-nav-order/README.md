@@ -1,6 +1,8 @@
 # @fish-under-sea/dsh-settings-nav-order
 
-**1.1.0 · 设置导航与命令菜单顺序**
+**2.0.0 · 设置导航与命令菜单顺序**
+
+重排设置侧栏与斜杠命令菜单顺序。
 
 [English](README.en.md)
 
@@ -8,7 +10,7 @@
 
 重排设置侧栏、隐藏不常用设置项，并持久化显示偏好。
 
-`1.1.0` 新增四条扩展命令的图标、中文标题和默认顺序，与桌宠命令采用相同的「图标 + 中文标题 + 灰色命令名」形式：
+四条扩展命令配有图标、中文标题和默认顺序，与桌宠命令采用相同的「图标 + 中文标题 + 灰色命令名」形式：
 
 | 默认顺序 | 中文标题 | 命令名 |
 | --- | --- | --- |
@@ -22,10 +24,10 @@
 ## 安装
 
 ```sh
-dsh plugin --profile <profile> add @fish-under-sea/dsh-settings-nav-order@1.1.0
+dsh plugin --profile <profile> add @fish-under-sea/dsh-settings-nav-order@2.0.0
 ```
 
-也可安装聚合包 `@fish-under-sea/dsh-fish@1.1.0`。聚合与独立安装不要重复展开相同插件行；安装完成后重启 DSH。桌面环境无 CLI 时使用插件管理器。
+也可安装聚合包 `@fish-under-sea/dsh-fish@2.0.0`。聚合与独立安装不要重复展开相同插件行；安装完成后重启 DSH。桌面环境无 CLI 时使用插件管理器。
 
 ## 配置与边界
 
@@ -39,6 +41,6 @@ Node 要求: `>=24.9`. DSH 支持范围以本包声明为准；聚合包不覆�
 
 ## 维护与来源
 
-1.1.0 统一发布版本，不表示已合并上游所有最新提交。历史说明保留在 Git 历史中；聚合变更见 [聚合变更记录](https://github.com/Fish-under-sea/dsh-fish/blob/main/CHANGELOG.md).
+2.0.0 统一发布版本，不表示已合并上游所有最新提交。历史说明保留在 Git 历史中；聚合变更见 [聚合变更记录](https://github.com/Fish-under-sea/dsh-fish/blob/main/CHANGELOG.md).
 
 Fish 原生插件。 许可证: MIT.
