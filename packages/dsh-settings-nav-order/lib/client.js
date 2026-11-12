@@ -1,7 +1,7 @@
 /**
  * dsh-settings-nav-order —— 浏览器半边。
  *
- * 做两件事，都是「只改样式、不碰别人的代码」：
+ * 做三件事，都是「只改样式 / 只包一层候选接口、不碰别人的代码」：
  *
  *   1. 排序 —— 按用户保存的顺序，给「设置」面板左侧那列导航按钮打 CSS `order`。
  *      容器是 flex column，所以视觉顺序跟着 `order` 变，而 DOM 顺序、各插件的代码、
@@ -10,6 +10,10 @@
  *   2. 隐藏 —— 给不想要的项打 `display:none`，把入口收起来（插件本身照常工作）。
  *      节点仍然留在 DOM 里，取消隐藏立刻回来，所以「隐藏」是可逆的显示偏好，
  *      不是卸载。
+ *   3. 开始页命令菜单 —— 包装 `commandUi.candidates`，按用户保存的顺序重排候选行。
+ *      识别一律用宿主给的 `name`（标签会随语言变，不能当标识），重排只在同一个
+ *      `section` 里进行（不跨分区标题），搜索态（query 非空）让位给宿主的相关性排序。
+ *      只有出厂那四条命令额外补中文标题/图标（见 COMMAND_FACES），其余行原样保留。
  *
  * 数据放两处，各有各的职责：
  *   - **工作副本**是浏览器 localStorage（键 dsh-settings-nav-order/v1，加 hidden
@@ -18,7 +22,9 @@
  *     lib/index.js 的通道）：保存时把快照推上去，启动时按 reconcile 的规则回填。
  *     dsh-git-sync 的白名单收录那个文件，所以换成另一台机器也能复原。
  * localStorage 里另有第二个键记着「上一次与宿主对齐过的那份原文」，用来区分
- * 「本地没动过」与「本地有还没推上去的改动」。
+ * 「本地没动过」与「本地有还没推上去的改动」。第三个键是**派生缓存**：最近见到的
+ * 命令行（名字/标题/分区），只用来让设置页列出全部命令，随时可以由宿主候选重建，
+ * 不进宿主文件、也不参与跨机同步。
  *
  * 识别方式：导航按钮没有 id 也没有 data 属性（见 dsh-client-ui-settings-general
  * 的 SettingsRoot 渲染），类名还是 CSS Modules 的哈希名，只能按「类名里含原名」
@@ -64,6 +70,14 @@ window.__ModuleLoader__.load({
 			return { enabled: true, order: [], hidden: [] };
 		}
 
+		/**
+		 * 开始页命令菜单的出厂顺序，也是旧版配置的默认值。
+		 *
+		 * 从 2.0.0 起，顺序不再只认这四条：任何候选行都能被保存、重排（识别用宿主给的
+		 * `name`）。这四条仍有两个作用：① 旧配置缺字段时的默认顺序；② 下面
+		 * COMMAND_FACES 的展示装饰（中文标题 / 图标 / 说明）只覆盖这四条，其余行沿用
+		 * 宿主给的样子。
+		 */
 		const COMMAND_ORDER = ['agent-teams', 'companion', 'acp', 'acp-cache'];
 		const COMMAND_FACES = {
 			'agent-teams': { zh: '智能体团队', en: 'Agent Teams', icon: 'IconUsersOutlineRegular' },
@@ -75,12 +89,281 @@ window.__ModuleLoader__.load({
 				descriptionEn: 'Prompt-cache statistics (same report as the acp_cache tool)' },
 		};
 
-		/** 老配置没有 commands 时沿用默认；保存的顺序去重、补齐，并忽略已经移除的命令。 */
+		/**
+		 * 命令行缓存键：最近见到的候选行（名字、宿主标题、分区）。
+		 *
+		 * 这是**派生数据**：宿主每次给出完整候选就能重建，所以不进宿主文件、也不参与
+		 * 跨机同步；放在 localStorage 只为了让设置页在「这次还没打开过命令菜单」时
+		 * 也能列出全部命令。它不含顺序 —— 顺序仍然只由配置里的 `commands.order` 决定。
+		 * 键挂在 STORE_KEY 之下，不另起一套命名空间。
+		 */
+		const COMMAND_ROWS_KEY = `${STORE_KEY}.commands`;
+
+		/**
+		 * 见过的命令行（按名字去重，保留首次出现的顺序）。
+		 * 候选可能分多次返回（插件陆续加载），所以按并集累积；卸载的插件留下的旧名字
+		 * 仍留在配置里，应用顺序时匹配不到任何行，等于忽略。
+		 */
+		let commandRowsCache = readCommandRows();
+
+		/**
+		 * 命令偏好规范化：保留任意命令名（不再只认固定的四条），去重后把出厂的四条补在
+		 * 末尾。补默认项是给旧配置用的：它们只记了这四条，不补就会在面板里丢掉。
+		 *
+		 * 配置里有、这次宿主没返回的名字**不删**：插件停用/卸载后命令会消失，重新装上
+		 * 时用户保存的位置还在（应用顺序时自然匹配不到，等于忽略）。
+		 */
 		function normalizeCommands(value) {
 			const input = Array.isArray(value?.order) ? value.order : [];
+			const names = [];
+			for (const raw of input) {
+				if (typeof raw !== 'string') continue;
+				const name = raw.trim();
+				if (name && !names.includes(name)) names.push(name);
+			}
+			for (const name of COMMAND_ORDER) if (!names.includes(name)) names.push(name);
+			return { enabled: value?.enabled !== false, order: names };
+		}
+
+		/** 候选行的分区键：宿主偶尔不给分区，按「无分区」处理，绝不因此跨组。 */
+		function commandSection(row) {
+			const section = row?.section;
+			if (section === null || section === undefined) return '';
+			return typeof section === 'string' ? section : String(section);
+		}
+
+		/** 命令行的显示标题：出厂四条用配置里的中文名，其余沿用宿主给的标题。 */
+		function commandLabel(name, fallback) {
+			const face = COMMAND_FACES[name];
+			return (face && face.zh) || (typeof fallback === 'string' && fallback ? fallback : name);
+		}
+
+		/** 读命令行缓存；没写过、坏 JSON、坏行一律当成空（缓存丢了只是少几条提示，不影响顺序）。 */
+		function readCommandRows() {
+			try {
+				const raw = window.localStorage.getItem(COMMAND_ROWS_KEY);
+				if (!raw) return [];
+				const parsed = JSON.parse(raw);
+				const rows = Array.isArray(parsed?.rows) ? parsed.rows : [];
+				const out = [];
+				for (const row of rows) {
+					if (!row || typeof row.name !== 'string' || !row.name.trim()) continue;
+					if (out.some((seen) => seen.name === row.name)) continue;
+					out.push({
+						name: row.name,
+						label: typeof row.label === 'string' && row.label ? row.label : row.name,
+						section: typeof row.section === 'string' ? row.section : '',
+					});
+				}
+				return out;
+			} catch {
+				return [];
+			}
+		}
+
+		/** 记下命令行缓存；写不进去只影响设置页的「全部命令」列表，不影响顺序。 */
+		function persistCommandRows() {
+			try {
+				window.localStorage.setItem(COMMAND_ROWS_KEY, JSON.stringify({ rows: commandRowsCache }));
+			} catch {
+				/* 忽略：派生缓存丢了下次候选回来会重建 */
+			}
+		}
+
+		/**
+		 * 捕获一份完整候选里的命令行（名字、宿主标题、分区）。
+		 *
+		 * 只在非搜索态调用：搜索结果是子集，不能拿它覆盖「全部命令」的认知。按名字取
+		 * 并集而不是整份替换 —— 候选可能分几次返回（插件陆续加载）。
+		 * @param rows - 宿主返回的候选行
+		 */
+		function captureCommandRows(rows) {
+			if (!Array.isArray(rows) || rows.length === 0) return;
+			const known = new Map(commandRowsCache.map((row) => [row.name, row]));
+			for (const row of rows) {
+				if (!row || typeof row.name !== 'string' || !row.name.trim()) continue;
+				known.set(row.name, {
+					name: row.name,
+					label: typeof row.label === 'string' && row.label ? row.label : row.name,
+					section: commandSection(row),
+				});
+			}
+			const next = [...known.values()];
+			// 内容没变就不写：候选会被反复请求（开始页重渲染），没必要每次都落一次盘。
+			if (JSON.stringify(next) === JSON.stringify(commandRowsCache)) return;
+			commandRowsCache = next;
+			persistCommandRows();
+		}
+
+		/**
+		 * 按保存的顺序重排候选行，规则四条：
+		 *
+		 *   1. 只在同一个 `section` 里重排 —— 分区标题是宿主的分组边界，任何一行都不
+		 *      跨过去；每个分区的行只填回该分区原来占的位置，所以即使宿主把分区交错
+		 *      输出，边界也不会被踩掉；
+		 *   2. 配置里出现的行按配置顺序排在所属分区前面；
+		 *   3. 配置里没有的新行保持宿主给的原相对顺序，追加在所属分区末尾（sort 稳定 +
+		 *      不参与排序，两者共同保证「相对顺序不变」）；
+		 *   4. 配置里有、这次宿主没返回的行匹配不到任何行，等于忽略。
+		 *
+		 * 识别一律用 `row.name`：标签会随语言变，拿它当标识会在切换语言后错位。
+		 * 返回新数组，不改动入参（宿主候选对象保持原样，测试里也能直接比较）。
+		 * @param rows - 宿主返回的候选行
+		 * @param order - 配置里的命令名列表
+		 */
+		function orderCommandRows(rows, order) {
+			if (!Array.isArray(rows) || rows.length === 0) return rows;
+			const rank = new Map();
+			let next = 0;
+			for (const name of Array.isArray(order) ? order : []) {
+				if (typeof name === 'string' && name && !rank.has(name)) rank.set(name, next++);
+			}
+			// 每个分区一份「新顺序」队列；输出时按每行自己的分区取队首，位置与分区都不动。
+			const queues = new Map();
+			for (const row of rows) {
+				const key = commandSection(row);
+				if (!queues.has(key)) queues.set(key, []);
+				queues.get(key).push(row);
+			}
+			for (const [key, group] of queues) {
+				const configured = group
+					.filter((row) => row && rank.has(row.name))
+					.sort((a, b) => rank.get(a.name) - rank.get(b.name));
+				const fresh = group.filter((row) => !row || !rank.has(row.name));
+				queues.set(key, [...configured, ...fresh]);
+			}
+			const cursor = new Map();
+			return rows.map((row) => {
+				const key = commandSection(row);
+				const taken = cursor.get(key) ?? 0;
+				cursor.set(key, taken + 1);
+				return queues.get(key)[taken];
+			});
+		}
+
+		/**
+		 * 设置页里的命令行列表：按分区分组，配置里已有的行按保存顺序在前，没配置过的新行
+		 * 按宿主给的顺序跟在所属分区末尾 —— 与 orderCommandRows 同一套规则，所以面板上
+		 * 看到的顺序就是开始页会渲染出来的顺序。
+		 * 缓存为空（这次还没见过命令菜单）时退化成「按配置里的名字列出来」，至少能调。
+		 * @param order - 配置里的命令名列表
+		 */
+		function commandEditorRows(order) {
+			const rank = new Map();
+			let next = 0;
+			for (const name of Array.isArray(order) ? order : []) {
+				if (typeof name === 'string' && name && !rank.has(name)) rank.set(name, next++);
+			}
+			if (commandRowsCache.length === 0) {
+				return (Array.isArray(order) ? order : []).map((name) => ({
+					name, label: commandLabel(name), section: '',
+				}));
+			}
+			const groups = [];
+			const index = new Map();
+			for (const row of commandRowsCache) {
+				const section = commandSection(row);
+				if (!index.has(section)) {
+					index.set(section, { section, rows: [] });
+					groups.push(index.get(section));
+				}
+				index.get(section).rows.push(row);
+			}
+			return groups.flatMap((group) => {
+				const configured = group.rows
+					.filter((row) => rank.has(row.name))
+					.sort((a, b) => rank.get(a.name) - rank.get(b.name));
+				const fresh = group.rows.filter((row) => !rank.has(row.name));
+				return [...configured, ...fresh].map((row) => ({
+					name: row.name,
+					label: commandLabel(row.name, row.label),
+					section: group.section,
+				}));
+			});
+		}
+
+		/**
+		 * 一行所属分区的连续区间 [start, end)。
+		 * 上下移动只允许留在这个区间里：分区标题是宿主的分组边界，跨过去就乱了。
+		 */
+		function commandSectionRange(rows, index) {
+			const section = rows[index]?.section;
+			let start = index;
+			while (start > 0 && rows[start - 1]?.section === section) start -= 1;
+			let end = index + 1;
+			while (end < rows.length && rows[end]?.section === section) end += 1;
+			return { start, end };
+		}
+
+		/**
+		 * 从面板列表拼出配置顺序：列表里没显示的名字（宿主这次没返回的旧命令）跟在末尾，
+		 * 保留原来的相对次序 —— 插件重新装上时，它们还能回到用户给的位置。
+		 * @param rows - 面板上显示的行
+		 * @param previous - 当前草稿/配置里的命令名
+		 */
+		function commandOrderOf(rows, previous) {
+			const names = [];
+			for (const row of Array.isArray(rows) ? rows : []) {
+				if (row && typeof row.name === 'string' && row.name && !names.includes(row.name)) names.push(row.name);
+			}
+			for (const name of Array.isArray(previous) ? previous : []) {
+				if (typeof name === 'string' && name && !names.includes(name)) names.push(name);
+			}
+			return names;
+		}
+
+		/**
+		 * 合并两份命令顺序：宿主文件只装得下它认识的命令（宿主半边的白名单），所以
+		 * 本地保存的其余行不能因为「宿主没回」就被截断。
+		 *
+		 * 规则：远端调整的是**两边都认识**的命令之间的相对次序（把它们填回本地的原
+		 * 位置），远端认识、本地没有的名字追加在末尾；本地多出来的行留在原位置。
+		 * 这样同一台机器重启时合并结果是「原样」，另一台机器改了旧四条的次序也能生效。
+		 * @param localOrder - 本地配置里的命令名
+		 * @param remoteOrder - 宿主快照里的命令名
+		 */
+		function mergeCommandOrder(localOrder, remoteOrder) {
+			const clean = (list) => {
+				const out = [];
+				for (const name of Array.isArray(list) ? list : []) {
+					if (typeof name !== 'string' || !name || out.includes(name)) continue;
+					out.push(name);
+				}
+				return out;
+			};
+			const local = clean(localOrder);
+			const remote = clean(remoteOrder);
+			if (local.length === 0) return remote;
+			const merged = local.slice();
+			for (const name of remote) if (!merged.includes(name)) merged.push(name);
+			const shared = new Set(remote.filter((name) => local.includes(name)));
+			const slots = [];
+			merged.forEach((name, index) => {
+				if (shared.has(name)) slots.push(index);
+			});
+			const fill = remote.filter((name) => shared.has(name));
+			slots.forEach((slot, index) => {
+				merged[slot] = fill[index];
+			});
+			return merged;
+		}
+
+		/**
+		 * 把宿主快照并进本地配置：导航顺序/隐藏项照旧采用宿主，命令顺序走合并。
+		 * 远端没有 commands 字段（旧版宿主文件）时保留本地那份，不让升级/回退清空偏好。
+		 * @param local - 本地配置（loadConfig 的结果）
+		 * @param remote - 宿主快照规范化后的配置（normalizeRemote 的结果）
+		 */
+		function mergeConfig(local, remote) {
+			if (!remote.commands) {
+				return local.commands ? { ...remote, commands: local.commands } : { ...remote };
+			}
 			return {
-				enabled: value?.enabled !== false,
-				order: [...new Set([...input.filter((name) => COMMAND_ORDER.includes(name)), ...COMMAND_ORDER])],
+				...remote,
+				commands: {
+					enabled: remote.commands.enabled,
+					order: mergeCommandOrder(local.commands?.order, remote.commands.order),
+				},
 			};
 		}
 
@@ -90,8 +373,11 @@ window.__ModuleLoader__.load({
 				? { commands: normalizeCommands(value) } : {};
 		}
 
-		/** 候选展示层沿用桌宠的包装方式，执行、参数与搜索排名仍由宿主处理。 */
-		function installCommandFaces(ctx) {
+		/**
+		 * 包装 `commandUi.candidates`：给出厂四条补展示装饰，并按保存的顺序重排全部行。
+		 * 执行方式、参数和搜索排名仍由宿主处理 —— 这里只改返回值。
+		 */
+		function installCommandMenu(ctx) {
 			if (typeof ctx?.get !== 'function') return undefined;
 			let icons;
 			try {
@@ -118,28 +404,24 @@ window.__ModuleLoader__.load({
 						const rows = await original.apply(this, args);
 						if (disposed || !Array.isArray(rows)) return rows;
 						try {
+							// 搜索态（query 非空）不动顺序，也不拿子集覆盖「全部命令」的认知。
+							const searching = Boolean(args[1]?.query);
+							if (!searching) captureCommandRows(rows);
 							const config = normalizeCommands(loadConfig().commands);
 							if (!config.enabled) return rows;
 							const locale = ctx.get('locale')?.getSnapshot?.().active;
 							const zh = !locale || String(locale).toLowerCase().startsWith('zh');
 							const decorated = rows.map((row) => {
-								if (!row || row.icon != null || !COMMAND_ORDER.includes(row.name)) return row;
+								if (!row || row.icon != null) return row;
 								const face = COMMAND_FACES[row.name];
+								if (!face) return row;
 								const icon = icons[face.icon];
 								if (typeof icon !== 'function') return row;
 								return { ...row, label: zh ? face.zh : face.en, icon,
 									...(face.descriptionZh ? { description: zh ? face.descriptionZh : face.descriptionEn } : {}) };
 							});
-							if (args[1]?.query !== '') return decorated;
-							// 只重排同一分区里这四项原有的槽位，不挪动其他命令或跨越标题。
-							const groups = new Map();
-							for (const row of decorated) {
-								if (!row || !COMMAND_ORDER.includes(row.name)) continue;
-								if (!groups.has(row.section)) groups.set(row.section, []);
-								groups.get(row.section).push(row);
-							}
-							for (const group of groups.values()) group.sort((a, b) => config.order.indexOf(a.name) - config.order.indexOf(b.name));
-							return decorated.map((row) => row && COMMAND_ORDER.includes(row.name) ? groups.get(row.section).shift() : row);
+							if (searching) return decorated;
+							return orderCommandRows(decorated, config.order);
 						} catch (error) {
 							warn(error);
 							return rows;
@@ -337,7 +619,10 @@ window.__ModuleLoader__.load({
 		 *   1. 宿主没有快照（第一次同步、新机器、文件被清掉）→ 本地就是唯一来源，推上去。
 		 *      没有这条，「升级前就存在的顺序」永远进不了仓库，得先手动改一次。
 		 *   2. 本地没有配置（换机、清过站点数据）→ 直接采用宿主。**复原路径就是这一条。**
-		 *   3. 本地与指纹逐字相同（本地没动过）→ 采用宿主里更新的那份。
+		 *   3. 本地与指纹逐字相同（本地没动过）→ 把宿主里更新的那份并进本地再采用。
+		 *      命令顺序走 mergeCommandOrder：宿主文件只装得下它认识的那几条命令，本地
+		 *      保存的其余行不能被一次「宿主没回」截断；合并结果与本地逐字相同时什么
+		 *      都不写（同一台机器每次启动都走这条路径，必须是幂等的）。
 		 *   4. 本地与指纹不同（有未同步的改动）→ 保留本地并推上去。宁可这次不动，也不
 		 *      静默丢掉用户刚做的调整。
 		 *
@@ -359,8 +644,10 @@ window.__ModuleLoader__.load({
 					if (remote === null) return pushState().then(() => false);
 					if (raw === null) return adoptRemote(remote, document);
 					if (raw === readSynced()) {
-						if (remote.raw === raw) return false;
-						return adoptRemote(remote, document);
+						const merged = mergeConfig(loadConfig(), remote.config);
+						const mergedRaw = JSON.stringify(merged);
+						if (mergedRaw === raw) return false;
+						return adoptRemote({ raw: mergedRaw, config: merged }, document);
 					}
 					return pushState().then(() => false);
 				})
@@ -587,6 +874,7 @@ window.__ModuleLoader__.load({
 .sno-row-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .sno-chk{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--dsw-alias-label-secondary)}
 .sno-command-list{display:flex;flex-direction:column;gap:4px}
+.sno-command-section{margin:6px 0 0;color:var(--dsw-alias-label-tertiary);font-size:12px;font-weight:600}
 .sno-command-token{color:var(--dsw-alias-label-tertiary);font-size:12px}
 .sno-command-up,.sno-command-down{min-width:28px;min-height:28px}
 .sno-btn:focus-visible,.sno-command-toggle:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
@@ -780,11 +1068,28 @@ window.__ModuleLoader__.load({
 				saveConfig(next);
 				setConfig(next);
 				setCommandDraft(normalized);
+				// 命令顺序由包装层在每次取候选时读取，所以下一次渲染命令菜单就会生效；
+				// 顺手把快照推给宿主：dsh-git-sync 采集的是那个文件，不是 localStorage。
 				syncToHost();
 			};
-			const moveCommand = (from, to) => setCommandDraft({
-				...commandDraft, order: moveTo(commandDraft.order, from, to),
+			/** 面板上的命令行：按分区分组、按保存顺序；捕获过候选就包含全部命令。 */
+			const commandRows = commandEditorRows(commandDraft.order);
+			const commandGroups = [];
+			commandRows.forEach((row, index) => {
+				const last = commandGroups[commandGroups.length - 1];
+				if (!last || last.section !== row.section) commandGroups.push({ section: row.section, rows: [] });
+				commandGroups[commandGroups.length - 1].rows.push({ row, index });
 			});
+			/** 只允许在同一个分区里上下移动：目标越过分区边界就不动。 */
+			const moveCommand = (from, to) => {
+				if (from < 0 || from >= commandRows.length) return;
+				const { start, end } = commandSectionRange(commandRows, from);
+				if (to < start || to >= end) return;
+				setCommandDraft({
+					...commandDraft,
+					order: commandOrderOf(moveTo(commandRows, from, to), commandDraft.order),
+				});
+			};
 			const commandDirty = JSON.stringify(commandDraft) !== JSON.stringify(normalizeCommands(loadConfig().commands));
 
 			const move = (from, to) => change(moveTo(draft, from, to));
@@ -920,23 +1225,35 @@ window.__ModuleLoader__.load({
 				),
 				h('h3', null, '斜杠菜单顺序'),
 				h('div', { className: 'sno-note' },
-					'管理下面四条命令的图标、中文标题和默认顺序。用 ↑ / ↓ 调整后保存，下次打开命令菜单即生效；搜索时保留宿主相关性排序。命令名称和执行方式保持原样。'),
+					'调整开始页命令菜单的顺序：命令按宿主给出的分区分组，只能在同一个分区内上下移动，不会跨过分区标题；搜索时保留宿主的相关性排序，配置里没有的新命令自动排在所属分区末尾。这里保存后，命令菜单下次渲染即按新顺序显示；命令名称和执行方式保持原样（出厂四条仍补中文标题与图标）。'),
 				h('label', { className: 'sno-chk' },
 					h('input', { type: 'checkbox', className: 'sno-command-toggle', checked: commandDraft.enabled,
 						onChange: (event) => setCommandDraft({ ...commandDraft, enabled: Boolean(event.target.checked) }) }),
-					'启用命令图标、中文标题与自定义顺序'),
-				h('div', { className: 'sno-command-list' }, commandDraft.order.map((name, index) =>
-					h('div', { key: name, className: 'sno-row sno-command-row' },
-						h('span', { className: 'sno-pos' }, index + 1),
-						h('span', { className: 'sno-name' }, COMMAND_FACES[name].zh,
-							h('span', { className: 'sno-command-token' }, ` /${name}`)),
-						h('button', { type: 'button', className: 'sno-btn sno-command-up',
-							'aria-label': `${COMMAND_FACES[name].zh}上移`, disabled: index === 0,
-							onClick: () => moveCommand(index, index - 1) }, '↑'),
-						h('button', { type: 'button', className: 'sno-btn sno-command-down',
-							'aria-label': `${COMMAND_FACES[name].zh}下移`, disabled: index === commandDraft.order.length - 1,
-							onClick: () => moveCommand(index, index + 1) }, '↓'),
-					))),
+					'启用命令图标、中文标题与自定义顺序（关掉＝命令菜单保持宿主原样）'),
+				commandRowsCache.length === 0
+					? h('div', { className: 'sno-note warn' },
+						'还没看到完整命令列表：先打开一次开始页（命令菜单渲染时即被捕获），再回到这里就能按分区列出全部命令。')
+					: null,
+				h('div', { className: 'sno-command-list' }, commandGroups.map((group) => [
+					group.section
+						? h('div', { key: `section:${group.section}`, className: 'sno-command-section' },
+							`分区：${group.section}`)
+						: null,
+					group.rows.map(({ row, index }) => {
+						const { start, end } = commandSectionRange(commandRows, index);
+						return h('div', { key: row.name, className: 'sno-row sno-command-row' },
+							h('span', { className: 'sno-pos' }, index + 1),
+							h('span', { className: 'sno-name' }, row.label,
+								h('span', { className: 'sno-command-token' }, ` /${row.name}`)),
+							h('button', { type: 'button', className: 'sno-btn sno-command-up',
+								'aria-label': `${row.label}上移`, disabled: index <= start,
+								onClick: () => moveCommand(index, index - 1) }, '↑'),
+							h('button', { type: 'button', className: 'sno-btn sno-command-down',
+								'aria-label': `${row.label}下移`, disabled: index >= end - 1,
+								onClick: () => moveCommand(index, index + 1) }, '↓'),
+						);
+					}),
+				])),
 				h('div', { className: 'sno-note', role: 'status' }, commandDirty
 					? '未保存：命令菜单偏好尚未写入配置。' : '命令菜单偏好与已保存的一致。'),
 				h('div', { className: 'sno-row-actions' },
@@ -952,7 +1269,7 @@ window.__ModuleLoader__.load({
 		 * 用 MutationObserver 而不是定时器：面板是 portal，打开/关闭都表现为 body 子树变化。
 		 */
 		function apply(ctx) {
-			ctx.effect(() => typeof document === 'undefined' ? undefined : installCommandFaces(ctx),
+			ctx.effect(() => typeof document === 'undefined' ? undefined : installCommandMenu(ctx),
 				'dsh-settings-nav-order: 命令菜单图标与顺序');
 			ctx.effect(() => ctx.slots.inject('settings.section', () =>
 				ctx.slots.register({
@@ -1003,14 +1320,24 @@ window.__ModuleLoader__.load({
 
 		exports.STORE_KEY = STORE_KEY;
 		exports.SYNCED_KEY = SYNCED_KEY;
+		exports.COMMAND_ROWS_KEY = COMMAND_ROWS_KEY;
 		exports.SYNC_API = SYNC_API;
 		exports.SYNC_PENDING = SYNC_PENDING;
 		exports.SYNC_DONE = SYNC_DONE;
 		exports.SYNC_FAILED = SYNC_FAILED;
 		exports.PANEL_LABEL = PANEL_LABEL;
 		exports.DEFAULT_CONFIG = DEFAULT_CONFIG;
+		exports.COMMAND_ORDER = COMMAND_ORDER;
 		exports.loadConfig = loadConfig;
 		exports.saveConfig = saveConfig;
+		exports.normalizeCommands = normalizeCommands;
+		exports.captureCommandRows = captureCommandRows;
+		exports.orderCommandRows = orderCommandRows;
+		exports.commandEditorRows = commandEditorRows;
+		exports.commandSectionRange = commandSectionRange;
+		exports.commandOrderOf = commandOrderOf;
+		exports.mergeCommandOrder = mergeCommandOrder;
+		exports.mergeConfig = mergeConfig;
 		exports.groupIndexes = groupIndexes;
 		exports.collectItems = collectItems;
 		exports.matchIndexes = matchIndexes;
