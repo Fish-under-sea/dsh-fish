@@ -2,34 +2,35 @@
 
 <img src="icon.png" alt="Fish" width="96">
 
-**2.1.1 · 十一个插件，一个聚合入口**
+**2.2.2 · 十一个插件，一个聚合入口**
 
 [English](README.en.md)
 
 ## 安装
 
 ```sh
-dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@2.1.1
+dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@2.2.2
 ```
 
 安装后重启 DSH。桌面版无 CLI 时在插件管理器添加同名包。需要 Node `>=24.9`；宿主最低 `0.2.2-rc.3`。各成员的宿主声明分别生效。
 
 ## 本次更新
 
-**2.1.1：修复可选团队模式服务读取，保证 AgentTeams 全部工具可用。**
+**2.2.2：思考强度恢复明暗区分，DeepSeek 暗色仍只用蓝色。**
 
-- **2.1.1 修复**：`agent_teams_*` 工具的可用性判定改为通过 `ctx.get('agentTeams')` 读取可选的原生团队模式服务，不再直接访问 `ctx.agentTeams`。此前未在 `inject` 中声明该可选服务时，Cordis 会抛 `cannot get property "agentTeams" without inject`，导致所有 `agent_teams_*` 工具在模型步骤准备阶段解析失败（例如 `agent_teams_create`）。
-- **适配新版 DSH**：十一个成员与聚合包的 `dsh.engines.dsh`、peer 与开发依赖统一到 `>=0.2.2-rc.3` / `^0.2.2-rc.3`；跟随上游 `zhu1090093659/dsh-web` v0.4.19 的 SDK 队列与修复（本仓四个 dsh-web 成员源文件在 v0.4.16→v0.4.19 间无承载变更，只升声明）。
-- **AgentTeams 上游同步**：`dsh-agent-teams-fish` 同步上游 v0.1.30，适配 0.2.2-rc.2/rc.3 的子代理树管理器（deliverToMember、resident/dispose、定向停止与冷恢复），并识别新的 `subagent-settled.stopReason`。
-- **启用AgentTeam 接管**：模型与推理菜单里的原「启用智能体团队协作」开关改由 Fish 接管，文案为「启用AgentTeam」；开启后提供 Fish `agent_teams_*` 工具与队长协议，官方团队任务工具与官方团队 UI 行在 bundle 层停用，关闭则本会话不启用。按钮样式沿用官方。
-- **思考强度配色**：保留原有轨道、轨道光效与辐射特效，只把配色统一为浅色模式，不再区分暗色/浅色主题；模型行上的思考强度文字颜色随模型主题（思考条主色）切换。
-- **空输入发送去重**：审批说明的空输入自动发送修复同一句话被写入多次的问题——三级写入兜底只允许一次成功路径、提交前再收敛为唯一一份，并防止热重载重复安装监听。
-- **统一版本**：十一个成员与聚合包统一为 **2.1.1**，依赖逐项精确固定。
+- **2.2.2 配色**：恢复暗色/浅色两套轨道、轨道光效与辐射特效的区分；DeepSeek 在暗色模式下不再使用深色紫调，改回浅色模式那套蓝色（轨道、进度填充、光效、滑块与辐射同步换蓝），其余模型家族继续保留各自的暗色主题。
+- **2.2.2 文字**：模型行上的思考强度文字颜色随模型主题切换；暗色模式下 DeepSeek 取同一条蓝色轨道末端的蓝。
+- **2.1.1 修复（含）**：`agent_teams_*` 工具的可用性判定改为通过 `ctx.get('agentTeams')` 读取可选的原生团队模式服务，不再直接访问 `ctx.agentTeams`，避免 `cannot get property "agentTeams" without inject` 让所有团队工具解析失败。
+- **适配新版 DSH**：十一个成员与聚合包的 `dsh.engines.dsh`、peer 与开发依赖统一到 `>=0.2.2-rc.3` / `^0.2.2-rc.3`。
+- **AgentTeams 上游同步**：`dsh-agent-teams-fish` 同步上游 v0.1.30，适配 0.2.2-rc.2/rc.3 的子代理树管理器与 `subagent-settled.stopReason`。
+- **启用AgentTeam 接管**：模型与推理菜单里的团队开关改由 Fish 接管，官方团队任务工具与官方团队 UI 行在 bundle 层停用。
+- **空输入发送去重**：审批说明的空输入自动发送只允许一次成功写入路径，提交前收敛为唯一一份。
+- **统一版本**：十一个成员与聚合包统一为 **2.2.2**，依赖逐项精确固定。
 - **仍不内置**：Git 图谱继续退役；破甲仍需单独安装。
 
 ## 插件清单
 
-以下 11 个成员当前均为 **2.1.1**，全部在本仓库 `packages/`。聚合包本身也是 **2.1.1**，依赖逐项精确固定。
+以下 11 个成员当前均为 **2.2.2**，全部在本仓库 `packages/`。聚合包本身也是 **2.2.2**，依赖逐项精确固定。
 
 | 插件 | npm | 功能 |
 | --- | --- | --- |
@@ -61,7 +62,7 @@ dsh plugin --profile <profile> add https://github.com/Fish-under-sea/dsh-purge/a
 - **effort 与 AgentTeams 已改为聚合成员**：如果 profile 里单独装过 `@fish-under-sea/dsh-better-reasoning-effort-fish`（0.5.x）或 `@fish-under-sea/dsh-agent-teams-fish`（1.1.0），先移除单独安装与对应 bundle 行，避免与聚合重复挂载。包名、行 id、状态目录不变。
 - **Git 图谱仍不在聚合**：需要时单装 `@fish-under-sea/dsh-client-ui-git-graph-fish@1.0.2`，不要与聚合同时挂载。
 - **破甲仍单装**：`dsh-purge` 四行与 `system-prompt` 改写由它自己负责；聚合不注入。
-- 旧版本（`<2.1.1`）已在 npm 上标记 deprecated，安装时请使用 `@fish-under-sea/dsh-fish@2.1.1`。
+- 旧版本（`<2.2.2`）已在 npm 上标记 deprecated，安装时请使用 `@fish-under-sea/dsh-fish@2.2.2`。
 - 更新聚合包不会自动清掉 profile 中单独添加的旧包、bundle 或覆盖行；请在插件管理器核对并移除对应旧项后再重启。
 
 ## 共存与数据
@@ -82,7 +83,7 @@ pnpm -r --if-present test
 pnpm -r --if-present build
 ```
 
-聚合自身是空实现，挂载入口是 `cordis.patch.yml`。十一个成员都在 `packages/`，lib 已提交，可独立构建、独立发布；浏览器模块必须以实际包名重新构建。聚合包与成员统一版本 2.1.1。
+聚合自身是空实现，挂载入口是 `cordis.patch.yml`。十一个成员都在 `packages/`，lib 已提交，可独立构建、独立发布；浏览器模块必须以实际包名重新构建。聚合包与成员统一版本 2.2.2。
 
 Fish 原生：审批说明、Git 同步、设置排序、视觉伴侣。Fork 来源：
 

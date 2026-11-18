@@ -138,7 +138,7 @@ export const RUNNER_STYLES = `
   box-shadow: none !important;
   filter:
     drop-shadow(0 1px 1px rgba(0, 0, 0, .28))
-    drop-shadow(0 0 5px rgba(92, 105, 255, .34));
+    drop-shadow(0 0 5px rgba(92, 150, 255, .36));
   animation: bre-chibi-run 720ms step-end infinite;
   transform-origin: 50% 68%;
 }
@@ -175,9 +175,9 @@ export const RUNNER_STYLES = `
   transform: translate(-50%, -50%) scale(1.07);
   transition: none;
   box-shadow:
-    0 0 0 3px rgba(113,115,255,.25),
+    0 0 0 3px rgba(113,170,255,.28),
     0 0 20px rgba(74,145,255,.86),
-    0 0 31px rgba(171,53,255,.66),
+    0 0 31px rgba(53,140,255,.66),
     0 3px 8px rgba(0,0,0,.32);
 }
 .bre-effort-slider[data-top] .bre-effort-track {
@@ -185,8 +185,8 @@ export const RUNNER_STYLES = `
 }
 .bre-effort-slider[data-top] .bre-effort-knob {
   box-shadow:
-    0 0 0 3px rgba(119,99,255,.18),
-    0 0 22px rgba(135,78,255,.76),
+    0 0 0 3px rgba(99,160,255,.2),
+    0 0 22px rgba(78,155,255,.78),
     0 0 34px rgba(53,121,255,.34),
     0 3px 8px rgba(0,0,0,.3);
 }
@@ -722,17 +722,17 @@ export const RUNNER_STYLES = `
     0 3px 8px rgba(0,0,0,.28);
 }
 
-.bre-effort-slider {
+body:not([data-ds-dark-theme]) .bre-effort-slider {
   filter: none;
 }
-.bre-effort-track {
+body:not([data-ds-dark-theme]) .bre-effort-track {
   background: var(--dsw-static-blue-75, #e5f0ff);
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,.9),
     inset 0 0 0 1px rgba(80,133,194,.14),
     0 3px 10px rgba(48,101,165,.13);
 }
-.bre-effort-track::before {
+body:not([data-ds-dark-theme]) .bre-effort-track::before {
   content: "";
   position: absolute;
   z-index: 0;
@@ -742,44 +742,111 @@ export const RUNNER_STYLES = `
   background: linear-gradient(90deg, #fff 0%, #e2f0ff 20%, #a8d0fb 57%, #438fdf 100%);
   transition: width 190ms cubic-bezier(.22,1,.36,1);
 }
-.bre-effort-slider[data-top] .bre-effort-track::before {
+body:not([data-ds-dark-theme]) .bre-effort-slider[data-top] .bre-effort-track::before {
   background: linear-gradient(90deg, #fff 0%, #d7eaff 18%, #75afea 54%, #0751ad 100%);
 }
-.bre-effort.is-dragging .bre-effort-track::before {
+body:not([data-ds-dark-theme]) .bre-effort.is-dragging .bre-effort-track::before {
   transition: none;
 }
-.bre-effort-track::after {
+body:not([data-ds-dark-theme]) .bre-effort-track::after {
   z-index: 1;
   background: linear-gradient(90deg, rgba(255,255,255,.48), transparent 34%, rgba(23,101,201,.07));
 }
-.bre-effort-canvas {
+body:not([data-ds-dark-theme]) .bre-effort-canvas {
   opacity: .78;
   mix-blend-mode: multiply;
 }
-.bre-effort-flare {
+body:not([data-ds-dark-theme]) .bre-effort-flare {
   background: radial-gradient(ellipse at 100% 50%, rgba(255,255,255,.98) 0 5%, rgba(204,231,255,.88) 13%, rgba(91,162,241,.48) 31%, rgba(37,111,207,.16) 53%, transparent 75%);
   filter: blur(2px) saturate(1.12);
 }
-.bre-effort-flare::before {
+body:not([data-ds-dark-theme]) .bre-effort-flare::before {
   background: linear-gradient(90deg, transparent, rgba(116,177,244,.34), #fff, rgba(66,139,225,.58), transparent);
   box-shadow: 0 0 7px rgba(58,133,222,.5), 0 0 13px rgba(104,176,255,.38);
 }
-.bre-effort-flare::after {
+body:not([data-ds-dark-theme]) .bre-effort-flare::after {
   background: linear-gradient(180deg, transparent, rgba(255,255,255,.94), transparent);
   box-shadow: 0 0 7px rgba(64,137,224,.44);
 }
-.bre-effort-knob {
+body:not([data-ds-dark-theme]) .bre-effort-knob {
   border-color: rgba(126,160,197,.32);
   box-shadow:
     0 0 0 2px rgba(58,124,207,.09),
     0 0 13px rgba(48,118,207,.3),
     0 3px 8px rgba(39,77,119,.18);
 }
-.bre-effort-slider[data-top] .bre-effort-track {
+body:not([data-ds-dark-theme]) .bre-effort-slider[data-top] .bre-effort-track {
   animation-name: bre-effort-light-breathe;
 }
-.bre-effort-slider[data-top] .bre-effort-knob,
-.bre-effort.is-dragging .bre-effort-knob {
+body:not([data-ds-dark-theme]) .bre-effort-slider[data-top] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.is-dragging .bre-effort-knob {
+  box-shadow:
+    0 0 0 3px rgba(36,105,192,.15),
+    0 0 20px rgba(25,100,201,.45),
+    0 3px 8px rgba(39,77,119,.18);
+}
+
+/* DeepSeek 在暗色模式下也只用蓝色：复用上面浅色模式的同一套蓝色轨道、光效
+   与进度填充，不使用深色基线的紫调。选择器特异度低于各模型家族的暗色规则，
+   因此只影响 DeepSeek（家族主题有自己的主题选择器）。 */
+body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-slider {
+  filter: none;
+}
+body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-track {
+  background: var(--dsw-static-blue-75, #e5f0ff);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.9),
+    inset 0 0 0 1px rgba(80,133,194,.14),
+    0 3px 10px rgba(48,101,165,.13);
+}
+body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-track::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0 auto 0 0;
+  width: var(--bre-progress);
+  border-radius: inherit;
+  background: linear-gradient(90deg, #fff 0%, #e2f0ff 20%, #a8d0fb 57%, #438fdf 100%);
+  transition: width 190ms cubic-bezier(.22,1,.36,1);
+}
+body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-slider[data-top] .bre-effort-track::before {
+  background: linear-gradient(90deg, #fff 0%, #d7eaff 18%, #75afea 54%, #0751ad 100%);
+}
+body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"].is-dragging .bre-effort-track::before {
+  transition: none;
+}
+body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-track::after {
+  z-index: 1;
+  background: linear-gradient(90deg, rgba(255,255,255,.48), transparent 34%, rgba(23,101,201,.07));
+}
+body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-canvas {
+  opacity: .78;
+  mix-blend-mode: multiply;
+}
+body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-flare {
+  background: radial-gradient(ellipse at 100% 50%, rgba(255,255,255,.98) 0 5%, rgba(204,231,255,.88) 13%, rgba(91,162,241,.48) 31%, rgba(37,111,207,.16) 53%, transparent 75%);
+  filter: blur(2px) saturate(1.12);
+}
+body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-flare::before {
+  background: linear-gradient(90deg, transparent, rgba(116,177,244,.34), #fff, rgba(66,139,225,.58), transparent);
+  box-shadow: 0 0 7px rgba(58,133,222,.5), 0 0 13px rgba(104,176,255,.38);
+}
+body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-flare::after {
+  background: linear-gradient(180deg, transparent, rgba(255,255,255,.94), transparent);
+  box-shadow: 0 0 7px rgba(64,137,224,.44);
+}
+body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-knob {
+  border-color: rgba(126,160,197,.32);
+  box-shadow:
+    0 0 0 2px rgba(58,124,207,.09),
+    0 0 13px rgba(48,118,207,.3),
+    0 3px 8px rgba(39,77,119,.18);
+}
+body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-slider[data-top] .bre-effort-track {
+  animation-name: bre-effort-light-breathe;
+}
+body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-slider[data-top] .bre-effort-knob,
+body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"].is-dragging .bre-effort-knob {
   box-shadow:
     0 0 0 3px rgba(36,105,192,.15),
     0 0 20px rgba(25,100,201,.45),
@@ -787,56 +854,56 @@ export const RUNNER_STYLES = `
 }
 
 
-.bre-effort[data-bre-theme="openai"] .bre-effort-track,
-.bre-effort.theme-openai .bre-effort-track {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="openai"] .bre-effort-track,
+body:not([data-ds-dark-theme]) .bre-effort.theme-openai .bre-effort-track {
   background: #f4ecfd;
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,.9),
     inset 0 0 0 1px rgba(160,85,210,.16),
     0 3px 10px rgba(130,50,180,.13);
 }
-.bre-effort[data-bre-theme="openai"] .bre-effort-track::before,
-.bre-effort.theme-openai .bre-effort-track::before {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="openai"] .bre-effort-track::before,
+body:not([data-ds-dark-theme]) .bre-effort.theme-openai .bre-effort-track::before {
   background: linear-gradient(90deg, #fff 0%, #f6ebff 20%, #dab8fb 57%, #9d4fe8 100%);
 }
-.bre-effort[data-bre-theme="openai"] .bre-effort-slider[data-top] .bre-effort-track::before,
-.bre-effort.theme-openai .bre-effort-slider[data-top] .bre-effort-track::before {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="openai"] .bre-effort-slider[data-top] .bre-effort-track::before,
+body:not([data-ds-dark-theme]) .bre-effort.theme-openai .bre-effort-slider[data-top] .bre-effort-track::before {
   background: linear-gradient(90deg, #fff 0%, #edd4ff 18%, #bd6fed 54%, #7b12d4 100%);
 }
-.bre-effort[data-bre-theme="openai"] .bre-effort-track::after,
-.bre-effort.theme-openai .bre-effort-track::after {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="openai"] .bre-effort-track::after,
+body:not([data-ds-dark-theme]) .bre-effort.theme-openai .bre-effort-track::after {
   background: linear-gradient(90deg, rgba(255,255,255,.5), transparent 34%, rgba(140,25,215,.08));
 }
-.bre-effort[data-bre-theme="openai"] .bre-effort-flare,
-.bre-effort.theme-openai .bre-effort-flare {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="openai"] .bre-effort-flare,
+body:not([data-ds-dark-theme]) .bre-effort.theme-openai .bre-effort-flare {
   background: radial-gradient(ellipse at 100% 50%, rgba(255,255,255,.98) 0 5%, rgba(238,206,255,.9) 13%, rgba(190,95,245,.5) 31%, rgba(150,40,215,.18) 53%, transparent 75%);
 }
-.bre-effort[data-bre-theme="openai"] .bre-effort-flare::before,
-.bre-effort.theme-openai .bre-effort-flare::before {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="openai"] .bre-effort-flare::before,
+body:not([data-ds-dark-theme]) .bre-effort.theme-openai .bre-effort-flare::before {
   background: linear-gradient(90deg, transparent, rgba(200,120,250,.38), #fff, rgba(170,70,230,.6), transparent);
   box-shadow: 0 0 7px rgba(180,60,230,.5), 0 0 13px rgba(205,110,255,.4);
 }
-.bre-effort[data-bre-theme="openai"] .bre-effort-flare::after,
-.bre-effort.theme-openai .bre-effort-flare::after {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="openai"] .bre-effort-flare::after,
+body:not([data-ds-dark-theme]) .bre-effort.theme-openai .bre-effort-flare::after {
   background: linear-gradient(180deg, transparent, rgba(255,255,255,.95), transparent);
   box-shadow: 0 0 7px rgba(190,65,230,.45);
 }
-.bre-effort[data-bre-theme="openai"] .bre-effort-knob,
-.bre-effort.theme-openai .bre-effort-knob {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="openai"] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.theme-openai .bre-effort-knob {
   border-color: rgba(185,130,205,.35);
   box-shadow:
     0 0 0 2px rgba(165,60,215,.1),
     0 0 13px rgba(160,50,215,.32),
     0 3px 8px rgba(105,40,125,.2);
 }
-.bre-effort[data-bre-theme="openai"] .bre-effort-slider[data-top] .bre-effort-track,
-.bre-effort.theme-openai .bre-effort-slider[data-top] .bre-effort-track {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="openai"] .bre-effort-slider[data-top] .bre-effort-track,
+body:not([data-ds-dark-theme]) .bre-effort.theme-openai .bre-effort-slider[data-top] .bre-effort-track {
   animation-name: bre-effort-light-purple-breathe;
 }
-.bre-effort[data-bre-theme="openai"] .bre-effort-slider[data-top] .bre-effort-knob,
-.bre-effort.theme-openai .bre-effort-slider[data-top] .bre-effort-knob,
-.bre-effort[data-bre-theme="openai"].is-dragging .bre-effort-knob,
-.bre-effort.theme-openai.is-dragging .bre-effort-knob {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="openai"] .bre-effort-slider[data-top] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.theme-openai .bre-effort-slider[data-top] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="openai"].is-dragging .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.theme-openai.is-dragging .bre-effort-knob {
   box-shadow:
     0 0 0 3px rgba(160,40,200,.18),
     0 0 20px rgba(165,30,210,.5),
@@ -844,56 +911,56 @@ export const RUNNER_STYLES = `
 }
 
 
-.bre-effort[data-bre-theme="claude"] .bre-effort-track,
-.bre-effort.theme-claude .bre-effort-track {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="claude"] .bre-effort-track,
+body:not([data-ds-dark-theme]) .bre-effort.theme-claude .bre-effort-track {
   background: #fdf5ee;
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,.9),
     inset 0 0 0 1px rgba(210,130,80,.18),
     0 3px 10px rgba(180,85,35,.14);
 }
-.bre-effort[data-bre-theme="claude"] .bre-effort-track::before,
-.bre-effort.theme-claude .bre-effort-track::before {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="claude"] .bre-effort-track::before,
+body:not([data-ds-dark-theme]) .bre-effort.theme-claude .bre-effort-track::before {
   background: linear-gradient(90deg, #fff 0%, #fff1e5 20%, #fcd0ab 57%, #ee742d 100%);
 }
-.bre-effort[data-bre-theme="claude"] .bre-effort-slider[data-top] .bre-effort-track::before,
-.bre-effort.theme-claude .bre-effort-slider[data-top] .bre-effort-track::before {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="claude"] .bre-effort-slider[data-top] .bre-effort-track::before,
+body:not([data-ds-dark-theme]) .bre-effort.theme-claude .bre-effort-slider[data-top] .bre-effort-track::before {
   background: linear-gradient(90deg, #fff 0%, #fedfc4 18%, #f89d58 54%, #cc4e08 100%);
 }
-.bre-effort[data-bre-theme="claude"] .bre-effort-track::after,
-.bre-effort.theme-claude .bre-effort-track::after {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="claude"] .bre-effort-track::after,
+body:not([data-ds-dark-theme]) .bre-effort.theme-claude .bre-effort-track::after {
   background: linear-gradient(90deg, rgba(255,255,255,.5), transparent 34%, rgba(200,80,20,.08));
 }
-.bre-effort[data-bre-theme="claude"] .bre-effort-flare,
-.bre-effort.theme-claude .bre-effort-flare {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="claude"] .bre-effort-flare,
+body:not([data-ds-dark-theme]) .bre-effort.theme-claude .bre-effort-flare {
   background: radial-gradient(ellipse at 100% 50%, rgba(255,255,255,.98) 0 5%, rgba(255,230,200,.9) 13%, rgba(255,150,70,.52) 31%, rgba(220,80,15,.2) 53%, transparent 75%);
 }
-.bre-effort[data-bre-theme="claude"] .bre-effort-flare::before,
-.bre-effort.theme-claude .bre-effort-flare::before {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="claude"] .bre-effort-flare::before,
+body:not([data-ds-dark-theme]) .bre-effort.theme-claude .bre-effort-flare::before {
   background: linear-gradient(90deg, transparent, rgba(255,160,70,.4), #fff, rgba(240,110,30,.65), transparent);
   box-shadow: 0 0 7px rgba(240,110,30,.55), 0 0 13px rgba(255,150,60,.45);
 }
-.bre-effort[data-bre-theme="claude"] .bre-effort-flare::after,
-.bre-effort.theme-claude .bre-effort-flare::after {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="claude"] .bre-effort-flare::after,
+body:not([data-ds-dark-theme]) .bre-effort.theme-claude .bre-effort-flare::after {
   background: linear-gradient(180deg, transparent, rgba(255,255,255,.95), transparent);
   box-shadow: 0 0 7px rgba(240,110,30,.48);
 }
-.bre-effort[data-bre-theme="claude"] .bre-effort-knob,
-.bre-effort.theme-claude .bre-effort-knob {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="claude"] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.theme-claude .bre-effort-knob {
   border-color: rgba(215,145,95,.36);
   box-shadow:
     0 0 0 2px rgba(220,105,35,.12),
     0 0 13px rgba(220,95,30,.34),
     0 3px 8px rgba(130,55,15,.2);
 }
-.bre-effort[data-bre-theme="claude"] .bre-effort-slider[data-top] .bre-effort-track,
-.bre-effort.theme-claude .bre-effort-slider[data-top] .bre-effort-track {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="claude"] .bre-effort-slider[data-top] .bre-effort-track,
+body:not([data-ds-dark-theme]) .bre-effort.theme-claude .bre-effort-slider[data-top] .bre-effort-track {
   animation-name: bre-effort-light-orange-breathe;
 }
-.bre-effort[data-bre-theme="claude"] .bre-effort-slider[data-top] .bre-effort-knob,
-.bre-effort.theme-claude .bre-effort-slider[data-top] .bre-effort-knob,
-.bre-effort[data-bre-theme="claude"].is-dragging .bre-effort-knob,
-.bre-effort.theme-claude.is-dragging .bre-effort-knob {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="claude"] .bre-effort-slider[data-top] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.theme-claude .bre-effort-slider[data-top] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="claude"].is-dragging .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.theme-claude.is-dragging .bre-effort-knob {
   box-shadow:
     0 0 0 3px rgba(210,85,25,.2),
     0 0 20px rgba(225,80,20,.52),
@@ -901,56 +968,56 @@ export const RUNNER_STYLES = `
 }
 
 
-.bre-effort[data-bre-theme="gemini"] .bre-effort-track,
-.bre-effort.theme-gemini .bre-effort-track {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="gemini"] .bre-effort-track,
+body:not([data-ds-dark-theme]) .bre-effort.theme-gemini .bre-effort-track {
   background: #f4f2fb;
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,.95),
     inset 0 0 0 1px rgba(130,71,229,.18),
     0 3px 10px rgba(90,30,170,.14);
 }
-.bre-effort[data-bre-theme="gemini"] .bre-effort-track::before,
-.bre-effort.theme-gemini .bre-effort-track::before {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="gemini"] .bre-effort-track::before,
+body:not([data-ds-dark-theme]) .bre-effort.theme-gemini .bre-effort-track::before {
   background: linear-gradient(90deg, #fff 0%, #fff1d6 15%, #c8f5d6 35%, #bce2fe 55%, #d8c6fc 78%, #fdbcd5 100%);
 }
-.bre-effort[data-bre-theme="gemini"] .bre-effort-slider[data-top] .bre-effort-track::before,
-.bre-effort.theme-gemini .bre-effort-slider[data-top] .bre-effort-track::before {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="gemini"] .bre-effort-slider[data-top] .bre-effort-track::before,
+body:not([data-ds-dark-theme]) .bre-effort.theme-gemini .bre-effort-slider[data-top] .bre-effort-track::before {
   background: linear-gradient(90deg, #fff 0%, #fbbd23 15%, #10b981 35%, #3b82f6 55%, #7c3aed 78%, #f43f5e 100%);
 }
-.bre-effort[data-bre-theme="gemini"] .bre-effort-track::after,
-.bre-effort.theme-gemini .bre-effort-track::after {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="gemini"] .bre-effort-track::after,
+body:not([data-ds-dark-theme]) .bre-effort.theme-gemini .bre-effort-track::after {
   background: linear-gradient(90deg, rgba(255,255,255,.5), transparent 34%, rgba(130,71,229,.08));
 }
-.bre-effort[data-bre-theme="gemini"] .bre-effort-flare,
-.bre-effort.theme-gemini .bre-effort-flare {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="gemini"] .bre-effort-flare,
+body:not([data-ds-dark-theme]) .bre-effort.theme-gemini .bre-effort-flare {
   background: radial-gradient(ellipse at 100% 50%, rgba(255,255,255,.98) 0 5%, rgba(230,215,255,.88) 13%, rgba(130,71,229,.48) 31%, rgba(66,133,244,.18) 53%, transparent 75%);
 }
-.bre-effort[data-bre-theme="gemini"] .bre-effort-flare::before,
-.bre-effort.theme-gemini .bre-effort-flare::before {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="gemini"] .bre-effort-flare::before,
+body:not([data-ds-dark-theme]) .bre-effort.theme-gemini .bre-effort-flare::before {
   background: linear-gradient(90deg, transparent, rgba(245,158,11,.38), #fff, rgba(66,133,244,.6), rgba(235,68,90,.65), transparent);
   box-shadow: 0 0 7px rgba(130,71,229,.5), 0 0 13px rgba(66,133,244,.4);
 }
-.bre-effort[data-bre-theme="gemini"] .bre-effort-flare::after,
-.bre-effort.theme-gemini .bre-effort-flare::after {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="gemini"] .bre-effort-flare::after,
+body:not([data-ds-dark-theme]) .bre-effort.theme-gemini .bre-effort-flare::after {
   background: linear-gradient(180deg, transparent, rgba(255,255,255,.95), transparent);
   box-shadow: 0 0 7px rgba(130,71,229,.45);
 }
-.bre-effort[data-bre-theme="gemini"] .bre-effort-knob,
-.bre-effort.theme-gemini .bre-effort-knob {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="gemini"] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.theme-gemini .bre-effort-knob {
   border-color: rgba(145,100,225,.35);
   box-shadow:
     0 0 0 2px rgba(130,71,229,.1),
     0 0 13px rgba(130,71,229,.32),
     0 3px 8px rgba(70,25,120,.2);
 }
-.bre-effort[data-bre-theme="gemini"] .bre-effort-slider[data-top] .bre-effort-track,
-.bre-effort.theme-gemini .bre-effort-slider[data-top] .bre-effort-track {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="gemini"] .bre-effort-slider[data-top] .bre-effort-track,
+body:not([data-ds-dark-theme]) .bre-effort.theme-gemini .bre-effort-slider[data-top] .bre-effort-track {
   animation-name: bre-effort-light-gemini-breathe;
 }
-.bre-effort[data-bre-theme="gemini"] .bre-effort-slider[data-top] .bre-effort-knob,
-.bre-effort.theme-gemini .bre-effort-slider[data-top] .bre-effort-knob,
-.bre-effort[data-bre-theme="gemini"].is-dragging .bre-effort-knob,
-.bre-effort.theme-gemini.is-dragging .bre-effort-knob {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="gemini"] .bre-effort-slider[data-top] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.theme-gemini .bre-effort-slider[data-top] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="gemini"].is-dragging .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.theme-gemini.is-dragging .bre-effort-knob {
   box-shadow:
     0 0 0 3px rgba(130,60,220,.18),
     0 0 20px rgba(130,71,229,.5),
@@ -958,56 +1025,56 @@ export const RUNNER_STYLES = `
 }
 
 
-.bre-effort[data-bre-theme="kimi"] .bre-effort-track,
-.bre-effort.theme-kimi .bre-effort-track {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="kimi"] .bre-effort-track,
+body:not([data-ds-dark-theme]) .bre-effort.theme-kimi .bre-effort-track {
   background: #eff2fd;
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,.95),
     inset 0 0 0 1px rgba(75,95,195,.18),
     0 3px 10px rgba(35,45,110,.14);
 }
-.bre-effort[data-bre-theme="kimi"] .bre-effort-track::before,
-.bre-effort.theme-kimi .bre-effort-track::before {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="kimi"] .bre-effort-track::before,
+body:not([data-ds-dark-theme]) .bre-effort.theme-kimi .bre-effort-track::before {
   background: linear-gradient(90deg, #101633 0%, #1e285a 28%, #31428f 60%, #4d64c9 86%, #dca838 100%);
 }
-.bre-effort[data-bre-theme="kimi"] .bre-effort-slider[data-top] .bre-effort-track::before,
-.bre-effort.theme-kimi .bre-effort-slider[data-top] .bre-effort-track::before {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="kimi"] .bre-effort-slider[data-top] .bre-effort-track::before,
+body:not([data-ds-dark-theme]) .bre-effort.theme-kimi .bre-effort-slider[data-top] .bre-effort-track::before {
   background: linear-gradient(90deg, #0d122b 0%, #1a2350 25%, #2c3b82 55%, #465cb8 80%, #f4b428 100%);
 }
-.bre-effort[data-bre-theme="kimi"] .bre-effort-track::after,
-.bre-effort.theme-kimi .bre-effort-track::after {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="kimi"] .bre-effort-track::after,
+body:not([data-ds-dark-theme]) .bre-effort.theme-kimi .bre-effort-track::after {
   background: linear-gradient(90deg, rgba(255,255,255,.5), transparent 34%, rgba(92,116,232,.08));
 }
-.bre-effort[data-bre-theme="kimi"] .bre-effort-flare,
-.bre-effort.theme-kimi .bre-effort-flare {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="kimi"] .bre-effort-flare,
+body:not([data-ds-dark-theme]) .bre-effort.theme-kimi .bre-effort-flare {
   background: radial-gradient(ellipse at 100% 50%, rgba(255,255,255,.98) 0 5%, rgba(225,235,255,.88) 13%, rgba(85,115,225,.48) 32%, rgba(245,195,75,.22) 53%, transparent 75%);
 }
-.bre-effort[data-bre-theme="kimi"] .bre-effort-flare::before,
-.bre-effort.theme-kimi .bre-effort-flare::before {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="kimi"] .bre-effort-flare::before,
+body:not([data-ds-dark-theme]) .bre-effort.theme-kimi .bre-effort-flare::before {
   background: linear-gradient(90deg, transparent, rgba(92,116,232,.38), #fff, rgba(245,195,75,.65), transparent);
   box-shadow: 0 0 7px rgba(92,116,232,.5), 0 0 13px rgba(245,195,75,.4);
 }
-.bre-effort[data-bre-theme="kimi"] .bre-effort-flare::after,
-.bre-effort.theme-kimi .bre-effort-flare::after {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="kimi"] .bre-effort-flare::after,
+body:not([data-ds-dark-theme]) .bre-effort.theme-kimi .bre-effort-flare::after {
   background: linear-gradient(180deg, transparent, rgba(255,255,255,.95), transparent);
   box-shadow: 0 0 7px rgba(92,116,232,.45);
 }
-.bre-effort[data-bre-theme="kimi"] .bre-effort-knob,
-.bre-effort.theme-kimi .bre-effort-knob {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="kimi"] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.theme-kimi .bre-effort-knob {
   border-color: rgba(95,120,225,.35);
   box-shadow:
     0 0 0 2px rgba(85,110,215,.1),
     0 0 13px rgba(85,110,215,.32),
     0 3px 8px rgba(25,35,90,.2);
 }
-.bre-effort[data-bre-theme="kimi"] .bre-effort-slider[data-top] .bre-effort-track,
-.bre-effort.theme-kimi .bre-effort-slider[data-top] .bre-effort-track {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="kimi"] .bre-effort-slider[data-top] .bre-effort-track,
+body:not([data-ds-dark-theme]) .bre-effort.theme-kimi .bre-effort-slider[data-top] .bre-effort-track {
   animation-name: bre-effort-light-kimi-breathe;
 }
-.bre-effort[data-bre-theme="kimi"] .bre-effort-slider[data-top] .bre-effort-knob,
-.bre-effort.theme-kimi .bre-effort-slider[data-top] .bre-effort-knob,
-.bre-effort[data-bre-theme="kimi"].is-dragging .bre-effort-knob,
-.bre-effort.theme-kimi.is-dragging .bre-effort-knob {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="kimi"] .bre-effort-slider[data-top] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.theme-kimi .bre-effort-slider[data-top] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="kimi"].is-dragging .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.theme-kimi.is-dragging .bre-effort-knob {
   box-shadow:
     0 0 0 3px rgba(85,110,215,.18),
     0 0 20px rgba(92,116,232,.52),
@@ -1016,56 +1083,56 @@ export const RUNNER_STYLES = `
 }
 
 
-.bre-effort[data-bre-theme="glm"] .bre-effort-track,
-.bre-effort.theme-glm .bre-effort-track {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="glm"] .bre-effort-track,
+body:not([data-ds-dark-theme]) .bre-effort.theme-glm .bre-effort-track {
   background: #edf2f7;
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,.95),
     inset 0 0 0 1px rgba(14,165,233,.18),
     0 3px 10px rgba(15,23,42,.12);
 }
-.bre-effort[data-bre-theme="glm"] .bre-effort-track::before,
-.bre-effort.theme-glm .bre-effort-track::before {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="glm"] .bre-effort-track::before,
+body:not([data-ds-dark-theme]) .bre-effort.theme-glm .bre-effort-track::before {
   background: linear-gradient(90deg, #050811 0%, #0f1c2e 28%, #162b47 60%, #1e3d64 86%, #0284c7 100%);
 }
-.bre-effort[data-bre-theme="glm"] .bre-effort-slider[data-top] .bre-effort-track::before,
-.bre-effort.theme-glm .bre-effort-slider[data-top] .bre-effort-track::before {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="glm"] .bre-effort-slider[data-top] .bre-effort-track::before,
+body:not([data-ds-dark-theme]) .bre-effort.theme-glm .bre-effort-slider[data-top] .bre-effort-track::before {
   background: linear-gradient(90deg, #03050a 0%, #0b1524 25%, #12243d 55%, #19365c 80%, #0ea5e9 100%);
 }
-.bre-effort[data-bre-theme="glm"] .bre-effort-track::after,
-.bre-effort.theme-glm .bre-effort-track::after {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="glm"] .bre-effort-track::after,
+body:not([data-ds-dark-theme]) .bre-effort.theme-glm .bre-effort-track::after {
   background: linear-gradient(90deg, rgba(255,255,255,.5), transparent 34%, rgba(14,165,233,.08));
 }
-.bre-effort[data-bre-theme="glm"] .bre-effort-flare,
-.bre-effort.theme-glm .bre-effort-flare {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="glm"] .bre-effort-flare,
+body:not([data-ds-dark-theme]) .bre-effort.theme-glm .bre-effort-flare {
   background: radial-gradient(ellipse at 100% 50%, rgba(255,255,255,.98) 0 5%, rgba(224,242,254,.88) 13%, rgba(56,189,248,.48) 32%, rgba(14,165,233,.22) 53%, transparent 75%);
 }
-.bre-effort[data-bre-theme="glm"] .bre-effort-flare::before,
-.bre-effort.theme-glm .bre-effort-flare::before {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="glm"] .bre-effort-flare::before,
+body:not([data-ds-dark-theme]) .bre-effort.theme-glm .bre-effort-flare::before {
   background: linear-gradient(90deg, transparent, rgba(14,165,233,.38), #fff, rgba(56,189,248,.65), transparent);
   box-shadow: 0 0 7px rgba(14,165,233,.5), 0 0 13px rgba(56,189,248,.4);
 }
-.bre-effort[data-bre-theme="glm"] .bre-effort-flare::after,
-.bre-effort.theme-glm .bre-effort-flare::after {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="glm"] .bre-effort-flare::after,
+body:not([data-ds-dark-theme]) .bre-effort.theme-glm .bre-effort-flare::after {
   background: linear-gradient(180deg, transparent, rgba(255,255,255,.95), transparent);
   box-shadow: 0 0 7px rgba(14,165,233,.45);
 }
-.bre-effort[data-bre-theme="glm"] .bre-effort-knob,
-.bre-effort.theme-glm .bre-effort-knob {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="glm"] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.theme-glm .bre-effort-knob {
   border-color: rgba(14,165,233,.35);
   box-shadow:
     0 0 0 2px rgba(14,165,233,.1),
     0 0 13px rgba(14,165,233,.32),
     0 3px 8px rgba(15,23,42,.2);
 }
-.bre-effort[data-bre-theme="glm"] .bre-effort-slider[data-top] .bre-effort-track,
-.bre-effort.theme-glm .bre-effort-slider[data-top] .bre-effort-track {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="glm"] .bre-effort-slider[data-top] .bre-effort-track,
+body:not([data-ds-dark-theme]) .bre-effort.theme-glm .bre-effort-slider[data-top] .bre-effort-track {
   animation-name: bre-effort-light-glm-breathe;
 }
-.bre-effort[data-bre-theme="glm"] .bre-effort-slider[data-top] .bre-effort-knob,
-.bre-effort.theme-glm .bre-effort-slider[data-top] .bre-effort-knob,
-.bre-effort[data-bre-theme="glm"].is-dragging .bre-effort-knob,
-.bre-effort.theme-glm.is-dragging .bre-effort-knob {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="glm"] .bre-effort-slider[data-top] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.theme-glm .bre-effort-slider[data-top] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="glm"].is-dragging .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.theme-glm.is-dragging .bre-effort-knob {
   box-shadow:
     0 0 0 3px rgba(14,165,233,.18),
     0 0 20px rgba(14,165,233,.52),
@@ -1074,56 +1141,56 @@ export const RUNNER_STYLES = `
 }
 
 
-.bre-effort[data-bre-theme="qwen"] .bre-effort-track,
-.bre-effort.theme-qwen .bre-effort-track {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="qwen"] .bre-effort-track,
+body:not([data-ds-dark-theme]) .bre-effort.theme-qwen .bre-effort-track {
   background: #edf4fe;
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,.95),
     inset 0 0 0 1px rgba(59,130,246,.18),
     0 3px 10px rgba(30,58,138,.12);
 }
-.bre-effort[data-bre-theme="qwen"] .bre-effort-track::before,
-.bre-effort.theme-qwen .bre-effort-track::before {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="qwen"] .bre-effort-track::before,
+body:not([data-ds-dark-theme]) .bre-effort.theme-qwen .bre-effort-track::before {
   background: linear-gradient(90deg, #132454 0%, #1e3e8f 28%, #3162d0 60%, #4d8df6 86%, #f6c845 100%);
 }
-.bre-effort[data-bre-theme="qwen"] .bre-effort-slider[data-top] .bre-effort-track::before,
-.bre-effort.theme-qwen .bre-effort-slider[data-top] .bre-effort-track::before {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="qwen"] .bre-effort-slider[data-top] .bre-effort-track::before,
+body:not([data-ds-dark-theme]) .bre-effort.theme-qwen .bre-effort-slider[data-top] .bre-effort-track::before {
   background: linear-gradient(90deg, #0f1c44 0%, #1a357c 25%, #2a55b8 55%, #4681ee 80%, #fbbf24 100%);
 }
-.bre-effort[data-bre-theme="qwen"] .bre-effort-track::after,
-.bre-effort.theme-qwen .bre-effort-track::after {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="qwen"] .bre-effort-track::after,
+body:not([data-ds-dark-theme]) .bre-effort.theme-qwen .bre-effort-track::after {
   background: linear-gradient(90deg, rgba(255,255,255,.5), transparent 34%, rgba(59,130,246,.08));
 }
-.bre-effort[data-bre-theme="qwen"] .bre-effort-flare,
-.bre-effort.theme-qwen .bre-effort-flare {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="qwen"] .bre-effort-flare,
+body:not([data-ds-dark-theme]) .bre-effort.theme-qwen .bre-effort-flare {
   background: radial-gradient(ellipse at 100% 50%, rgba(255,255,255,.98) 0 5%, rgba(219,234,254,.88) 13%, rgba(96,165,250,.48) 32%, rgba(251,191,36,.22) 53%, transparent 75%);
 }
-.bre-effort[data-bre-theme="qwen"] .bre-effort-flare::before,
-.bre-effort.theme-qwen .bre-effort-flare::before {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="qwen"] .bre-effort-flare::before,
+body:not([data-ds-dark-theme]) .bre-effort.theme-qwen .bre-effort-flare::before {
   background: linear-gradient(90deg, transparent, rgba(59,130,246,.38), #fff, rgba(251,191,36,.65), transparent);
   box-shadow: 0 0 7px rgba(59,130,246,.5), 0 0 13px rgba(251,191,36,.4);
 }
-.bre-effort[data-bre-theme="qwen"] .bre-effort-flare::after,
-.bre-effort.theme-qwen .bre-effort-flare::after {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="qwen"] .bre-effort-flare::after,
+body:not([data-ds-dark-theme]) .bre-effort.theme-qwen .bre-effort-flare::after {
   background: linear-gradient(180deg, transparent, rgba(255,255,255,.95), transparent);
   box-shadow: 0 0 7px rgba(59,130,246,.45);
 }
-.bre-effort[data-bre-theme="qwen"] .bre-effort-knob,
-.bre-effort.theme-qwen .bre-effort-knob {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="qwen"] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.theme-qwen .bre-effort-knob {
   border-color: rgba(59,130,246,.35);
   box-shadow:
     0 0 0 2px rgba(59,130,246,.1),
     0 0 13px rgba(59,130,246,.32),
     0 3px 8px rgba(30,58,138,.2);
 }
-.bre-effort[data-bre-theme="qwen"] .bre-effort-slider[data-top] .bre-effort-track,
-.bre-effort.theme-qwen .bre-effort-slider[data-top] .bre-effort-track {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="qwen"] .bre-effort-slider[data-top] .bre-effort-track,
+body:not([data-ds-dark-theme]) .bre-effort.theme-qwen .bre-effort-slider[data-top] .bre-effort-track {
   animation-name: bre-effort-light-qwen-breathe;
 }
-.bre-effort[data-bre-theme="qwen"] .bre-effort-slider[data-top] .bre-effort-knob,
-.bre-effort.theme-qwen .bre-effort-slider[data-top] .bre-effort-knob,
-.bre-effort[data-bre-theme="qwen"].is-dragging .bre-effort-knob,
-.bre-effort.theme-qwen.is-dragging .bre-effort-knob {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="qwen"] .bre-effort-slider[data-top] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.theme-qwen .bre-effort-slider[data-top] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="qwen"].is-dragging .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.theme-qwen.is-dragging .bre-effort-knob {
   box-shadow:
     0 0 0 3px rgba(59,130,246,.18),
     0 0 20px rgba(59,130,246,.52),
@@ -1132,56 +1199,56 @@ export const RUNNER_STYLES = `
 }
 
 
-.bre-effort[data-bre-theme="minimax"] .bre-effort-track,
-.bre-effort.theme-minimax .bre-effort-track {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="minimax"] .bre-effort-track,
+body:not([data-ds-dark-theme]) .bre-effort.theme-minimax .bre-effort-track {
   background: #fff5f2;
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,.95),
     inset 0 0 0 1px rgba(255,107,74,.2),
     0 3px 10px rgba(180,50,20,.12);
 }
-.bre-effort[data-bre-theme="minimax"] .bre-effort-track::before,
-.bre-effort.theme-minimax .bre-effort-track::before {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="minimax"] .bre-effort-track::before,
+body:not([data-ds-dark-theme]) .bre-effort.theme-minimax .bre-effort-track::before {
   background: linear-gradient(90deg, #7c1a16 0%, #b82d20 28%, #e84c2a 60%, #ff6f43 86%, #ff8e68 100%);
 }
-.bre-effort[data-bre-theme="minimax"] .bre-effort-slider[data-top] .bre-effort-track::before,
-.bre-effort.theme-minimax .bre-effort-slider[data-top] .bre-effort-track::before {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="minimax"] .bre-effort-slider[data-top] .bre-effort-track::before,
+body:not([data-ds-dark-theme]) .bre-effort.theme-minimax .bre-effort-slider[data-top] .bre-effort-track::before {
   background: linear-gradient(90deg, #661210 0%, #a32418 25%, #d94020 55%, #f75d33 80%, #ff7c52 100%);
 }
-.bre-effort[data-bre-theme="minimax"] .bre-effort-track::after,
-.bre-effort.theme-minimax .bre-effort-track::after {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="minimax"] .bre-effort-track::after,
+body:not([data-ds-dark-theme]) .bre-effort.theme-minimax .bre-effort-track::after {
   background: linear-gradient(90deg, rgba(255,255,255,.5), transparent 34%, rgba(255,107,74,.08));
 }
-.bre-effort[data-bre-theme="minimax"] .bre-effort-flare,
-.bre-effort.theme-minimax .bre-effort-flare {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="minimax"] .bre-effort-flare,
+body:not([data-ds-dark-theme]) .bre-effort.theme-minimax .bre-effort-flare {
   background: radial-gradient(ellipse at 100% 50%, rgba(255,255,255,.98) 0 5%, rgba(255,225,210,.88) 13%, rgba(255,107,74,.5) 32%, rgba(255,145,110,.25) 53%, transparent 75%);
 }
-.bre-effort[data-bre-theme="minimax"] .bre-effort-flare::before,
-.bre-effort.theme-minimax .bre-effort-flare::before {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="minimax"] .bre-effort-flare::before,
+body:not([data-ds-dark-theme]) .bre-effort.theme-minimax .bre-effort-flare::before {
   background: linear-gradient(90deg, transparent, rgba(255,107,74,.4), #fff, rgba(255,138,92,.7), transparent);
   box-shadow: 0 0 7px rgba(255,107,74,.55), 0 0 13px rgba(255,138,92,.45);
 }
-.bre-effort[data-bre-theme="minimax"] .bre-effort-flare::after,
-.bre-effort.theme-minimax .bre-effort-flare::after {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="minimax"] .bre-effort-flare::after,
+body:not([data-ds-dark-theme]) .bre-effort.theme-minimax .bre-effort-flare::after {
   background: linear-gradient(180deg, transparent, rgba(255,255,255,.95), transparent);
   box-shadow: 0 0 7px rgba(255,107,74,.5);
 }
-.bre-effort[data-bre-theme="minimax"] .bre-effort-knob,
-.bre-effort.theme-minimax .bre-effort-knob {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="minimax"] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.theme-minimax .bre-effort-knob {
   border-color: rgba(255,107,74,.38);
   box-shadow:
     0 0 0 2px rgba(255,107,74,.12),
     0 0 13px rgba(255,107,74,.35),
     0 3px 8px rgba(180,50,20,.18);
 }
-.bre-effort[data-bre-theme="minimax"] .bre-effort-slider[data-top] .bre-effort-track,
-.bre-effort.theme-minimax .bre-effort-slider[data-top] .bre-effort-track {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="minimax"] .bre-effort-slider[data-top] .bre-effort-track,
+body:not([data-ds-dark-theme]) .bre-effort.theme-minimax .bre-effort-slider[data-top] .bre-effort-track {
   animation-name: bre-effort-light-minimax-breathe;
 }
-.bre-effort[data-bre-theme="minimax"] .bre-effort-slider[data-top] .bre-effort-knob,
-.bre-effort.theme-minimax .bre-effort-slider[data-top] .bre-effort-knob,
-.bre-effort[data-bre-theme="minimax"].is-dragging .bre-effort-knob,
-.bre-effort.theme-minimax.is-dragging .bre-effort-knob {
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="minimax"] .bre-effort-slider[data-top] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.theme-minimax .bre-effort-slider[data-top] .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort[data-bre-theme="minimax"].is-dragging .bre-effort-knob,
+body:not([data-ds-dark-theme]) .bre-effort.theme-minimax.is-dragging .bre-effort-knob {
   box-shadow:
     0 0 0 3px rgba(255,107,74,.2),
     0 0 20px rgba(255,107,74,.55),
@@ -1269,6 +1336,6 @@ export const RUNNER_STYLES = `
   .bre-effort .bre-effort-slider[data-top] .bre-effort-track { animation: none; }
   .bre-effort .bre-effort-knob,
   .bre-effort .bre-effort-flare,
-  .bre-effort .bre-effort-track::before { transition: none; }
+  body:not([data-ds-dark-theme]) .bre-effort .bre-effort-track::before { transition: none; }
 }
 `

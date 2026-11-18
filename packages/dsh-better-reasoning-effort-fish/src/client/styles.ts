@@ -234,6 +234,8 @@ export const STYLES = `
 .bre-slider-body[data-bre-theme="glm"] { --bre-accent: #0b7fb0; }
 .bre-slider-body[data-bre-theme="qwen"] { --bre-accent: #2f6fd6; }
 .bre-slider-body[data-bre-theme="minimax"] { --bre-accent: #e0532c; }
+/* 暗色模式：DeepSeek 的思考条仍是浅色模式的蓝，文字取同一条轨道末端的蓝。 */
+body[data-ds-dark-theme] .bre-slider-body[data-bre-theme="deepseek"] { --bre-accent: #5aa6f0; }
 /* The official menu is content-sized; while the replicated popover body is
    live, its box takes the upstream .re-model-menu width. The class is added
    by the mount and removed when the slider is switched off. */

@@ -4,6 +4,13 @@
 
 ---
 
+## 2.2.2 (2026-11-18)
+
+- **Light/dark distinction restored**: `runner-styles.ts` regains both the dark and light track, track-glow, flare and radiation palettes (every `body:not([data-ds-dark-theme])` prefix restored), so the other model families use their own dark themes again.
+- **DeepSeek stays blue in dark mode**: a new `body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"]` block reuses the light-mode blue track, progress fill, glow, knob and breathe animation in dark mode. The selectors are scoped to `deepseek`, so family themes are untouched. `radiation.ts` pins DeepSeek to the light palette (`isDark = theme !== 'deepseek' && …`).
+- **Effort text**: `--bre-accent` stays; in dark mode DeepSeek takes `#5aa6f0` from the end of the same blue track.
+- **Version**: all eleven members and the aggregate are **2.2.2**, with exact dependency pins.
+
 ## 2.1.1 (2026-11-18)
 
 - **Optional-service lookup fixed**: the `agent_teams_*` tool availability check (`ToolRegistrationOptions.when`) now resolves the optional native team-mode service through `ctx.get('agentTeams')`. Reading `ctx.agentTeams` directly threw `cannot get property "agentTeams" without inject` when the optional service was not injected, so every tool such as `agent_teams_create` failed during model step preparation. Added `scripts/agentteam-mode-tdd.mjs`: a proxy Context that permits only `ctx.get` and rejects every property read, proving service resolution and the tool availability check no longer throw.

@@ -4,6 +4,13 @@
 
 ---
 
+## 2.2.2（2026-11-18）
+
+- **明暗区分回归**：恢复 `runner-styles.ts` 的暗色/浅色两套轨道、轨道光效、flare 与辐射特效（`body:not([data-ds-dark-theme])` 前缀全部还原），其余模型家族在暗色模式下重新使用各自的暗色主题。
+- **DeepSeek 暗色只用蓝色**：新增 `body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"]` 覆盖块，暗色模式下复用浅色模式的同一条蓝色轨道、进度填充、光效、滑块与呼吸动画；选择器限定到 `deepseek`，不会影响其他家族主题。`radiation.ts` 对 DeepSeek 固定走浅色模式色板（`isDark = theme !== 'deepseek' && …`）。
+- **思考强度文字**：`--bre-accent` 保留，暗色模式下 DeepSeek 取同一蓝色轨道末端的 `#5aa6f0`。
+- **版本**：十一个成员与聚合包统一为 **2.2.2**，依赖逐项精确固定。
+
 ## 2.1.1（2026-11-18）
 
 - **修复可选服务读取**：`agent_teams_*` 工具的可用性判定（`ToolRegistrationOptions.when`）改为通过 `ctx.get('agentTeams')` 读取可选的原生团队模式服务。此前直接访问 `ctx.agentTeams`，在未 inject 该可选服务时 Cordis 抛 `cannot get property "agentTeams" without inject`，使 `agent_teams_create` 等全部工具在模型步骤准备阶段解析失败。新增 `scripts/agentteam-mode-tdd.mjs` 回归：代理 Context 只允许 `ctx.get`、任何属性读取都抛错，验证服务解析与工具可用性判定不再抛异常。
