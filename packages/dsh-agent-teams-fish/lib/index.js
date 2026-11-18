@@ -38,8 +38,23 @@ import { authenticatedWebRoutes, readJsonRequest, RequestBodyError, writeJsonWit
 const WEB_SERVER_KEYS = ['webServer', 'httpServer'];
 /** Workspace registry service key candidates, newest first. */
 const WORKSPACE_KEYS = ['workspaceRegistry', 'workspace'];
-function nativeTeamMode(ctx) {
-    return ctx.agentTeams;
+/** Resolve the optional native team-mode service without requiring injection. */
+export function nativeTeamMode(ctx) {
+    // The native team-mode service is optional (older Hosts do not mount it), so
+    // it is intentionally not in `inject`. Reading `ctx.agentTeams` directly
+    // throws "cannot get property ... without inject" during tool-availability
+    // resolution; `ctx.get` is the inject-free lookup for optional services.
+    let get;
+    try {
+        get = ctx.get;
+    }
+    catch {
+        // A context with a guarded property trap still must not break tool assembly.
+        return undefined;
+    }
+    return typeof get === 'function'
+        ? get.call(ctx, 'agentTeams')
+        : undefined;
 }
 export const name = 'agent-teams';
 export const inject = ['tools', 'llm', 'subagents', 'systemPrompt', 'agents'];

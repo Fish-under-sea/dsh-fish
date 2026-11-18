@@ -4,6 +4,11 @@
 
 ---
 
+## 2.1.1 (2026-11-18)
+
+- **Optional-service lookup fixed**: the `agent_teams_*` tool availability check (`ToolRegistrationOptions.when`) now resolves the optional native team-mode service through `ctx.get('agentTeams')`. Reading `ctx.agentTeams` directly threw `cannot get property "agentTeams" without inject` when the optional service was not injected, so every tool such as `agent_teams_create` failed during model step preparation. Added `scripts/agentteam-mode-tdd.mjs`: a proxy Context that permits only `ctx.get` and rejects every property read, proving service resolution and the tool availability check no longer throw.
+- **Version**: all eleven members and the aggregate are **2.1.1**, with exact dependency pins.
+
 ## 2.1.0 (2026-11-18)
 
 - **DSH 0.2.2-rc.3 support**: all eleven members and the aggregate declare `dsh.engines.dsh`, peers and dev dependencies on `>=0.2.2-rc.3` / `^0.2.2-rc.3`, following the upstream `zhu1090093659/dsh-web` v0.4.19 SDK cohort (no carrying source change in the four dsh-web members between v0.4.16 and v0.4.19).

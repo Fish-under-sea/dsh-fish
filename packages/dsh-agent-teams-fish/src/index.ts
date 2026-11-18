@@ -65,8 +65,22 @@ interface NativeTeamModeService {
   setEnabled(agent: Agent, enabled: boolean, signal?: AbortSignal): Promise<void>
 }
 
-function nativeTeamMode(ctx: Context): NativeTeamModeService | undefined {
-  return (ctx as unknown as { agentTeams?: NativeTeamModeService }).agentTeams
+/** Resolve the optional native team-mode service without requiring injection. */
+export function nativeTeamMode(ctx: Context): NativeTeamModeService | undefined {
+  // The native team-mode service is optional (older Hosts do not mount it), so
+  // it is intentionally not in `inject`. Reading `ctx.agentTeams` directly
+  // throws "cannot get property ... without inject" during tool-availability
+  // resolution; `ctx.get` is the inject-free lookup for optional services.
+  let get: ((name: string) => unknown) | undefined
+  try {
+    get = (ctx as unknown as { get?: (name: string) => unknown }).get
+  } catch {
+    // A context with a guarded property trap still must not break tool assembly.
+    return undefined
+  }
+  return typeof get === 'function'
+    ? get.call(ctx, 'agentTeams') as NativeTeamModeService | undefined
+    : undefined
 }
 
 export const name = 'agent-teams'

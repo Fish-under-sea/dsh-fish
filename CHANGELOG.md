@@ -4,6 +4,11 @@
 
 ---
 
+## 2.1.1（2026-11-18）
+
+- **修复可选服务读取**：`agent_teams_*` 工具的可用性判定（`ToolRegistrationOptions.when`）改为通过 `ctx.get('agentTeams')` 读取可选的原生团队模式服务。此前直接访问 `ctx.agentTeams`，在未 inject 该可选服务时 Cordis 抛 `cannot get property "agentTeams" without inject`，使 `agent_teams_create` 等全部工具在模型步骤准备阶段解析失败。新增 `scripts/agentteam-mode-tdd.mjs` 回归：代理 Context 只允许 `ctx.get`、任何属性读取都抛错，验证服务解析与工具可用性判定不再抛异常。
+- **版本**：十一个成员与聚合包统一为 **2.1.1**，依赖逐项精确固定。
+
 ## 2.1.0（2026-11-18）
 
 - **适配 DSH 0.2.2-rc.3**：十一个成员与聚合包的 `dsh.engines.dsh`、peer 与开发依赖统一到 `>=0.2.2-rc.3` / `^0.2.2-rc.3`；跟随上游 `zhu1090093659/dsh-web` v0.4.19 的 SDK 队列（四个 dsh-web 成员在 v0.4.16→v0.4.19 间源文件无承载变更）。

@@ -20,8 +20,21 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
+import type { Agent } from '@deepseek-ai/dsh-agent';
 import { type TeamProfileConfig } from './profiles.ts';
 import { type MemberToolPolicy } from './tool-policies.ts';
+/**
+ * Native 0.2.1-rc.3+ team-mode service (row id `agent-team`). It owns the
+ * durable per-Session `agentTeam` projection the model menu reads. Fish does
+ * not use its task tools or UI (those rows are disabled; Fish owns both), only
+ * the saved on/off switch, so the model-menu toggle can drive Fish AgentTeams.
+ */
+interface NativeTeamModeService {
+    isEnabled(agent: Agent): boolean;
+    setEnabled(agent: Agent, enabled: boolean, signal?: AbortSignal): Promise<void>;
+}
+/** Resolve the optional native team-mode service without requiring injection. */
+export declare function nativeTeamMode(ctx: Context): NativeTeamModeService | undefined;
 export declare const name = "agent-teams";
 export declare const inject: string[];
 /** Plugin configuration. */
@@ -110,3 +123,4 @@ export declare function resolveArtwork(name: string, options: {
     customArtDir?: string;
 }): Promise<ResolvedArtwork | undefined>;
 export declare function apply(ctx: Context, config: Config): void;
+export {};
