@@ -36,6 +36,12 @@ export interface ToolsConfig {
     profiles: Record<string, import('./profiles.ts').TeamProfileConfig>;
     /** Owner-declared reusable member tool policies, keyed by policy id (#59). */
     toolPolicies: Record<string, MemberToolPolicy>;
+    /**
+     * Per-agent gate: the session's model-menu 「启用AgentTeam」 switch must be on
+     * for AgentTeams tools and prompt to participate. Omitted keeps the legacy
+     * always-on behavior for hosts without the native team-mode service.
+     */
+    isTeamEnabled?: (agent: Agent) => boolean;
 }
 /** Browser/UI mutations allowed while a plan is waiting for approval. */
 export type StagedPlanMutation = {

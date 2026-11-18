@@ -2,35 +2,33 @@
 
 <img src="icon.png" alt="Fish" width="96">
 
-**2.0.2 · Eleven plugins, one bundle**
+**2.1.0 · Eleven plugins, one bundle**
 
 [简体中文](README.md)
 
 ## Installation
 
 ```sh
-dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@2.0.2
+dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@2.1.0
 ```
 
-Restart DSH after installation. With no desktop CLI, add the same package in the plugin manager. Requires Node `>=24.9`; minimum Host `0.2.2-rc.1`. Every member retains its own Host compatibility declaration.
+Restart DSH after installation. With no desktop CLI, add the same package in the plugin manager. Requires Node `>=24.9`; minimum Host `0.2.2-rc.3`. Every member retains its own Host compatibility declaration.
 
 ## What's New
 
-**2.0.2: all eleven members now live in this repository, with one version, one icon and one set of descriptions.**
+**2.1.0: DSH 0.2.2-rc.3 support, Fish takes over Enable AgentTeam, duplicate empty-input send fixed.**
 
-- **2.0.2 fixes**: AgentTeams now derives member defaults and fallback directly from the official subagent allowlist; `memberModel` / `memberLlmProvider` / `fallback` no longer need manual profile sync, an out-of-policy fallback is replaced by another allowed route, and an explicit out-of-policy choice still fails.
-- **2.0.1 fixes**: Skill Lens now releases its `/skill-lens/api` route on hot reload/disable, so updates no longer fail with `duplicate prefix route`; AgentTeams filters its model picker by the official subagent allowlist so out-of-policy routes cannot be selected.
-- **Effort bundled**: `dsh-better-reasoning-effort-fish` moves from its own repository into `packages/` and becomes a bundle member. It edits each model’s reasoning effort and input modalities inside the Models page card, with eight model-family themes.
-- **AgentTeams bundled**: `dsh-agent-teams-fish` moves from its own repository into `packages/` instead of remaining an external dependency. Row id `agent-teams`, state directory `.agent-teams` and configuration keys stay unchanged.
-- **Start-page command ordering**: Settings Navigation now lets you reorder the whole start-page column (Files, Code Review & Changes, New Terminal, Git, Browser, Task Management, Side Chat, Local Models, Session Diagnostics, Wallpaper Engine). Rows are reordered per section, search keeps the host order, and the order is persisted to `state.json` for cross-machine restore.
-- **Empty-input send**: Approval Guide adds a shortcut — clicking Send while the composer is empty fills in and sends “继续任务，并梳理进度” (continue the task and summarize progress). Non-empty input, the Stop button, attachments, pending uploads and IME composition are untouched.
-- **Unified appearance**: all eleven members share the bundle’s `icon.png`; every package now ships `locale/{zh,en}.json` with a title and a one-line description, so the plugin list shows one consistent voice.
-- **Version**: all eleven members and the aggregate are **2.0.2**, with exact dependency pins.
+- **New DSH support**: all eleven members and the aggregate now declare `dsh.engines.dsh` / peers / dev dependencies on `>=0.2.2-rc.3` / `^0.2.2-rc.3`, following the upstream `zhu1090093659/dsh-web` v0.4.19 SDK cohort (the four dsh-web-derived members had no carrying source change from v0.4.16 to v0.4.19, so only declarations move).
+- **AgentTeams upstream sync**: `dsh-agent-teams-fish` syncs upstream v0.1.30 for the 0.2.2-rc.2/rc.3 subagent tree manager (deliverToMember, resident/dispose, targeted stop and cold recovery) and the new `subagent-settled.stopReason`.
+- **Enable AgentTeam takeover**: the model/reasoning menu switch formerly labelled “启用智能体团队协作” is now Fish-owned and reads “启用AgentTeam”. Turning it on exposes Fish `agent_teams_*` tools and the captain protocol; the official team task tools and official team UI rows are disabled in the bundle layer; off means this Session does not enable it. The switch keeps the official style.
+- **Effort colours**: the original track, track glow and radiation effects are kept; only the palette is unified to light mode, with no light/dark distinction. The reasoning-effort text in the model row follows the active model theme (the track accent) and changes with the model.
+- **Empty-input send dedupe**: Approval Guide now allows only one successful write path, normalizes the editor to a single copy before submit, and prevents duplicate listeners after hot reload.
+- **Version**: all eleven members and the aggregate are **2.1.0**, with exact dependency pins.
 - **Still unbundled**: Git Graph remains retired; Jailbreak still installs separately.
 
 ## Included Plugins
 
-All 11 members are **2.0.2** and live in `packages/` here. The aggregate itself is **2.0.2**, with exact dependency pins.
+All 11 members are **2.1.0** and live in `packages/` here. The aggregate itself is **2.1.0**, with exact dependency pins.
 
 | Plugin | npm | Capabilities |
 | --- | --- | --- |
@@ -62,7 +60,7 @@ Its own `cordis.patch.yml` performs the host prompt rewrite; the bundle no longe
 - **Effort and AgentTeams are now bundle members**: if the profile installed `@fish-under-sea/dsh-better-reasoning-effort-fish` (0.5.x) or `@fish-under-sea/dsh-agent-teams-fish` (1.1.0) separately, remove that standalone install and its bundle row before upgrading to avoid double mounting. Package names, row ids and state directories are unchanged.
 - **Git Graph is still not bundled**: install `@fish-under-sea/dsh-client-ui-git-graph-fish@1.0.2` separately if needed, never alongside the bundle.
 - **Jailbreak is still standalone**: its four rows and `system-prompt` rewrite belong to its own package.
-- Versions below `2.0.2` are marked deprecated on npm; install `@fish-under-sea/dsh-fish@2.0.2`.
+- Versions below `2.1.0` are marked deprecated on npm; install `@fish-under-sea/dsh-fish@2.1.0`.
 - Upgrading the bundle does not remove standalone packages, bundles or override rows from the profile; review and remove old entries in the plugin manager before restarting.
 
 ## Coexistence and data
@@ -83,7 +81,7 @@ pnpm -r --if-present test
 pnpm -r --if-present build
 ```
 
-The aggregate itself is an empty entry; `cordis.patch.yml` is the mount point. All eleven members live in `packages/`, with `lib` committed, and remain independently buildable and publishable. Browser modules must be rebuilt under their actual package names. The aggregate and its members share version 2.0.2.
+The aggregate itself is an empty entry; `cordis.patch.yml` is the mount point. All eleven members live in `packages/`, with `lib` committed, and remain independently buildable and publishable. Browser modules must be rebuilt under their actual package names. The aggregate and its members share version 2.1.0.
 
 Fish-native: Approval Guide, Git Sync, Settings Navigation, Visual Companion. Fork sources:
 

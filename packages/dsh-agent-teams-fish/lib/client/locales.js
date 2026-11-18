@@ -5,6 +5,10 @@ export const AGENT_TEAMS_LOCALE_NAMESPACE = 'agentTeams';
 export const zh = {
     'workspace.dependencies': '从左到右：完成前置后解锁 · 点击查看详情',
     'workspace.title': '团队协作',
+    'mode.label': '启用AgentTeam',
+    'mode.description': '开启后由 Fish AgentTeams 接管多智能体团队协作：模型获得 agent_teams_* 工具与队长协议；官方团队协作保持关闭以避免冲突。关闭后本会话不再启用。',
+    'mode.infoLabel': '关于启用AgentTeam',
+    'mode.failed': '切换失败：{message}',
     'workspace.guide': '查看成员分工、任务依赖与执行进度',
     'workspace.eyebrow': 'AGENT TEAMS',
     'workspace.description': '队长统筹分工，成员按任务依赖并行协作。',
@@ -237,6 +241,10 @@ export const zh = {
 export const en = {
     'workspace.dependencies': 'Left to right: prerequisites unlock tasks · Select for details',
     'workspace.title': 'Team workspace',
+    'mode.label': 'Enable AgentTeam',
+    'mode.description': 'When on, Fish AgentTeams takes over multi-agent collaboration: the model receives the agent_teams_* tools and captain protocol, while the official team runtime stays off to avoid conflicts. When off, this Session does not enable it.',
+    'mode.infoLabel': 'About Enable AgentTeam',
+    'mode.failed': 'Switch failed: {message}',
     'workspace.guide': 'Members, task dependencies, and execution progress',
     'workspace.eyebrow': 'AGENT TEAMS',
     'workspace.description': 'The captain coordinates. Members work in parallel as dependencies clear.',

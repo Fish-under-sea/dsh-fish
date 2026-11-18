@@ -221,9 +221,19 @@ export const STYLES = `
      The official menu shell carries padding: 4px (ModelSelect.module.css) while
      upstream's own menu has none — pull the replica flush to the box so the
      row hover spans full width and the bottom row sits at the radius. */
+  --bre-accent: #4f6fe8;
   overflow: hidden;
   margin: -4px;
 }
+/* 思考强度文字跟随模型主题：颜色取该模型思考条的末端主色（亮暗主题同值）。 */
+.bre-slider-body[data-bre-theme="deepseek"] { --bre-accent: #4f6fe8; }
+.bre-slider-body[data-bre-theme="openai"] { --bre-accent: #8a4fd8; }
+.bre-slider-body[data-bre-theme="claude"] { --bre-accent: #d9661f; }
+.bre-slider-body[data-bre-theme="gemini"] { --bre-accent: #7c5ce0; }
+.bre-slider-body[data-bre-theme="kimi"] { --bre-accent: #4f6fd8; }
+.bre-slider-body[data-bre-theme="glm"] { --bre-accent: #0b7fb0; }
+.bre-slider-body[data-bre-theme="qwen"] { --bre-accent: #2f6fd6; }
+.bre-slider-body[data-bre-theme="minimax"] { --bre-accent: #e0532c; }
 /* The official menu is content-sized; while the replicated popover body is
    live, its box takes the upstream .re-model-menu width. The class is added
    by the mount and removed when the slider is switched off. */
@@ -276,13 +286,13 @@ ${RUNNER_STYLES}
 }
 .bre-model-row:hover { background: var(--dsw-alias-fill-tertiary, rgba(120,125,140,.09)); }
 .bre-model-row-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-.bre-model-row-effort { color: var(--dsw-static-deepseek-500, #4d70ff); font-size: 12px; }
+.bre-model-row-effort { color: var(--bre-accent, var(--dsw-static-deepseek-500, #4d70ff)); font-size: 12px; }
 .bre-row-chevron { font-size: 20px; line-height: 1; opacity: .42; }
 @media (prefers-reduced-motion: reduce) {
   .bre-effort-slider[data-top] .bre-effort-track { animation: none; }
   .bre-effort-knob,
   .bre-effort-flare,
-  body:not([data-ds-dark-theme]) .bre-effort-track::before { transition: none; }
+  .bre-effort-track::before { transition: none; }
 }
 /* ---- Models-page slider toggle (boxed setting item) ----
    Item form ported VERBATIM from upstream .re-setting-row; the surrounding

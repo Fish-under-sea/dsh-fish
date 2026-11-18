@@ -348,21 +348,74 @@ window.__ModuleLoader__.load({
 				}
 			}
 		}
+		/** 统计 target 在 text 中出现的次数（忽略空白差异）。 */
+		function countOf(text, target) {
+			const hay = String(text ?? "").replace(/\s+/g, "");
+			const needle = String(target ?? "").replace(/\s+/g, "");
+			if (needle === "") return 0;
+			let count = 0;
+			let from = 0;
+			for (;;) {
+				const at = hay.indexOf(needle, from);
+				if (at < 0) break;
+				count += 1;
+				from = at + needle.length;
+			}
+			return count;
+		}
+		/** 直接写 DOM 再发 input：唯一的 DOM 兜底路径。 */
+		function setEditorDomText(editor, text, win) {
+			editor.textContent = text;
+			let input;
+			try {
+				input = new win.InputEvent("input", { bubbles: true, inputType: "insertText", data: text });
+			} catch {
+				input = new win.Event("input", { bubbles: true });
+			}
+			editor.dispatchEvent(input);
+		}
+		/** 把编辑器内容收敛为唯一一份固定文案（防止三级兜底各插一遍）。 */
+		function normalizeEditorText(editor, text, doc, win) {
+			const current = editorText(editor);
+			if (current.trim() === "") return false;
+			if (current.trim() === text) return true;
+			// 只剩空白差异或同一文案被插入多次：重写为唯一一份。
+			if (countOf(current, text) > 1 || current.trim().split(text).join("").trim() === "") {
+				try {
+					setEditorDomText(editor, text, win);
+				} catch {
+					return false;
+				}
+			}
+			return editorText(editor).trim() !== "";
+		}
 		/**
 		* 把文本写进 Lexical 编辑器，三级兜底（每一级都不抛异常）：
 		*   1) document.execCommand("insertText")：原生编辑命令，Lexical 会收到
 		*      beforeinput/input，DOM 与内部状态一起更新 —— 首选。
 		*   2) 合成 paste 事件（带 text/plain）：Lexical 的粘贴处理插入纯文本。
 		*   3) 直接写 DOM 再发 input 事件：最后的兜底，至少让用户可以接着手动发送。
+		*
+		* 关键：同一文本只允许一个路径真正写入。旧实现即使 execCommand 已经
+		* 插入成功，只要同步读不到文本就继续走 paste 与 DOM，结果一次点击把
+		* 一句话插了三遍（新版输入框的提交因此重复）。现在每一级成功后立即返回，
+		* 并在返回前把内容收敛为唯一一份。
 		* @returns 编辑器里是否真的出现了文本。
 		*/
 		function writeTextToEditor(editor, text, doc, win) {
+			// 已经有同一份文案：不再插入。
+			if (editorText(editor).trim() === text) return true;
+			// 已残留一份或更多：先收敛为一份，绝不追加。
+			if (countOf(editorText(editor), text) >= 1) return normalizeEditorText(editor, text, doc, win);
 			try {
-				if (typeof doc?.execCommand === "function" && doc.execCommand("insertText", false, text) === true && editorText(editor).trim() !== "") return true;
+				if (typeof doc?.execCommand === "function" && doc.execCommand("insertText", false, text) === true) {
+					normalizeEditorText(editor, text, doc, win);
+					return true;
+				}
 			} catch {
 				/* 下一级兜底 */
 			}
-			try {
+			if (editorText(editor).trim() === "") try {
 				let data;
 				if (typeof win?.DataTransfer === "function") {
 					data = new win.DataTransfer();
@@ -382,19 +435,15 @@ window.__ModuleLoader__.load({
 					}
 				}
 				editor.dispatchEvent(paste);
-				if (editorText(editor).trim() !== "") return true;
+				if (editorText(editor).trim() !== "") {
+					normalizeEditorText(editor, text, doc, win);
+					return true;
+				}
 			} catch {
 				/* 下一级兜底 */
 			}
 			try {
-				editor.textContent = text;
-				let input;
-				try {
-					input = new win.InputEvent("input", { bubbles: true, inputType: "insertText", data: text });
-				} catch {
-					input = new win.Event("input", { bubbles: true });
-				}
-				editor.dispatchEvent(input);
+				setEditorDomText(editor, text, win);
 			} catch {
 				return false;
 			}
@@ -414,6 +463,11 @@ window.__ModuleLoader__.load({
 			const doc = typeof document === "undefined" ? void 0 : document;
 			const win = typeof window === "undefined" ? void 0 : window;
 			if (doc === void 0 || win === void 0 || typeof doc.addEventListener !== "function" || typeof doc.querySelector !== "function" || typeof win.setTimeout !== "function" || typeof win.clearTimeout !== "function") return () => {};
+			// 同一页面只允许一份监听：插件热重载或重复 apply 时旧代码可能来不及
+			// 卸载，两个捕获监听会把同一次点击接管两遍，导致文案被插入两次。
+			const installKey = "__dshApprovalGuideEmptySend";
+			if (win[installKey] === true) return () => {};
+			win[installKey] = true;
 			let disposed = false;
 			let inFlight = false;
 			let timer = 0;
@@ -508,6 +562,10 @@ window.__ModuleLoader__.load({
 					}
 					timer = 0;
 				}
+				// 提交前最后一道去重：无论编辑器里残留几份，都收敛为一份再发。
+				const card = composerCardOf(button);
+				const editor = editorOf(card, doc);
+				if (editor !== null) normalizeEditorText(editor, EMPTY_SEND_TEXT, doc, win);
 				try {
 					button.click();
 				} catch {
@@ -589,6 +647,7 @@ window.__ModuleLoader__.load({
 				} catch {
 					/* 忽略 */
 				}
+				if (win[installKey] === true) win[installKey] = false;
 			};
 		}
 		//#endregion

@@ -1,22 +1,22 @@
 # @fish-under-sea/dsh-agent-teams-fish
 
-**2.0.2 · 同步上游 v0.1.29 · dsh-fish 聚合成员 · 持久团队协作与 Fish 厂商美术**
+**2.1.0 · 同步上游 v0.1.30 · dsh-fish 聚合成员 · 持久团队协作与 Fish 厂商美术**
 
 [English](README.en.md)
 
 ## 安装与兼容
 
-自 2.0.2 起，本包并入 [Fish-under-sea/dsh-fish](https://github.com/Fish-under-sea/dsh-fish) 聚合仓库，作为工作区成员 `packages/dsh-agent-teams-fish` 与其它成员统一构建、统一版本、统一发布；原独立仓库不再单独演进。
+自 2.1.0 起，本包并入 [Fish-under-sea/dsh-fish](https://github.com/Fish-under-sea/dsh-fish) 聚合仓库，作为工作区成员 `packages/dsh-agent-teams-fish` 与其它成员统一构建、统一版本、统一发布；原独立仓库不再单独演进。
 
 ```sh
 # 聚合安装（推荐，含全部成员）
-dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@2.0.2
+dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@2.1.0
 
 # 或单独安装本成员
-dsh plugin --profile <profile> add @fish-under-sea/dsh-agent-teams-fish@2.0.2
+dsh plugin --profile <profile> add @fish-under-sea/dsh-agent-teams-fish@2.1.0
 ```
 
-聚合已包含本成员，不要重复挂载。安装后重启 DSH。Node 要求 `>=24.9`。推荐宿主 `0.2.2-rc.1`；`0.2.1-rc.2`、`0.2.1-alpha.2` 等旧版本仍在支持列表内。精确支持列表以 [compatibility.json](compatibility.json) 为唯一事实源，不以桌面应用版本推断核心版本。
+聚合已包含本成员，不要重复挂载。安装后重启 DSH。Node 要求 `>=24.9`。推荐宿主 `0.2.2-rc.3`；`0.2.2-rc.2`、`0.2.2-rc.1` 等旧版本仍在支持列表内。精确支持列表以 [compatibility.json](compatibility.json) 为唯一事实源，不以桌面应用版本推断核心版本。
 
 ## 功能
 
@@ -25,6 +25,7 @@ dsh plugin --profile <profile> add @fish-under-sea/dsh-agent-teams-fish@2.0.2
 - 可选质量门：需求、实现、验证、审查、修复及集成，审查与产物绑定。
 - Fish 美术：十八厂商识别，厂商与岗位头像、自定义 artworkDir、商标徽标及队长模型路由头像。缺图按“厂商+岗位 → 厂商 → 岗位”降级，不代表每个厂商都有全部岗位图。
 - 新宿主预设型成员组合在子上下文安装人设和工具限制；缺失或损坏的限制在派发前拒绝。
+- 「启用AgentTeam」开关：模型与推理菜单里的原官方团队开关改由 Fish 接管。开启后本会话提供 Fish `agent_teams_*` 工具与队长协议；bundle 层停用官方 `tool-agent-team` 与 `ui-agent-team` 行，避免两套团队协议冲突；关闭则本会话不启用。开关沿用官方样式。
 
 ## 迁移与配置
 
@@ -47,9 +48,9 @@ pnpm --filter @fish-under-sea/dsh-agent-teams-fish verify
 
 ## 来源与记录
 
-基于 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams)（原作者 Relakkes / 程序员阿江）。MIT。保留上游 README、NOTICE 和历史发布说明。源码基线为上游 tag v0.1.29（commit 369c278）；自 2.0.2 起并入 dsh-fish 聚合仓库，版本随聚合统一。
+基于 [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams)（原作者 Relakkes / 程序员阿江）。MIT。保留上游 README、NOTICE 和历史发布说明。源码基线为上游 tag v0.1.30（commit 4354b0f）；自 2.1.0 起并入 dsh-fish 聚合仓库，版本随聚合统一。
 
-- [2.0.2](release-notes/v2.0.2.md)
+- [2.1.0](release-notes/v2.1.0.md)
 - [1.1.0](release-notes/v1.1.0.md)
 - [1.0.2](release-notes/v1.0.2.md)
 - [1.0.1](release-notes/v1.0.1.md)

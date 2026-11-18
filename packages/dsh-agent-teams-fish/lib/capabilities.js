@@ -96,7 +96,12 @@ export function installTeamCapabilities(ctx, config) {
     ctx.systemPrompt.section({
         name: 'agent-teams:usage', order: config.order ?? 117,
         text: ({ agent }) => {
-            return agent !== undefined && states.get(agent)?.member ? TEAM_MEMBER_PROMPT : captainPrompt;
+            if (agent === undefined)
+                return '';
+            if (states.get(agent)?.member)
+                return TEAM_MEMBER_PROMPT;
+            // 开关关闭时不下发队长协议，模型就不会驱动 AgentTeams。
+            return config.isTeamEnabled === undefined || config.isTeamEnabled(agent) ? captainPrompt : '';
         },
     });
     onAgentReady(ctx, agent => { attach(agent); });

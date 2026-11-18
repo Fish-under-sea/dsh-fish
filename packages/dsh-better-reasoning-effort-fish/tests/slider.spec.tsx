@@ -124,6 +124,7 @@ describe('ComposerSlider commit', () => {
       }] }],
     })
     await vi.waitFor(() => expect(container.querySelector('.bre-effort')?.getAttribute('data-bre-theme')).toBe('claude'))
+    await vi.waitFor(() => expect(container.querySelector('.bre-slider-body')?.getAttribute('data-bre-theme')).toBe('claude'))
     expect(container.querySelector('.bre-effort')?.classList.contains('is-chibi')).toBe(true)
     root.unmount()
   })
@@ -149,6 +150,8 @@ describe('ComposerSlider commit', () => {
     expect(knob?.getAttribute('aria-hidden')).toBe('true')
     expect(container.querySelector('.bre-effort')?.classList.contains('is-chibi')).toBe(true)
     expect(container.querySelector('.bre-effort')?.getAttribute('data-bre-theme')).toBe('qwen')
+    // 模型行（思考强度文字）与滑块共用同一主题变量，切模型时一起换色。
+    expect(container.querySelector('.bre-slider-body')?.getAttribute('data-bre-theme')).toBe('qwen')
     const range = container.querySelector<HTMLInputElement>('input[type="range"]')!
     // The rest position lands in the mount-sync effect (passive effects flush
     // asynchronously); wait for it before checking the rest state.

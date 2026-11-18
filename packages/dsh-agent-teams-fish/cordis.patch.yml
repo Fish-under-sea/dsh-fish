@@ -19,3 +19,8 @@
         stateDir: .agent-teams
         # Provider used to spawn member subagents ('spawn' or 'fork').
         memberProvider: spawn
+# Fish 接管「启用AgentTeam」开关：官方任务工具与官方团队 UI 停用，避免两套
+# 团队协议同时提供给模型。官方 `agent-team` 服务保留，仅用于保存每个 Session
+# 的持久开关（team/mode 投影），Fish 的 agent_teams_* 工具按该开关参与。
+- { id: tool-agent-team, disabled: true }
+- { id: ui-agent-team, disabled: true }

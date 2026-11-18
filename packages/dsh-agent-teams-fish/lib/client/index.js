@@ -6,6 +6,7 @@ import { AgentTeamsCard } from "./AgentTeamsCard.js";
 import { agentTeamsCardDefinition } from "./agent-teams-card-definition.js";
 import { AGENT_TEAMS_LOCALE_NAMESPACE, en, zh, } from "./locales.js";
 import { openAgentTeamMember } from "./session-navigation.js";
+import { AgentTeamToggle } from "./AgentTeamToggle.js";
 /** Required services: conversation nodes, slots, sessions navigation, and locale. */
 export const inject = ['uiConversation', 'slots', 'sessions', 'locale', 'modelDirectories', 'layout'];
 const useLegacyPanelInfo = select => select({ activePanelId: null });
@@ -22,6 +23,15 @@ export function apply(ctx) {
     const bridge = createWorkspaceBridge();
     const state = createWorkspaceState();
     ctx.effect(() => ctx.locale.register(AGENT_TEAMS_LOCALE_NAMESPACE, { zh, en }), 'agent-teams: dictionaries');
+    // 「启用AgentTeam」开关：占用官方模型与推理菜单的选项列表槽位。priority -1
+    // 让本项在旧 profile 仍残留官方 ui-agent-team 时压过它（同 id 低优先级渲染）；
+    // 新 profile 已在 bundle 层停用官方行，因此这里就是唯一开关。
+    ctx.slots.inject('conversation.input.model.options', () => ctx.slots.register({
+        name: 'conversation.input.model.options',
+        id: 'agent-team',
+        priority: -1,
+        locale: AGENT_TEAMS_LOCALE_NAMESPACE,
+    }, AgentTeamToggle));
     const openMember = (parentId, childId) => {
         void openAgentTeamMember(ctx.sessions, parentId, childId, ctx.layout, ctx.get('uiWorkspace')).catch((error) => {
             console.warn(`agent-teams: failed to open member transcript ${childId}: ${String(error)}`);

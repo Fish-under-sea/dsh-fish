@@ -1,7 +1,7 @@
 {
   "name": "@fish-under-sea/dsh-client-ui-task-board-fish",
   "description": "Host-authoritative task board for the DSH Web GUI with real session execution, Host cron scheduling, and optional cross-platform idle-sleep protection; mounted without DSH source changes.",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "icon": "./icon.png",
   "type": "module",
   "main": "lib/index.js",
@@ -25,7 +25,7 @@
   },
   "dsh": {
     "engines": {
-      "dsh": ">=0.2.2-rc.1"
+      "dsh": ">=0.2.2-rc.3"
     },
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -52,7 +52,7 @@
     "test": "node --experimental-transform-types --test test/*.test.mjs"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh": ">=0.2.2-rc.1",
+    "@deepseek-ai/dsh": ">=0.2.2-rc.3",
     "react": "^18.2.0"
   },
   "dependencies": {
@@ -61,29 +61,29 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.1.0",
-    "@deepseek-ai/dsh-agent": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-agent-preset-registry": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-attachment": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-api-gateway": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-api-remotes": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-api-session-controller": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-api-workspace-controller": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-connection": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-locale": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-store": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-layout": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-renderer": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-settings": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-sidebar": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-client-ui-workspace": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-commands": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-host-webserver": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-llm": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-settings": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-system-prompt": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-tools": "^0.2.2-rc.1",
-    "@deepseek-ai/dsh-workspace": "^0.2.2-rc.1",
+    "@deepseek-ai/dsh-agent": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-agent-preset-registry": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-attachment": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-api-gateway": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-api-remotes": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-api-session-controller": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-api-workspace-controller": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-connection": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-locale": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-store": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-ui-layout": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-ui-renderer": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-ui-settings": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-ui-sidebar": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-ui-slots": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-ui-workspace": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-commands": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-host-webserver": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-llm": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-settings": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-system-prompt": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-tools": "^0.2.2-rc.3",
+    "@deepseek-ai/dsh-workspace": "^0.2.2-rc.3",
     "@types/node": "^22.20.0",
     "@types/react": "~18.3.1",
     "@types/react-dom": "^18.3.5",

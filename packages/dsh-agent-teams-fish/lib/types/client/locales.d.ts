@@ -5,6 +5,10 @@ export declare const AGENT_TEAMS_LOCALE_NAMESPACE = "agentTeams";
 export declare const zh: {
     'workspace.dependencies': string;
     'workspace.title': string;
+    'mode.label': string;
+    'mode.description': string;
+    'mode.infoLabel': string;
+    'mode.failed': string;
     'workspace.guide': string;
     'workspace.eyebrow': string;
     'workspace.description': string;
@@ -239,6 +243,10 @@ export type AgentTeamsLocaleKey = keyof typeof zh;
 export declare const en: {
     'workspace.dependencies': string;
     'workspace.title': string;
+    'mode.label': string;
+    'mode.description': string;
+    'mode.infoLabel': string;
+    'mode.failed': string;
     'workspace.guide': string;
     'workspace.eyebrow': string;
     'workspace.description': string;

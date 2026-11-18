@@ -14,6 +14,45 @@ const hostPromptQueue = Symbol.for('dsh.subagent.queuePrompt');
 // 0.1.5 keeps queueHostSubagentPrompt but replaces its symbol with this
 // delivery-mode-aware implementation (packages/subagent/subagent/src/internal.ts).
 const hostPromptDeliver = Symbol.for('dsh.subagent.deliverPrompt');
+const treeWork = new WeakMap();
+function treeBoundary(runtime) {
+    const tree = runtime;
+    if (typeof tree.rootOf !== 'function' || typeof tree.prompt !== 'function')
+        return undefined;
+    if (typeof tree.manager?.deliverToMember !== 'function' || typeof tree.manager.dispose !== 'function'
+        || !(tree.manager.resident instanceof Map))
+        return unsupported('missing audited tree delivery manager');
+    return tree;
+}
+/** Track exact branch work before its first await so a targeted stop can join it. */
+function trackTreeWork(manager, root, branch, signal, operation) {
+    const pending = treeWork.get(manager) ?? new Set();
+    treeWork.set(manager, pending);
+    const controller = new AbortController();
+    let finish;
+    const settled = new Promise(resolve => { finish = resolve; });
+    const work = { root, branch, controller, settled };
+    pending.add(work);
+    try {
+        return operation(AbortSignal.any([signal, controller.signal])).finally(() => { pending.delete(work); finish(); });
+    }
+    catch (error) {
+        pending.delete(work);
+        finish();
+        throw error;
+    }
+}
+function deliverTreePrompt(runtime, tree, parent, childId, content, source, signal, delivery) {
+    const root = tree.rootOf.call(runtime, parent);
+    return tree.manager.deliverToMember.call(tree.manager, root, childId, content, {
+        source, signal, delivery,
+        // Recheck the exact live caller immediately before native inbox acceptance.
+        authorize: () => {
+            if (tree.rootOf.call(runtime, parent) !== root)
+                throw new SubagentError('AgentTeams caller left its subagent tree', 'UNAUTHORIZED');
+        },
+    });
+}
 export function usesManagedActivations(runtime) {
     return typeof runtime.startActivation === 'function';
 }
@@ -21,7 +60,9 @@ export async function startMember(runtime, spec) {
     const host = runtime;
     if (typeof host.startActivation === 'function') {
         const { persona: _persona, toolFilter: _filter, ...request } = spec.request;
-        const activation = await host.startActivation.call(runtime, { ...spec, request, delivery: 'parent' });
+        const activation = await Reflect.apply(host.startActivation, runtime, [treeBoundary(runtime) === undefined
+                ? { ...spec, request, delivery: 'parent' }
+                : { provider: spec.provider, label: spec.label, ...request, signal: spec.signal, delivery: 'parent' }]);
         // Preserve native settlement as the missing-report/error fallback on both
         // fresh and resumed activations. mailbox.ts deduplicates successful reports.
         void activation.result.catch(() => undefined);
@@ -34,6 +75,7 @@ export async function startMember(runtime, spec) {
 /** Wrap every available creation API, restoring only this plugin's own methods. */
 export function guardSubagentCreation(ctx, check) {
     const runtime = ctx.subagents;
+    const tree = treeBoundary(ctx.subagents);
     ctx.effect(() => {
         const disposers = [];
         for (const key of ['start', 'startContinuable', 'startActivation']) {
@@ -42,8 +84,16 @@ export function guardSubagentCreation(ctx, check) {
                 continue;
             const descriptor = Object.getOwnPropertyDescriptor(runtime, key);
             const guarded = async (...args) => {
-                const request = key === 'start' ? args[1] : args[0].request;
-                check(request.parent);
+                const request = key === 'start' ? args[1] : key === 'startActivation' && tree !== undefined
+                    ? args[0] : args[0].request;
+                const parent = request.parent;
+                check(parent);
+                if (key === 'startActivation' && tree !== undefined) {
+                    const spec = args[0];
+                    const root = tree.rootOf.call(ctx.subagents, parent);
+                    const branch = [parent.id, ...tree.manager.resident.get(parent.id)?.ancestors ?? []];
+                    return trackTreeWork(tree.manager, root, branch, spec.signal, signal => Reflect.apply(original, ctx.subagents, [{ ...spec, signal }]));
+                }
                 return Reflect.apply(original, ctx.subagents, args);
             };
             Object.defineProperty(runtime, key, { value: guarded, writable: true, configurable: true });
@@ -74,7 +124,9 @@ export function guardSubagentCreation(ctx, check) {
  */
 export function installMemberModelSelection(childCtx, ref) {
     const install = installModelSelection;
-    return install.length >= 2 ? install(childCtx, ref) : install(childCtx);
+    // 0.2.2-rc.3 keeps the caller-owned selection ref; older hosts ignore the
+    // extra argument, so always forward it instead of guessing by arity.
+    return install(childCtx, ref);
 }
 function boundary(runtime) {
     return runtime;
@@ -211,6 +263,15 @@ export function assertMemberModelSelection(ctx, captain, route) {
         throw new Error(`agent-teams: child LLM route "${route.provider}/${route.model}" is not allowed for this Session; choose a route from list_subagent_models`);
     }
 }
+/** rc.2 summaries use tree names; the new structured reason owns the outcome. */
+export function successfulSubagentSettlement(source) {
+    if (source?.kind !== 'subagent-settled')
+        return false;
+    const current = source;
+    return current.stopReason === undefined
+        ? source.summary === `Background subagent ${source.senderSessionId} finished and will do no further work unless you send it more.`
+        : current.stopReason === 'completed';
+}
 /** Install before the first request, including cold resume, with HMR cleanup. */
 export function installContinuableMemberSetup(ctx, setup) {
     const runtime = boundary(ctx.subagents);
@@ -225,7 +286,7 @@ export function installContinuableMemberSetup(ctx, setup) {
         });
         return;
     }
-    if ((typeof runtime[hostPromptQueue] !== 'function' && typeof runtime[hostPromptDeliver] !== 'function') || typeof runtime.sendMessage !== 'function') {
+    if (treeBoundary(ctx.subagents) === undefined && ((typeof runtime[hostPromptQueue] !== 'function' && typeof runtime[hostPromptDeliver] !== 'function') || typeof runtime.sendMessage !== 'function')) {
         return unsupported('missing continuable setup and modern host queue');
     }
     const installed = new WeakSet();
@@ -293,6 +354,9 @@ export function installContinuableMemberSetup(ctx, setup) {
 export async function queueMemberPrompt(runtime, parent, childId, content, signal) {
     const host = boundary(runtime);
     const source = agentTeamsSource({ kind: 'agent-teams' }, observedSessionFormatVersion(parent));
+    const tree = treeBoundary(runtime);
+    if (tree !== undefined)
+        return deliverTreePrompt(runtime, tree, parent, childId, content, source, signal, 'queue');
     if (typeof host.followup === 'function') {
         return host.followup.call(runtime, parent, childId, content, { source, signal });
     }
@@ -308,6 +372,9 @@ export async function queueMemberPrompt(runtime, parent, childId, content, signa
 export async function steerMemberPrompt(runtime, parent, childId, content, signal, live) {
     const host = boundary(runtime);
     const source = agentTeamsSource({ kind: 'agent-teams' }, observedSessionFormatVersion(live ?? parent));
+    const tree = treeBoundary(runtime);
+    if (tree !== undefined)
+        return deliverTreePrompt(runtime, tree, parent, childId, content, source, signal, 'steer');
     const deliver = host[hostPromptDeliver];
     if (typeof deliver === 'function')
         return deliver.call(runtime, parent, childId, content, source, signal, 'steer');
@@ -328,6 +395,39 @@ export async function steerMemberPrompt(runtime, parent, childId, content, signa
 /** Guard all resumable delivery paths, preserving the native service receiver. */
 export function guardSubagentDelivery(ctx, isRetired) {
     const runtime = ctx.subagents;
+    const tree = treeBoundary(runtime);
+    if (tree !== undefined) {
+        const manager = tree.manager;
+        ctx.effect(() => {
+            const original = manager.deliverToMember;
+            const descriptor = Object.getOwnPropertyDescriptor(manager, 'deliverToMember');
+            let active = true;
+            const guarded = async (root, childId, content, options) => {
+                if (!active)
+                    return original.call(manager, root, childId, content, options);
+                const branch = [childId, ...manager.resident.get(childId)?.ancestors ?? []];
+                return trackTreeWork(manager, root, branch, options.signal, async (signal) => {
+                    signal.throwIfAborted();
+                    if (await isRetired(root, childId)) {
+                        throw new SubagentError(`AgentTeams member "${childId}" was retired and cannot be resumed`, 'NOT_RESUMABLE');
+                    }
+                    signal.throwIfAborted();
+                    return original.call(manager, root, childId, content, { ...options, signal });
+                });
+            };
+            manager.deliverToMember = guarded;
+            return () => {
+                active = false;
+                if (Object.getOwnPropertyDescriptor(manager, 'deliverToMember')?.value !== guarded)
+                    return;
+                if (descriptor === undefined)
+                    Reflect.deleteProperty(manager, 'deliverToMember');
+                else
+                    Object.defineProperty(manager, 'deliverToMember', descriptor);
+            };
+        }, 'agent-teams: tree retired member guard');
+        return;
+    }
     const host = boundary(runtime);
     const legacy = host.followup;
     const queue = host[hostPromptQueue];
@@ -493,6 +593,24 @@ export async function startMemberWithLenientFilter(start, filter, relaxableDeny 
 }
 /** Targeted recursive cancellation renamed with the unified activation manager. */
 export async function drainMemberChildren(runtime, parent, ids) {
+    const tree = treeBoundary(runtime);
+    if (tree !== undefined) {
+        const root = tree.rootOf.call(runtime, parent);
+        const selected = new Set(ids);
+        // The native tree-wide drain also stops unrelated siblings and permanently
+        // closes the captain. Join only work in the selected creation branches.
+        const pending = [...treeWork.get(tree.manager) ?? []].filter(work => work.root === root && work.branch.some(id => selected.has(id)));
+        for (const work of pending)
+            work.controller.abort();
+        await Promise.all(pending.map(work => work.settled));
+        const targets = [...tree.manager.resident.values()].filter(item => item.root === root
+            && item.ancestors.includes(parent.id) && (selected.has(item.childId) || item.ancestors.some(id => selected.has(id))));
+        const results = await Promise.allSettled(targets.map(item => tree.manager.dispose.call(tree.manager, item)));
+        const failures = results.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
+        if (failures.length)
+            throw new AggregateError(failures, 'AgentTeams member teardown failed');
+        return;
+    }
     const host = runtime;
     const drain = host.drainChildren ?? host.drainContinuableChildren;
     if (typeof drain !== 'function')

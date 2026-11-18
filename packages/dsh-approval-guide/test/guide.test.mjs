@@ -782,6 +782,63 @@ domTest('双击：冷却窗口内的第二次点击被吞掉，不会把「继�
 	assert.equal(submits, 2, '冷却结束后重新可接管')
 })
 
+domTest('写入路径重复插入（execCommand 插了两遍）时收敛为一份再发送', () => {
+	const { dom, document, editor, button } = makeComposerDom()
+	const sent = []
+	button.addEventListener('click', () => sent.push(editor.textContent))
+	document.execCommand = (command, ui, text) => {
+		// 模拟新版输入框里一次命令被处理两遍：文本出现两份。
+		editor.textContent = `${editor.textContent}${text}${text}`
+		button.disabled = false
+		return true
+	}
+	bootComposer(dom)
+
+	pointerDown(dom, button)
+	assert.equal(sent.length, 1, '只发送一次')
+	assert.equal(sent[0], EMPTY_SEND_TEXT, '发送内容必须是唯一一份文案')
+	assert.equal(editor.textContent, EMPTY_SEND_TEXT)
+})
+
+domTest('paste 兜底被处理两遍时同样收敛为一份', () => {
+	const { dom, document, editor, button } = makeComposerDom()
+	dom.window.DataTransfer = class {
+		constructor() { this.data = new Map() }
+		setData(type, value) { this.data.set(type, value) }
+		getData(type) { return this.data.get(type) ?? '' }
+	}
+	dom.window.ClipboardEvent = class extends dom.window.Event {
+		constructor(type, init = {}) { super(type, init); this.clipboardData = init.clipboardData }
+	}
+	const sent = []
+	button.addEventListener('click', () => sent.push(editor.textContent))
+	document.execCommand = () => false
+	editor.addEventListener('paste', (event) => {
+		const pasted = event.clipboardData?.getData?.('text/plain') ?? ''
+		editor.textContent = `${editor.textContent}${pasted}${pasted}`
+		button.disabled = false
+	})
+	bootComposer(dom)
+
+	pointerDown(dom, button)
+	assert.equal(sent.length, 1)
+	assert.equal(sent[0], EMPTY_SEND_TEXT)
+	assert.equal(editor.textContent, EMPTY_SEND_TEXT)
+})
+
+domTest('重复 apply 不会装第二个监听（热重载防重复）', () => {
+	const { dom, document, editor, button } = makeComposerDom()
+	let submits = 0
+	button.addEventListener('click', () => { submits += 1 })
+	const calls = stubInsertText(document, editor, { enableButton: button })
+	bootComposer(dom)
+	bootComposer(dom)
+	pointerDown(dom, button)
+	assert.equal(calls.length, 1, '同一次点击只能写入一次')
+	assert.equal(submits, 1)
+	assert.equal(editor.textContent, EMPTY_SEND_TEXT)
+})
+
 domTest('卸载后不再接管：监听、轮询与守卫都清理干净', () => {
 	const { dom, document, editor, button } = makeComposerDom()
 	let submits = 0

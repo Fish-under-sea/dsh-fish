@@ -4,6 +4,15 @@
 
 ---
 
+## 2.1.0 (2026-11-18)
+
+- **DSH 0.2.2-rc.3 support**: all eleven members and the aggregate declare `dsh.engines.dsh`, peers and dev dependencies on `>=0.2.2-rc.3` / `^0.2.2-rc.3`, following the upstream `zhu1090093659/dsh-web` v0.4.19 SDK cohort (no carrying source change in the four dsh-web members between v0.4.16 and v0.4.19).
+- **AgentTeams syncs upstream v0.1.30**: the 0.2.2-rc.2/rc.3 subagent tree manager (`deliverToMember`, `resident`/`dispose`, targeted stop, cold recovery, `authorize`) and the new `subagent-settled.stopReason` settlement deduplication.
+- **Enable AgentTeam takeover**: the official Agent Team switch in the model/reasoning menu is now registered by Fish (`conversation.input.model.options`, same id at lower priority so a legacy profile's official item is shadowed) and reads “启用AgentTeam”. On exposes Fish `agent_teams_*` tools and captain protocol for the Session; off disables them. The bundle disables the official `tool-agent-team` and `ui-agent-team` rows while retaining the official `agent-team` service solely for the durable per-Session switch projection.
+- **Effort colours**: the original effort-slider track, track glow and radiation effects are kept; only the palette is unified to light mode with no dark/light distinction. The model-row effort text follows the model theme (`--bre-accent`) and updates on model switch.
+- **Empty-input send dedupe**: one successful write path only, the editor is normalized to a single copy before submit, and a window install marker prevents duplicate listeners after hot reload.
+- **Version**: all eleven members and the aggregate are **2.1.0**, with exact dependency pins.
+
 ## 2.0.2 (2026-11-13)
 
 - **AgentTeams route derivation**: member defaults and fallback now read the official `subagentModelSelectionPolicy`. A configured fallback outside the list is replaced by another allowed route; no fallback configuration means no downgrade; `memberModel` / `memberLlmProvider` are optional, so the profile no longer needs a manually synchronised model allowlist.

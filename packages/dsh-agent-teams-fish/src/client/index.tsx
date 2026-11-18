@@ -28,6 +28,8 @@ import {
   AGENT_TEAMS_LOCALE_NAMESPACE, en, zh, type AgentTeamsLocaleKey,
 } from './locales.ts'
 import { openAgentTeamMember, type AgentTeamsLayoutNavigator, type AgentTeamsWorkspaceNavigator } from './session-navigation.ts'
+import { AgentTeamToggle } from './AgentTeamToggle.tsx'
+import type {} from './slot-declarations.js'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -62,6 +64,16 @@ export function apply(ctx: ClientContext): void {
     () => ctx.locale.register(AGENT_TEAMS_LOCALE_NAMESPACE, { zh, en }),
     'agent-teams: dictionaries',
   )
+
+  // 「启用AgentTeam」开关：占用官方模型与推理菜单的选项列表槽位。priority -1
+  // 让本项在旧 profile 仍残留官方 ui-agent-team 时压过它（同 id 低优先级渲染）；
+  // 新 profile 已在 bundle 层停用官方行，因此这里就是唯一开关。
+  ctx.slots.inject('conversation.input.model.options', () => ctx.slots.register({
+    name: 'conversation.input.model.options',
+    id: 'agent-team',
+    priority: -1,
+    locale: AGENT_TEAMS_LOCALE_NAMESPACE,
+  }, AgentTeamToggle))
 
   const openMember = (parentId: SessionId, childId: SessionId): void => {
     void openAgentTeamMember(ctx.sessions, parentId, childId, ctx.layout as AgentTeamsLayoutNavigator, ctx.get('uiWorkspace') as AgentTeamsWorkspaceNavigator | undefined).catch((error: unknown) => {

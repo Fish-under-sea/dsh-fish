@@ -1,22 +1,22 @@
 # @fish-under-sea/dsh-agent-teams-fish
 
-**2.0.2 · Upstream v0.1.29 synced · dsh-fish bundle member · Durable teams with Fish vendor artwork**
+**2.1.0 · Upstream v0.1.30 synced · dsh-fish bundle member · Durable teams with Fish vendor artwork**
 
 [简体中文](README.md)
 
 ## Installation and Compatibility
 
-Since 2.0.2 this package lives in the [Fish-under-sea/dsh-fish](https://github.com/Fish-under-sea/dsh-fish) bundle repository as the workspace member `packages/dsh-agent-teams-fish`, built, versioned and released together with the other members; the former standalone repository no longer evolves separately.
+Since 2.1.0 this package lives in the [Fish-under-sea/dsh-fish](https://github.com/Fish-under-sea/dsh-fish) bundle repository as the workspace member `packages/dsh-agent-teams-fish`, built, versioned and released together with the other members; the former standalone repository no longer evolves separately.
 
 ```sh
 # Bundle install (recommended, includes every member)
-dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@2.0.2
+dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@2.1.0
 
 # Or install this member alone
-dsh plugin --profile <profile> add @fish-under-sea/dsh-agent-teams-fish@2.0.2
+dsh plugin --profile <profile> add @fish-under-sea/dsh-agent-teams-fish@2.1.0
 ```
 
-The bundle already includes this member; do not mount twice. Restart DSH after installation. Requires Node `>=24.9`. Recommended Host: `0.2.2-rc.1`; older targets such as `0.2.1-rc.2` and `0.2.1-alpha.2` remain supported. [compatibility.json](compatibility.json) is the exact support authority; desktop and core versions are distinct.
+The bundle already includes this member; do not mount twice. Restart DSH after installation. Requires Node `>=24.9`. Recommended Host: `0.2.2-rc.3`; older targets such as `0.2.2-rc.2` and `0.2.2-rc.1` remain supported. [compatibility.json](compatibility.json) is the exact support authority; desktop and core versions are distinct.
 
 ## Features
 
@@ -25,6 +25,7 @@ The bundle already includes this member; do not mount twice. Restart DSH after i
 - Optional quality gates for requirements, implementation, verification, review, repair and integration, binding judgments to artifacts.
 - Fish artwork: eighteen vendor identities, role and vendor portraits, custom artworkDir, brand marks and route-aware captain portraits. Missing art falls back vendor+role → vendor → role; not every vendor has every role.
 - Preset-only Hosts receive member persona and tool restrictions inside the child context; missing or corrupt restrictions refuse dispatch.
+- **Enable AgentTeam switch**: the official team switch in the model/reasoning menu is now Fish-owned. On exposes Fish `agent_teams_*` tools and the captain protocol for this Session; the bundle disables the official `tool-agent-team` and `ui-agent-team` rows so two team protocols never compete; off does not enable it. The switch keeps the official style.
 
 ## Migration and Configuration
 
@@ -47,9 +48,9 @@ Maintainers decide when to build and check before a release. Runtime approvals a
 
 ## Attribution and History
 
-Based on [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) (original author Relakkes / 程序员阿江). MIT. Upstream READMEs, NOTICE and release history are preserved. The source baseline follows upstream tag v0.1.29 (commit 369c278); since 2.0.2 the package is vendored into the dsh-fish bundle repository and versioned with it.
+Based on [NanmiCoder/dsh-agent-teams](https://github.com/NanmiCoder/dsh-agent-teams) (original author Relakkes / 程序员阿江). MIT. Upstream READMEs, NOTICE and release history are preserved. The source baseline follows upstream tag v0.1.30 (commit 4354b0f); since 2.1.0 the package is vendored into the dsh-fish bundle repository and versioned with it.
 
-- [2.0.2](release-notes/v2.0.2.md)
+- [2.1.0](release-notes/v2.1.0.md)
 - [1.1.0](release-notes/v1.1.0.md)
 - [1.0.2](release-notes/v1.0.2.md)
 - [1.0.1](release-notes/v1.0.1.md)

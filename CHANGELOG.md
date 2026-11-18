@@ -4,6 +4,15 @@
 
 ---
 
+## 2.1.0（2026-11-18）
+
+- **适配 DSH 0.2.2-rc.3**：十一个成员与聚合包的 `dsh.engines.dsh`、peer 与开发依赖统一到 `>=0.2.2-rc.3` / `^0.2.2-rc.3`；跟随上游 `zhu1090093659/dsh-web` v0.4.19 的 SDK 队列（四个 dsh-web 成员在 v0.4.16→v0.4.19 间源文件无承载变更）。
+- **AgentTeams 同步上游 v0.1.30**：适配 0.2.2-rc.2/rc.3 的子代理树管理器（`deliverToMember`、`resident`/`dispose`、定向停止与冷恢复、`authorize` 复核），并识别新的 `subagent-settled.stopReason` 去重成功结算。
+- **「启用AgentTeam」接管**：模型与推理菜单的官方 Agent Team 开关改由本插件注册（`conversation.input.model.options`，同 id 低优先级覆盖旧 profile 的官方项），文案「启用AgentTeam」；开启后 Fish `agent_teams_*` 工具与队长协议参与本会话，关闭即不参与。bundle 层停用官方 `tool-agent-team` 与 `ui-agent-team` 行，保留官方 `agent-team` 服务仅存 Session 级开关投影。
+- **思考强度配色**：保留 effort 滑块原有轨道、轨道光效与辐射特效，只将配色统一为浅色模式、不再区分暗色/浅色主题；模型行思考强度文字颜色改为随模型主题（`--bre-accent`）切换，并随模型切换即时更新。
+- **空输入发送去重**：审批说明的三级写入兜底改为「一次成功即返回」，提交前把编辑器内容收敛为唯一一份，并用 window 级安装标记避免热重载重复监听。
+- **版本**：十一个成员与聚合包统一为 **2.1.0**，依赖逐项精确固定。
+
 ## 2.0.2（2026-11-13）
 
 - **AgentTeams 路由派生**：成员默认路由与 fallback 现在直接读取官方 `subagentModelSelectionPolicy`。配置的 fallback 不在名单内时自动换成名单内另一条路由；没有 fallback 配置则不降级；`memberModel` / `memberLlmProvider` 改为可选，profile 不再需要手工同步模型名单。

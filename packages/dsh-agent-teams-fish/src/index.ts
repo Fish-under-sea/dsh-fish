@@ -22,6 +22,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 // Declaration merges make ctx.subagents and ctx.systemPrompt visible.
 import type {} from '@deepseek-ai/dsh-subagent'
 import type {} from '@deepseek-ai/dsh-system-prompt'
@@ -52,6 +53,21 @@ import { authenticatedWebRoutes, readJsonRequest, RequestBodyError, writeJsonWit
 const WEB_SERVER_KEYS = ['webServer', 'httpServer'] as const
 /** Workspace registry service key candidates, newest first. */
 const WORKSPACE_KEYS = ['workspaceRegistry', 'workspace'] as const
+
+/**
+ * Native 0.2.1-rc.3+ team-mode service (row id `agent-team`). It owns the
+ * durable per-Session `agentTeam` projection the model menu reads. Fish does
+ * not use its task tools or UI (those rows are disabled; Fish owns both), only
+ * the saved on/off switch, so the model-menu toggle can drive Fish AgentTeams.
+ */
+interface NativeTeamModeService {
+  isEnabled(agent: Agent): boolean
+  setEnabled(agent: Agent, enabled: boolean, signal?: AbortSignal): Promise<void>
+}
+
+function nativeTeamMode(ctx: Context): NativeTeamModeService | undefined {
+  return (ctx as unknown as { agentTeams?: NativeTeamModeService }).agentTeams
+}
 
 export const name = 'agent-teams'
 export const inject = ['tools', 'llm', 'subagents', 'systemPrompt', 'agents']
@@ -266,6 +282,8 @@ export async function resolveArtwork(
 }
 
 export function apply(ctx: Context, config: Config): void {
+  /** True when a native team-mode service is present and the switch is on. */
+  const teamEnabled = (agent: Agent): boolean => nativeTeamMode(ctx)?.isEnabled(agent) ?? true
   const resolved: ToolsConfig = {
     stateDir: config.stateDir ?? '.agent-teams',
     memberProvider: config.memberProvider ?? 'spawn',
@@ -276,6 +294,7 @@ export function apply(ctx: Context, config: Config): void {
     memberMaxDepth: config.memberMaxDepth ?? 0,
     maxMembers: config.maxMembers ?? 8,
     profiles: config.profiles ?? {},
+    isTeamEnabled: teamEnabled,
     // Owner configuration is validated once, at mount: an empty or malformed
     // policy must never reach a member creation path.
     toolPolicies: parseToolPolicies(config.toolPolicies),
@@ -297,6 +316,7 @@ export function apply(ctx: Context, config: Config): void {
     stateDir: resolved.stateDir,
     isPendingMember: agentTeamsRuntime.isPendingMember,
     order: config.promptSectionOrder,
+    isTeamEnabled: teamEnabled,
     // Keep the bounded profile directory available without extra tool calls.
     // installTeamCapabilities snapshots this once; no business state rewrites it.
     captainPrompt: () => usageSectionText(TEAM_TOOL_NAMES.join(', '), formatProfilesForPrompt(config.profiles)),
@@ -444,6 +464,63 @@ export function apply(ctx: Context, config: Config): void {
         }
       },
     }), 'agent-teams: model policy route')
+
+    // 模型菜单「启用AgentTeam」开关。官方任务工具与官方团队 UI 行已在 bundle
+    // 层停用；原生服务只负责保存每个 Session 的持久开关，这里让开关直接控制
+    // Fish AgentTeams（关闭时工具与提示词都不参与本会话）。
+    ctx.effect(() => webServer.register({
+      kind: 'exact',
+      path: '/plugins/dsh-agent-teams/mode',
+      handler: async (req, res) => {
+        const url = new URL(req.url ?? '/', 'http://x')
+        const service = nativeTeamMode(ctx)
+        const respond = (status: number, body: unknown): void => {
+          res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+          res.end(JSON.stringify(body))
+        }
+        if (service === undefined) {
+          respond(503, { error: 'native team-mode service is not mounted' })
+          return
+        }
+        const lookup = (sessionId: string): Agent | undefined =>
+          ctx.agents.get(sessionId as import('@deepseek-ai/dsh-session').SessionId)
+        if (req.method === 'GET') {
+          const sessionId = url.searchParams.get('session')?.trim() ?? ''
+          if (sessionId === '') { respond(400, { error: 'session is required' }); return }
+          const agent = lookup(sessionId)
+          if (agent === undefined) { respond(409, { error: 'session is not attached' }); return }
+          respond(200, { enabled: service.isEnabled(agent) })
+          return
+        }
+        if (req.method !== 'POST') {
+          res.writeHead(405, { allow: 'GET, POST', 'cache-control': 'no-store' })
+          res.end()
+          return
+        }
+        let payload: Record<string, unknown>
+        try {
+          payload = await readJsonRequest(req)
+        } catch (error: unknown) {
+          respond(error instanceof RequestBodyError ? error.status : 400, { error: error instanceof Error ? error.message : 'invalid request body' })
+          return
+        }
+        const sessionId = typeof payload['sessionId'] === 'string' ? payload['sessionId'].trim() : ''
+        const enabled = payload['enabled']
+        if (sessionId === '' || typeof enabled !== 'boolean') {
+          respond(400, { error: 'sessionId and enabled are required' })
+          return
+        }
+        const agent = lookup(sessionId)
+        if (agent === undefined) { respond(409, { error: 'session is not attached' }); return }
+        try {
+          await service.setEnabled(agent, enabled)
+          respond(200, { ok: true, enabled })
+        } catch (error: unknown) {
+          ctx.logger.warn(`agent-teams: mode switch failed: ${String(error)}`)
+          respond(409, { error: error instanceof Error ? error.message : 'failed to switch AgentTeam mode' })
+        }
+      },
+    }), 'agent-teams: mode route')
 
     ctx.effect(() => webServer.register({
       kind: 'exact',

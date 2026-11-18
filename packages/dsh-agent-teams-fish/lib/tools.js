@@ -499,6 +499,9 @@ export function registerAgentTeamsTools(ctx, config) {
     installMemberDelegationGuard(ctx, config.stateDir, config.memberMaxDepth ?? 0);
     installMailboxAdmission(ctx, config.stateDir);
     const scheduler = installTeamScheduler(ctx, { stateDir: config.stateDir, executionPrompt: config.executionPrompt, dispatch: dispatchMember });
+    /** Step-time admission shared by every `agent_teams_*` tool. */
+    const teamEnabled = (agent) => agent === undefined ? false : (config.isTeamEnabled?.(agent) ?? true);
+    const registerTool = (definition) => ctx.tools.register(definition, { when: ({ agent }) => teamEnabled(agent) });
     async function dispatchMember(captain, teamId, memberName, text, signal, mode, attemptId) {
         const root = stateRootOf(workspaceOf(captain), config);
         // Record why a member never started. The scheduler treats a failed dispatch as
@@ -783,7 +786,7 @@ export function registerAgentTeamsTools(ctx, config) {
         captain.cancel({ kind: 'user' }, { keepInbox: true });
         return { teamId: discarded.teamId };
     };
-    ctx.tools.register(defineTool({
+    registerTool(defineTool({
         name: 'agent_teams_create',
         description: 'Create a team. Use approval=required for a two-phase plan: members and tasks remain unspawned/unclaimed until the user reviews the Web plan and explicitly approves it. Optional profiles expand their configured roster; seed profiles also expand template tasks, while captain profiles leave the graph for the Captain to design. approval=automatic preserves the legacy immediate-execution path.',
         parameters: {
@@ -998,7 +1001,7 @@ export function registerAgentTeamsTools(ctx, config) {
             };
         },
     }));
-    ctx.tools.register(defineTool({
+    registerTool(defineTool({
         name: 'agent_teams_edit_plan',
         description: 'Atomically revise an AgentTeams plan. While staged, edit tasks and roster without starting work. While running, only update_task is allowed, and only for pending tasks with no prior attempt: correct dependencies, assignees or descriptions before they start; newly ready work is scheduled after commit. Never edit active/finished attempts. Submit dependent edits in order. Never modify .agent-teams files directly.',
         parameters: {
@@ -1127,7 +1130,7 @@ export function registerAgentTeamsTools(ctx, config) {
             };
         },
     }));
-    ctx.tools.register(defineTool({
+    registerTool(defineTool({
         name: 'agent_teams_approve',
         description: 'Approve and start a staged team plan. Call this only in response to an explicit user approval in a new user turn; never call it during the turn that created or edited the plan. The Web Approve & Run button uses the same runtime directly.',
         parameters: {
@@ -1159,7 +1162,7 @@ export function registerAgentTeamsTools(ctx, config) {
             return { status: 'running', team_id: approved.teamId, members: approved.members, tasks: approved.tasks };
         },
     }));
-    ctx.tools.register(defineTool({
+    registerTool(defineTool({
         name: 'agent_teams_add_member',
         description: 'Add a member to the team roster. Planning and idle roster rows do not call a model. After approval, the member session starts with its first ready task or explicit message and remains durable for later work.',
         parameters: {
@@ -1263,7 +1266,7 @@ export function registerAgentTeamsTools(ctx, config) {
             return latest === undefined ? created : { ...created, member_id: latest.id, status: latest.status };
         },
     }));
-    ctx.tools.register(defineTool({
+    registerTool(defineTool({
         name: 'agent_teams_remove_member',
         description: 'Remove a member safely: revoke its current attempts, return all unfinished owned tasks to the shared pending pool, interrupt its live turn, and mark it removed.',
         parameters: {
@@ -1323,7 +1326,7 @@ export function registerAgentTeamsTools(ctx, config) {
             };
         },
     }));
-    ctx.tools.register(defineTool({
+    registerTool(defineTool({
         name: 'agent_teams_create_task',
         description: 'Create a task in your team\'s task list. Use kind=work (default) for research, repository audits and general tasks. kind=review is only a quality gate for an existing implementation/repair task via reviewedTaskId. Every call must include a non-empty subject, including verification and review tasks. Tasks can depend on other tasks (dependencies): a task is only claimable once every dependency is completed. Optionally assign it to a member, who still claims it before working.',
         parameters: {
@@ -1482,7 +1485,7 @@ export function registerAgentTeamsTools(ctx, config) {
             return created;
         },
     }));
-    ctx.tools.register(defineTool({
+    registerTool(defineTool({
         name: 'agent_teams_reassign_task',
         description: 'Atomically retry, reassign, or let the captain take over one ready unfinished/failed task. The old attempt is revoked before its member is interrupted, so late updates cannot overwrite the new owner. Use assignee="captain" only when you will finish that task in this turn; a captain can own only one unfinished takeover at a time, and an unfinished takeover returns to the member pool when the captain becomes idle.',
         parameters: {
@@ -1618,7 +1621,7 @@ export function registerAgentTeamsTools(ctx, config) {
             };
         },
     }));
-    ctx.tools.register(defineTool({
+    registerTool(defineTool({
         name: 'agent_teams_claim_task',
         description: 'Members claim their own ready task or read their existing attempt_id. Captains must use reassign_task to assign and wake a member; claim_task does not dispatch work. A member cannot own a second unfinished task. The returned attempt_id is required for updates and becomes stale after retry/reassignment.',
         parameters: {
@@ -1726,7 +1729,7 @@ export function registerAgentTeamsTools(ctx, config) {
             });
         },
     }));
-    ctx.tools.register(defineTool({
+    registerTool(defineTool({
         name: 'agent_teams_update_task',
         description: 'Update a task status/output. Members must supply the current attempt_id returned by claim_task; stale attempts are rejected after takeover/reassignment. Terminal results are immutable, but owners and the captain can append acceptanceResults/commandsRun/evidence_note as attributed supplemental evidence, without reclaiming or changing the verdict. A captain must use reassign_task(assignee="captain") before updating active member-owned work.',
         parameters: {
@@ -1953,7 +1956,7 @@ export function registerAgentTeamsTools(ctx, config) {
             return updated;
         },
     }));
-    ctx.tools.register(defineTool({
+    registerTool(defineTool({
         name: 'agent_teams_amend_task',
         description: 'Captain-only controlled contract amendment for one non-terminal quality task: replace a wrong objective/acceptance/verify/inScope/outOfScope when the original contract makes honest completion impossible (for example a verify command that cannot pass, or an inScope that forbids the file the objective names). The amendment is appended to the task\'s revisions ledger with previous values and the reason, and is rejected once a review/requirements task has passed judgment on this task. Members cannot amend contracts; the implementer re-reads the amended contract before its next quality gate. Lists are full replacements, not deltas.',
         parameters: {
@@ -2033,7 +2036,7 @@ export function registerAgentTeamsTools(ctx, config) {
             };
         },
     }));
-    ctx.tools.register(defineTool({
+    registerTool(defineTool({
         name: 'agent_teams_send_message',
         description: 'Send coordination or current-task guidance directly to the captain or a teammate. A running recipient receives it at the next model step; an idle recipient wakes. Messages are durably retained until read. Use task creation/reassignment for a new unit of work, not repeated status nudges.',
         parameters: {
@@ -2162,7 +2165,7 @@ export function registerAgentTeamsTools(ctx, config) {
             };
         },
     }));
-    ctx.tools.register(defineTool({
+    registerTool(defineTool({
         name: 'agent_teams_status',
         description: 'Team snapshot: members with live activity and tasks with status/assignee/dependencies/output. Captains also see every team mailbox; members see only their own inbox. Use after mailbox progress deliveries or for an explicit status request. After dispatch, end your turn while members work; do not repeatedly poll.',
         parameters: {},
@@ -2308,7 +2311,7 @@ export function registerAgentTeamsTools(ctx, config) {
             return result;
         },
     }));
-    ctx.tools.register(defineTool({
+    registerTool(defineTool({
         name: 'agent_teams_resume',
         description: 'Explicitly resume a halted team. Requires a non-empty reason. Does not recreate cancelled tasks; only still-pending work is scheduled.',
         parameters: {
@@ -2361,7 +2364,7 @@ export function registerAgentTeamsTools(ctx, config) {
             return result;
         },
     }));
-    ctx.tools.register(defineTool({
+    registerTool(defineTool({
         name: 'agent_teams_delete',
         description: 'End and archive your team: interrupts members and moves the current tasks and mailboxes out of active state for later inspection. Use when the work is done or explicitly abandoned. A same-name archive replaces its previous generation.',
         parameters: {},

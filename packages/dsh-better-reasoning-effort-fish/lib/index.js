@@ -1,7 +1,7 @@
-// src/index.ts
+// packages/dsh-better-reasoning-effort-fish/src/index.ts
 import Schema from "@deepseek-ai/schemastery";
 
-// src/constants.ts
+// packages/dsh-better-reasoning-effort-fish/src/constants.ts
 var PLUGIN_ID = "dsh-better-reasoning-effort-fish";
 var PROBE_PATH = "/dsh-better-reasoning-effort-fish/raw-models";
 var AUTOFILL_CONFIG_PATH = "/dsh-better-reasoning-effort-fish/autofill-config";
@@ -11,7 +11,7 @@ var UNSET_MARKER = "reasoningEffortsUnset";
 var INPUT_UNSET_MARKER = "inputUnset";
 var AUTOFILL_MARKER = "reasoningEffortsAutofilled";
 
-// src/knowledge.ts
+// packages/dsh-better-reasoning-effort-fish/src/knowledge.ts
 var INPUT_MODALITIES = ["text", "image"];
 var NEW_COMPAT_KEYS = ["thinkingTokenBudgetField", "vllmPriority", "supportsMaxOutputTokens"];
 var KNOWLEDGE_BASE = [
@@ -1324,7 +1324,7 @@ function suggestEfforts(modelId, route, endpoint) {
   };
 }
 
-// src/guard.ts
+// packages/dsh-better-reasoning-effort-fish/src/guard.ts
 function resolveGuardEffort(input) {
   if (input.requested !== void 0) return void 0;
   const declared = input.declared;
@@ -1336,7 +1336,7 @@ function resolveGuardEffort(input) {
   return fallback;
 }
 
-// src/shared.ts
+// packages/dsh-better-reasoning-effort-fish/src/shared.ts
 var isRecord = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 function looksLikeCompatRefusal(message) {
   const msg = message.toLowerCase();
@@ -1352,7 +1352,7 @@ function routeFactsOf(providers, route) {
   return { api, baseURL, displayName };
 }
 
-// src/headers-core.ts
+// packages/dsh-better-reasoning-effort-fish/src/headers-core.ts
 var MAX_UA_LENGTH = 512;
 function emptyIndex() {
   return { byOrigin: /* @__PURE__ */ new Map(), conflicts: [] };
@@ -1417,7 +1417,7 @@ function requestUrlOf(input) {
   return void 0;
 }
 
-// src/headers-fetch.ts
+// packages/dsh-better-reasoning-effort-fish/src/headers-fetch.ts
 var REGISTRY = Symbol.for("dsh-better-reasoning-effort.fetch-overrides");
 function registryOf() {
   const holder = globalThis;
@@ -1479,7 +1479,7 @@ function headerOverlayInstalled() {
   return registry !== void 0 && globalThis.fetch === registry.wrapper;
 }
 
-// src/headers-conflict.ts
+// packages/dsh-better-reasoning-effort-fish/src/headers-conflict.ts
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
@@ -1577,7 +1577,7 @@ function detectHeaderConflicts() {
   };
 }
 
-// src/autofill.ts
+// packages/dsh-better-reasoning-effort-fish/src/autofill.ts
 function declaresInput(model) {
   const input = model["input"];
   return Array.isArray(input) && input.length > 0;
@@ -1685,7 +1685,7 @@ function backfillRolePin(model, providers, route) {
   return { ...model, compat: { ...base, supportsDeveloperRole: false } };
 }
 
-// src/index.ts
+// packages/dsh-better-reasoning-effort-fish/src/index.ts
 var name = PLUGIN_ID;
 var inject = ["settings"];
 var PI_NS = PI_AI_NS;

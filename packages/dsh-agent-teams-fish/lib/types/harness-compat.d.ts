@@ -139,6 +139,10 @@ export declare function assertMemberModelSelection(ctx: Context, captain: Agent,
     provider: string;
     model: string;
 }): void;
+/** rc.2 summaries use tree names; the new structured reason owns the outcome. */
+export declare function successfulSubagentSettlement(source: MessageSource | undefined): source is Extract<MessageSource, {
+    kind: 'subagent-settled';
+}>;
 /** Install before the first request, including cold resume, with HMR cleanup. */
 export declare function installContinuableMemberSetup(ctx: Context, setup: Setup): void;
 /** Queue a distinct host-authored turn; never substitute model-message steer. */

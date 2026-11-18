@@ -1,4 +1,4 @@
-# Fish 2.0.0 mounts eleven separately addressable packages.
+# Fish 2.1.0 mounts eleven separately addressable packages.
 # Full package names are required by the client scanner.
 # Keep stable row ids to preserve existing profile overrides.
 - insert:
@@ -27,3 +27,7 @@
       name: '@fish-under-sea/dsh-usage-fish'
     - id: session-archive
       name: '@fish-under-sea/dsh-session-archive-fish'
+# 「启用AgentTeam」由 Fish 接管：官方团队任务工具与官方团队 UI 停用，
+# 只保留官方 agent-team 服务作为 Session 级持久开关的存放处。
+- { id: tool-agent-team, disabled: true }
+- { id: ui-agent-team, disabled: true }

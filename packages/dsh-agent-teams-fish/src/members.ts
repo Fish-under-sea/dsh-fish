@@ -1058,8 +1058,17 @@ export async function spawnMember(
   // mirror what startContinuable would reject, with an actionable error.
   const provider = ctx.subagents.getProvider(config.provider)
   if (provider === undefined) {
+    // 0.2.2-rc.3 removed the public `list()`; the private registry still holds
+    // the names, so read those when present and fall back to the old API.
+    const boundary = ctx.subagents as unknown as {
+      list?: () => readonly string[]
+      providers?: Map<string, unknown>
+    }
+    const available = typeof boundary.list === 'function'
+      ? boundary.list()
+      : [...(boundary.providers?.keys?.() ?? [])]
     throw new Error(
-      `agent-teams: no subagent provider "${config.provider}" is registered (available: ${ctx.subagents.list().join(', ') || 'none'}) — `
+      `agent-teams: no subagent provider "${config.provider}" is registered (available: ${available.join(', ') || 'none'}) — `
       + 'check that the subagent provider row (e.g. subagent-spawn) is mounted in the composition',
     )
   }

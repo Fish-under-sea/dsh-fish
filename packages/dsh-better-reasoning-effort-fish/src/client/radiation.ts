@@ -15,7 +15,9 @@ export function drawRadiation(
   theme: ModelThemeKind = 'deepseek',
 ): void {
   const origin = state.progress * width
-  const isDark = document.body.hasAttribute('data-ds-dark-theme')
+  // 轨道、光效与辐射统一使用浅色模式色板：不区分明暗主题，也不再按 body 的
+  // data-ds-dark-theme 切换到深色高亮分支。
+  const isDark = false
   const cell = 4
   const speed = state.dragging ? 2.8 : 1
 

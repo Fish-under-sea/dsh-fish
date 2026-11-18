@@ -7,6 +7,8 @@ interface CapabilityConfig {
     isPendingMember: (agent: Agent) => boolean;
     captainPrompt: () => string;
     order?: number;
+    /** Session model-menu switch; omitted keeps the legacy always-on prompt. */
+    isTeamEnabled?: (agent: Agent) => boolean;
 }
 /** Call once, after all business definitions have registered. Never per member. */
 export declare function installTeamCapabilities(ctx: Context, config: CapabilityConfig): void;
