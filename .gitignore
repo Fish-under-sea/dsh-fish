@@ -6,3 +6,7 @@ node_modules/
 .github/releases/
 # 2.0.0 并行 worktree（位于主仓内，不随仓库发布）
 .worktrees/
+# 本地打包暂存（scripts/pack-tarball.mjs 使用）
+.pack/
+.npmcache/
+
