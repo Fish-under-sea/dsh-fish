@@ -1,13 +1,14 @@
 {
   "name": "@fish-under-sea/dsh-client-ui-task-board-fish",
   "description": "Host-authoritative task board for the DSH Web GUI with real session execution, Host cron scheduling, and optional cross-platform idle-sleep protection; mounted without DSH source changes.",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "icon": "./icon.png",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "engines": {
-    "node": ">=24.9.0"
+    "node": ">=24.9.0",
+    "dsh": ">=0.2.2-rc.3 <0.3.0"
   },
   "exports": {
     ".": {
@@ -25,7 +26,7 @@
   },
   "dsh": {
     "engines": {
-      "dsh": ">=0.2.2-rc.3"
+      "dsh": ">=0.2.2-rc.3 <0.3.0"
     },
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -52,7 +53,7 @@
     "test": "node --experimental-transform-types --test test/*.test.mjs"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh": ">=0.2.2-rc.3",
+    "@deepseek-ai/dsh": "^0.2.2-rc.3",
     "react": "^18.2.0"
   },
   "dependencies": {

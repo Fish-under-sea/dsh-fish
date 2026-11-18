@@ -4,12 +4,12 @@
 
 ---
 
-## 2.2.2（2026-11-18）
+## 2.2.3（2026-11-18）
 
-- **明暗区分回归**：恢复 `runner-styles.ts` 的暗色/浅色两套轨道、轨道光效、flare 与辐射特效（`body:not([data-ds-dark-theme])` 前缀全部还原），其余模型家族在暗色模式下重新使用各自的暗色主题。
-- **DeepSeek 暗色只用蓝色**：新增 `body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"]` 覆盖块，暗色模式下复用浅色模式的同一条蓝色轨道、进度填充、光效、滑块与呼吸动画；选择器限定到 `deepseek`，不会影响其他家族主题。`radiation.ts` 对 DeepSeek 固定走浅色模式色板（`isDark = theme !== 'deepseek' && …`）。
-- **思考强度文字**：`--bre-accent` 保留，暗色模式下 DeepSeek 取同一蓝色轨道末端的 `#5aa6f0`。
-- **版本**：十一个成员与聚合包统一为 **2.2.2**，依赖逐项精确固定。
+- **适配 DSH 0.2.2-rc.4（关键）**：所有包补顶层 `engines.dsh: ">=0.2.2-rc.3 <0.3.0"`。`@deepseek-ai/dsh-app-boot` 的 `plugin-compatibility` 只读顶层 `engines.dsh`；此前只有嵌套 `dsh.engines.dsh` 时判定退化为逐个 `@deepseek-ai` peer 比对，0.2.2-rc.4 不在枚举内 → `dsh: disabling profile plugin row "agent-teams"`，AgentTeams 整行被禁用，模型菜单里的「启用AgentTeam」开关与团队工具一起消失。补上后 0.2.2 全部预发布线可用；`peerDependencies` 的 `@deepseek-ai` 项统一为 `^0.2.2-rc.3`；`compatibility.json` 推荐版本改为 0.2.2-rc.4。新增 `scripts/compatibility-tdd.mjs`（5 项）覆盖接受/拒绝区间与字段镜像。
+- **明暗区分**：保留暗色/浅色两套轨道、轨道光效、flare 与辐射特效（`body:not([data-ds-dark-theme])` 前缀），其余模型家族使用各自的暗色主题。
+- **DeepSeek 暗色专门配色**：暗色模式下不再复用浅色轨道，改为深海军蓝轨道 `#0e2a47` + `#1a4d7c → #2f7fbf → #63acf0 → #a8d0fb` 进度填充 + 蓝色光效/滑块/呼吸动画；基线暗色也全部去掉紫调。`radiation.ts` 按主题明暗取色板，`--bre-accent` 暗色取 `#6cb6ff`。
+- **版本**：十一个成员与聚合包统一为 **2.2.3**，依赖逐项精确固定。
 
 ## 2.1.1（2026-11-18）
 

@@ -1,6 +1,6 @@
 # @fish-under-sea/dsh-git-sync
 
-**2.2.2 · Git Sync**
+**2.2.3 · Git Sync**
 
 Syncs selected DSH configuration to a private Git repository and restores it.
 
@@ -13,10 +13,10 @@ Previews, commits, pulls and restores selected DSH configuration through a priva
 ## Installation
 
 ```sh
-dsh plugin --profile <profile> add @fish-under-sea/dsh-git-sync@2.2.2
+dsh plugin --profile <profile> add @fish-under-sea/dsh-git-sync@2.2.3
 ```
 
-Also included in `@fish-under-sea/dsh-fish@2.2.2`. Do not expand duplicate rows through both aggregate and standalone bundles. Restart DSH after installation; use the desktop plugin manager when no CLI is available.
+Also included in `@fish-under-sea/dsh-fish@2.2.3`. Do not expand duplicate rows through both aggregate and standalone bundles. Restart DSH after installation; use the desktop plugin manager when no CLI is available.
 
 ## Configuration and Safety
 
@@ -26,6 +26,6 @@ Node requirement: `>=24.9`. Host compatibility follows this package manifest; th
 
 ## Maintenance and Attribution
 
-2.2.2 is a coordinated release number, not a claim that all latest upstream commits are merged. Historical documentation remains in Git; see [aggregate changelog](https://github.com/Fish-under-sea/dsh-fish/blob/main/CHANGELOG.en.md).
+2.2.3 is a coordinated release number, not a claim that all latest upstream commits are merged. Historical documentation remains in Git; see [aggregate changelog](https://github.com/Fish-under-sea/dsh-fish/blob/main/CHANGELOG.en.md).
 
 Fish-native plugin. License: MIT.

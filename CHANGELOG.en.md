@@ -4,12 +4,12 @@
 
 ---
 
-## 2.2.2 (2026-11-18)
+## 2.2.3 (2026-11-18)
 
-- **Light/dark distinction restored**: `runner-styles.ts` regains both the dark and light track, track-glow, flare and radiation palettes (every `body:not([data-ds-dark-theme])` prefix restored), so the other model families use their own dark themes again.
-- **DeepSeek stays blue in dark mode**: a new `body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"]` block reuses the light-mode blue track, progress fill, glow, knob and breathe animation in dark mode. The selectors are scoped to `deepseek`, so family themes are untouched. `radiation.ts` pins DeepSeek to the light palette (`isDark = theme !== 'deepseek' && …`).
-- **Effort text**: `--bre-accent` stays; in dark mode DeepSeek takes `#5aa6f0` from the end of the same blue track.
-- **Version**: all eleven members and the aggregate are **2.2.2**, with exact dependency pins.
+- **DSH 0.2.2-rc.4 support (critical)**: every package now declares a top-level `engines.dsh: ">=0.2.2-rc.3 <0.3.0"`. `@deepseek-ai/dsh-app-boot`'s `plugin-compatibility` reads only the top-level `engines.dsh`; with just the nested `dsh.engines.dsh` the check fell back to enumerating every `@deepseek-ai` peer, and 0.2.2-rc.4 was not in the list → `dsh: disabling profile plugin row "agent-teams"`, which removed both the Enable AgentTeam switch and the team tools. The whole 0.2.2 prerelease line is accepted now; `@deepseek-ai` peers are pinned to `^0.2.2-rc.3`; `compatibility.json` recommends 0.2.2-rc.4. New `scripts/compatibility-tdd.mjs` (5 cases) covers accept/reject ranges and field mirroring.
+- **Light/dark distinction**: both the dark and light track, track-glow, flare and radiation palettes stay distinct; family themes keep their own dark palettes.
+- **Dedicated DeepSeek dark palette**: dark mode no longer reuses the light track — deep navy `#0e2a47` with a `#1a4d7c → #2f7fbf → #63acf0 → #a8d0fb` progress fill and blue glow/knob/breathe animation; the base dark palette is violet-free too. `radiation.ts` follows the theme again and `--bre-accent` is `#6cb6ff` in dark.
+- **Version**: all eleven members and the aggregate are **2.2.3**, with exact dependency pins.
 
 ## 2.1.1 (2026-11-18)
 

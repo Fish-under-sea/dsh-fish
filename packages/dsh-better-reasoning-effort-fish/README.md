@@ -16,7 +16,7 @@
 
 </div>
 
-> **2.2.2：本包已并入 `dsh-fish` 单仓，作为 `packages/dsh-better-reasoning-effort-fish` 工作区成员随聚合包 [`@fish-under-sea/dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) `2.2.2` 一同构建与发布。** 功能为上游 v0.5.4 同步与八款大肥鱼主题；安装与升级方式见[安装](#安装)。浏览器交互与真实 DSH 运行验证仍待补充，详见[开发与测试](#开发与测试)。
+> **2.2.3：本包已并入 `dsh-fish` 单仓，作为 `packages/dsh-better-reasoning-effort-fish` 工作区成员随聚合包 [`@fish-under-sea/dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) `2.2.3` 一同构建与发布。** 功能为上游 v0.5.4 同步与八款大肥鱼主题；安装与升级方式见[安装](#安装)。浏览器交互与真实 DSH 运行验证仍待补充，详见[开发与测试](#开发与测试)。
 
 ## 原作者与授权（请先读）
 
@@ -30,7 +30,7 @@
 | 本版位置 | [`dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) 单仓的 [`packages/dsh-better-reasoning-effort-fish`](https://github.com/Fish-under-sea/dsh-fish/tree/main/packages/dsh-better-reasoning-effort-fish)，与其余成员同批构建、同版本发布 |
 | 许可证 | **MIT**；上游 [`LICENSE`](LICENSE) 未修改，视觉来源的独立 MIT 声明见 [`NOTICE.md`](NOTICE.md) |
 | 本版基线 | [HaoyueQin/dsh-better-reasoning-effort](https://github.com/HaoyueQin/dsh-better-reasoning-effort) `master` = **v0.5.4**（commit [`2d68b65cc641cd85e95384c859a2bc3de23d9e08`](https://github.com/HaoyueQin/dsh-better-reasoning-effort/commit/2d68b65cc641cd85e95384c859a2bc3de23d9e08)；由 v0.5.2 `52b584c` 同步） |
-| 本版性质 | **个人客制化版（fork）**，非原创、非官方；2.2.2 起源码随 `dsh-fish` 单仓维护，历史独立仓库只保留 0.5.x 的发布记录；上游 README 完整保留为 [`README.original.md`](README.original.md) / [`README_ZH.original.md`](README_ZH.original.md) |
+| 本版性质 | **个人客制化版（fork）**，非原创、非官方；2.2.3 起源码随 `dsh-fish` 单仓维护，历史独立仓库只保留 0.5.x 的发布记录；上游 README 完整保留为 [`README.original.md`](README.original.md) / [`README_ZH.original.md`](README_ZH.original.md) |
 
 > 署名与改动范围的完整说明见 [`NOTICE.md`](NOTICE.md)。再分发时请保留原作者署名。
 
@@ -59,7 +59,7 @@
 - **八款主题**：DeepSeek / OpenAI / Claude / Gemini / Kimi / GLM / Qwen / MiniMax。模型 `id` / `name` 优先识别，无法识别时回退 provider，仍未知则使用 DeepSeek；聚合供应商不会盖过已识别的模型家族。
 - **无需额外开关**：角色在 Composer 滑块中默认启用，沿用整个滑块原有开关与 `dsh-better-reasoning-effort.slider.enabled` 偏好键；已关闭滑块的用户仍保持关闭，不强制重开，也没有新增角色专用设置。
 - **明暗区分**：暗色/浅色各有一套轨道、轨道光效、flare 与辐射特效；模型行上的思考强度文字（如「High」）颜色随模型主题切换，取该模型思考条的主色。
-- **DeepSeek 暗色仍用蓝色**：DeepSeek 在暗色模式下不使用深色紫调，直接复用浅色模式的同一条蓝色轨道、进度填充与光效（选择器限定到 `deepseek`，不影响其他家族）；文字取该蓝色轨道末端的 `#5aa6f0`。
+- **DeepSeek 暗色专门配色**：暗色模式下 DeepSeek 不再复用浅色轨道，也不使用紫调，而是深海军蓝轨道 `#0e2a47` + `#1a4d7c → #2f7fbf → #63acf0 → #a8d0fb` 进度填充 + 蓝色光效与滑块（选择器限定到 `deepseek`，不影响其他家族）；思考强度文字取 `#6cb6ff`。
 - **动效**：角色逐帧奔跑与辐射效果；拖动时奔跑加速、效果增强。`prefers-reduced-motion: reduce` 下使用静态呈现，仍可选择档位。
 - **资源内嵌**：八张运行用 PNG 由 esbuild 的 `dataurl` loader 内嵌进 `lib/client.js`，无需额外资源路由；主题仅改变展示，不增加模型能力或改变思考强度协议。
 - **来源**：[HanaAyane/dsh-reasoning-effort PR #9](https://github.com/HanaAyane/dsh-reasoning-effort/pull/9)，贡献者 [xihucuyudaichi](https://github.com/xihucuyudaichi)，固定 commit [`651d24edc1ff45fbce5339700b40f32c5ff3ddea`](https://github.com/HanaAyane/dsh-reasoning-effort/commit/651d24edc1ff45fbce5339700b40f32c5ff3ddea)。完整 MIT 许可保留在 [`assets/third-party/dsh-reasoning-effort.LICENSE`](assets/third-party/dsh-reasoning-effort.LICENSE)，完整署名见 [`NOTICE.md`](NOTICE.md)。
@@ -85,22 +85,22 @@
 
 ## 安装
 
-2.2.2 起本包与单仓其余成员对齐：DSH 要求 **≥ 0.2.2-rc.3**，`package.json` 的 peer 与开发依赖都是 `^0.2.2-rc.3`；Node 要求 **≥ 24.9**。**依赖对齐不表示本版已在所有 DSH 版本中验证。**
+2.2.3 起本包与单仓其余成员对齐：DSH 要求 **≥ 0.2.2-rc.3**，`package.json` 的 peer 与开发依赖都是 `^0.2.2-rc.3`；Node 要求 **≥ 24.9**。**依赖对齐不表示本版已在所有 DSH 版本中验证。**
 
 ### 聚合包（推荐）
 
 ```sh
 # 桌面版
-dsh plugin --profile desktop add @fish-under-sea/dsh-fish@2.2.2
+dsh plugin --profile desktop add @fish-under-sea/dsh-fish@2.2.3
 
 # Web 版
-dsh plugin --profile web add @fish-under-sea/dsh-fish@2.2.2
+dsh plugin --profile web add @fish-under-sea/dsh-fish@2.2.3
 ```
 
 聚合包以精确版本固定十个成员，安装它即得到与本包同批发布的其余插件。只需要这一个插件时，也可以单独安装：
 
 ```sh
-dsh plugin --profile web add @fish-under-sea/dsh-better-reasoning-effort-fish@2.2.2
+dsh plugin --profile web add @fish-under-sea/dsh-better-reasoning-effort-fish@2.2.3
 ```
 
 DSH 内置 pnpm 的 `minimum-release-age` 为 24 小时，不指定版本时可能暂时解析到更旧的版本；指定版本可跳过该等待。安装后**重启 DSH** 并强制刷新浏览器。
@@ -206,7 +206,7 @@ dsh plugin --profile web remove dsh-reasoning-effort
 
 ## 开发与测试
 
-2.2.2 并入单仓时的本地检查（Node 24.14.0）：`npm run typecheck` 与 `npm run build` 通过；`lib/` 产物已随仓库提交，克隆后无需构建即可打包发布。浏览器交互与真实 DSH 运行仍未验证，发布说明不把依赖对齐或素材预览当作运行证据。
+2.2.3 并入单仓时的本地检查（Node 24.14.0）：`npm run typecheck` 与 `npm run build` 通过；`lib/` 产物已随仓库提交，克隆后无需构建即可打包发布。浏览器交互与真实 DSH 运行仍未验证，发布说明不把依赖对齐或素材预览当作运行证据。
 
 ```sh
 npm run typecheck   # tsc 严格检查
@@ -220,7 +220,7 @@ npm run build       # lib/*.js + lib/client.js
 
 ## 与聚合包的关系
 
-2.2.2 起本包在 [`dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) 单仓内，与其余成员同批构建、同版本发布；聚合包 [`@fish-under-sea/dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) 以精确版本固定它，也可按[安装](#安装)一节单独安装本包。历史独立仓库（<https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish>）只保留 0.5.x 的 tag 与已发布版本，不再继续更新；升级请安装 2.2.2。
+2.2.3 起本包在 [`dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) 单仓内，与其余成员同批构建、同版本发布；聚合包 [`@fish-under-sea/dsh-fish`](https://github.com/Fish-under-sea/dsh-fish) 以精确版本固定它，也可按[安装](#安装)一节单独安装本包。历史独立仓库（<https://github.com/Fish-under-sea/dsh-better-reasoning-effort-fish>）只保留 0.5.x 的 tag 与已发布版本，不再继续更新；升级请安装 2.2.3。
 
 ## 许可
 

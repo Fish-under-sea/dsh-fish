@@ -34,7 +34,7 @@ export const RUNNER_STYLES = `
   inset: 0;
   overflow: hidden;
   border-radius: inherit;
-  background: linear-gradient(100deg, #03040a 0%, #071126 22%, #101d4c 45%, #302262 70%, #5d35a0 100%);
+  background: linear-gradient(100deg, #02060d 0%, #061528 22%, #0a2b49 45%, #0f4a78 70%, #2f86cf 100%);
   box-shadow:
     inset 0 1px 0 rgba(189, 199, 255, .15),
     inset 0 -1px 0 rgba(0, 0, 0, .55),
@@ -46,7 +46,7 @@ export const RUNNER_STYLES = `
   inset: 0;
   background:
     radial-gradient(circle at 18% 45%, rgba(82, 130, 255, .12), transparent 24%),
-    linear-gradient(90deg, rgba(0, 0, 0, .28), transparent 42%, rgba(168, 113, 255, .12));
+    linear-gradient(90deg, rgba(0, 0, 0, .28), transparent 42%, rgba(90, 166, 240, .16));
   pointer-events: none;
 }
 .bre-effort-fx {
@@ -76,7 +76,7 @@ export const RUNNER_STYLES = `
   width: 78px;
   height: 46px;
   border-radius: 50%;
-  background: radial-gradient(ellipse at 100% 50%, rgba(255,255,255,.96) 0 4%, rgba(188,189,255,.8) 11%, rgba(106,87,255,.5) 28%, rgba(105,31,255,.2) 49%, transparent 74%);
+  background: radial-gradient(ellipse at 100% 50%, rgba(255,255,255,.96) 0 4%, rgba(186,222,255,.8) 11%, rgba(92,160,244,.5) 28%, rgba(30,110,225,.2) 49%, transparent 74%);
   filter: blur(2px) saturate(1.25);
   mix-blend-mode: screen;
   transform: translate(-100%, -50%);
@@ -94,14 +94,14 @@ export const RUNNER_STYLES = `
 .bre-effort-flare::before {
   width: 52px;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(100,160,255,.42), #f1ecff, rgba(193,82,255,.65), transparent);
-  box-shadow: 0 0 7px #9b7cff, 0 0 13px rgba(72,132,255,.64);
+  background: linear-gradient(90deg, transparent, rgba(100,170,255,.42), #eef7ff, rgba(70,150,250,.65), transparent);
+  box-shadow: 0 0 7px #7cb6ff, 0 0 13px rgba(72,140,255,.64);
 }
 .bre-effort-flare::after {
   width: 1px;
   height: 20px;
-  background: linear-gradient(180deg, transparent, rgba(196,190,255,.84), transparent);
-  box-shadow: 0 0 7px #9c7cff;
+  background: linear-gradient(180deg, transparent, rgba(196,226,255,.84), transparent);
+  box-shadow: 0 0 7px #7cb8ff;
 }
 .bre-effort-knob {
   position: absolute;
@@ -114,8 +114,8 @@ export const RUNNER_STYLES = `
   border-radius: 50%;
   background: #fff;
   box-shadow:
-    0 0 0 2px rgba(92,105,255,.12),
-    0 0 14px rgba(121,82,255,.48),
+    0 0 0 2px rgba(92,150,255,.14),
+    0 0 14px rgba(70,145,255,.5),
     0 2px 7px rgba(0,0,0,.3);
   transform: translate(-50%, -50%);
   transition: left 190ms cubic-bezier(.22,1,.36,1), transform 160ms ease, box-shadow 180ms ease;
@@ -786,18 +786,14 @@ body:not([data-ds-dark-theme]) .bre-effort.is-dragging .bre-effort-knob {
     0 3px 8px rgba(39,77,119,.18);
 }
 
-/* DeepSeek 在暗色模式下也只用蓝色：复用上面浅色模式的同一套蓝色轨道、光效
-   与进度填充，不使用深色基线的紫调。选择器特异度低于各模型家族的暗色规则，
-   因此只影响 DeepSeek（家族主题有自己的主题选择器）。 */
-body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-slider {
-  filter: none;
-}
+/* DeepSeek 暗色模式专用：同一蓝色系，但按暗背景专门调深——轨道为深海军蓝，
+   进度从深蓝收到浅蓝；与浅色模式那条白蓝轨道明显区分，也不再出现紫调。 */
 body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-track {
-  background: var(--dsw-static-blue-75, #e5f0ff);
+  background: #0e2a47;
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.9),
-    inset 0 0 0 1px rgba(80,133,194,.14),
-    0 3px 10px rgba(48,101,165,.13);
+    inset 0 1px 0 rgba(196,226,255,.14),
+    inset 0 0 0 1px rgba(90,150,220,.18),
+    0 3px 10px rgba(8,25,55,.45);
 }
 body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-track::before {
   content: "";
@@ -806,51 +802,56 @@ body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-trac
   inset: 0 auto 0 0;
   width: var(--bre-progress);
   border-radius: inherit;
-  background: linear-gradient(90deg, #fff 0%, #e2f0ff 20%, #a8d0fb 57%, #438fdf 100%);
+  background: linear-gradient(90deg, #1a4d7c 0%, #2f7fbf 34%, #63acf0 68%, #a8d0fb 100%);
   transition: width 190ms cubic-bezier(.22,1,.36,1);
 }
 body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-slider[data-top] .bre-effort-track::before {
-  background: linear-gradient(90deg, #fff 0%, #d7eaff 18%, #75afea 54%, #0751ad 100%);
+  background: linear-gradient(90deg, #163f66 0%, #2a6da8 30%, #4f9fe0 62%, #7ab8ef 100%);
 }
 body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"].is-dragging .bre-effort-track::before {
   transition: none;
 }
 body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-track::after {
   z-index: 1;
-  background: linear-gradient(90deg, rgba(255,255,255,.48), transparent 34%, rgba(23,101,201,.07));
+  background: linear-gradient(90deg, rgba(255,255,255,.05), transparent 40%, rgba(90,166,240,.16));
 }
 body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-canvas {
-  opacity: .78;
-  mix-blend-mode: multiply;
+  opacity: .92;
+  mix-blend-mode: screen;
 }
 body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-flare {
-  background: radial-gradient(ellipse at 100% 50%, rgba(255,255,255,.98) 0 5%, rgba(204,231,255,.88) 13%, rgba(91,162,241,.48) 31%, rgba(37,111,207,.16) 53%, transparent 75%);
-  filter: blur(2px) saturate(1.12);
+  background: radial-gradient(ellipse at 100% 50%, rgba(255,255,255,.92) 0 4%, rgba(186,222,255,.78) 12%, rgba(110,178,245,.55) 30%, rgba(35,120,225,.28) 54%, transparent 78%);
+  filter: blur(2px) saturate(1.3);
 }
 body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-flare::before {
-  background: linear-gradient(90deg, transparent, rgba(116,177,244,.34), #fff, rgba(66,139,225,.58), transparent);
-  box-shadow: 0 0 7px rgba(58,133,222,.5), 0 0 13px rgba(104,176,255,.38);
+  background: linear-gradient(90deg, transparent, rgba(120,180,250,.42), #f2f9ff, rgba(80,160,255,.68), transparent);
+  box-shadow: 0 0 7px rgba(90,166,240,.6), 0 0 13px rgba(110,180,255,.46);
 }
 body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-flare::after {
-  background: linear-gradient(180deg, transparent, rgba(255,255,255,.94), transparent);
-  box-shadow: 0 0 7px rgba(64,137,224,.44);
+  background: linear-gradient(180deg, transparent, rgba(220,240,255,.9), transparent);
+  box-shadow: 0 0 7px rgba(100,170,240,.5);
 }
 body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-knob {
-  border-color: rgba(126,160,197,.32);
+  border-color: rgba(170,210,250,.55);
   box-shadow:
-    0 0 0 2px rgba(58,124,207,.09),
-    0 0 13px rgba(48,118,207,.3),
-    0 3px 8px rgba(39,77,119,.18);
+    0 0 0 2px rgba(90,166,240,.16),
+    0 0 15px rgba(70,150,240,.55),
+    0 3px 8px rgba(0,0,0,.45);
 }
 body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-slider[data-top] .bre-effort-track {
-  animation-name: bre-effort-light-breathe;
+  animation-name: bre-effort-dark-deepseek-breathe;
 }
 body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"] .bre-effort-slider[data-top] .bre-effort-knob,
 body[data-ds-dark-theme] .bre-effort[data-bre-theme="deepseek"].is-dragging .bre-effort-knob {
   box-shadow:
-    0 0 0 3px rgba(36,105,192,.15),
-    0 0 20px rgba(25,100,201,.45),
-    0 3px 8px rgba(39,77,119,.18);
+    0 0 0 3px rgba(90,166,240,.22),
+    0 0 22px rgba(70,150,240,.72),
+    0 0 32px rgba(45,125,225,.5),
+    0 3px 8px rgba(0,0,0,.42);
+}
+@keyframes bre-effort-dark-deepseek-breathe {
+  0%, 100% { box-shadow: inset 0 1px 0 rgba(196,226,255,.14), 0 3px 10px rgba(8,25,55,.45); }
+  50% { box-shadow: inset 0 1px 0 rgba(214,236,255,.24), 0 0 22px rgba(63,143,240,.55); }
 }
 
 
@@ -1257,8 +1258,8 @@ body:not([data-ds-dark-theme]) .bre-effort.theme-minimax.is-dragging .bre-effort
 }
 
 @keyframes bre-effort-dark-breathe {
-  0%, 100% { box-shadow: inset 0 1px 0 rgba(196,204,255,.16), 0 3px 10px rgba(18,25,72,.4); }
-  50% { box-shadow: inset 0 1px 0 rgba(220,214,255,.24), 0 0 21px rgba(111,66,255,.5); }
+  0%, 100% { box-shadow: inset 0 1px 0 rgba(196,226,255,.16), 0 3px 10px rgba(8,25,55,.45); }
+  50% { box-shadow: inset 0 1px 0 rgba(214,236,255,.26), 0 0 21px rgba(63,143,240,.55); }
 }
 @keyframes bre-effort-light-breathe {
   0%, 100% { box-shadow: inset 0 1px 0 rgba(255,255,255,.9), inset 0 0 0 1px rgba(67,124,193,.16), 0 3px 10px rgba(48,101,165,.13); }

@@ -1,6 +1,6 @@
 {
   "name": "@fish-under-sea/dsh-better-reasoning-effort-fish",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "description": "第三方模型的思考强度与输入模态设置（DeepSeek Harness 插件）：每个模型声明思考档位与图片输入，由内置模型知识库与线协议推断自动适配，直接在官方「模型」页卡片内编辑；自带八款模型家族奔跑角色主题。",
   "license": "MIT",
   "author": {
@@ -66,7 +66,7 @@
   "icon": "./icon.png",
   "dsh": {
     "engines": {
-      "dsh": ">=0.2.2-rc.3"
+      "dsh": ">=0.2.2-rc.3 <0.3.0"
     },
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -89,7 +89,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "engines": {
-    "node": ">=24.9.0"
+    "node": ">=24.9.0",
+    "dsh": ">=0.2.2-rc.3 <0.3.0"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-api-remotes": "^0.2.2-rc.3",

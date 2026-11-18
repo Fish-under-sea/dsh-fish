@@ -15,9 +15,9 @@ export function drawRadiation(
   theme: ModelThemeKind = 'deepseek',
 ): void {
   const origin = state.progress * width
-  // DeepSeek 在暗色模式下也只使用蓝色，因此固定走浅色模式色板；其余模型家族
-  // 仍按 body 的 data-ds-dark-theme 区分明暗。
-  const isDark = theme !== 'deepseek' && document.body.hasAttribute('data-ds-dark-theme')
+  // 明暗两套辐射色板：DeepSeek 暗色轨道本身是深海军蓝，因此同样走暗色色板
+  // （更亮、更密的粒子），不再固定为浅色。
+  const isDark = document.body.hasAttribute('data-ds-dark-theme')
   const cell = 4
   const speed = state.dragging ? 2.8 : 1
 

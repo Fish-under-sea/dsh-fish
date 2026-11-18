@@ -2,35 +2,35 @@
 
 <img src="icon.png" alt="Fish" width="96">
 
-**2.2.2 · Eleven plugins, one bundle**
+**2.2.3 · Eleven plugins, one bundle**
 
 [简体中文](README.md)
 
 ## Installation
 
 ```sh
-dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@2.2.2
+dsh plugin --profile <profile> add @fish-under-sea/dsh-fish@2.2.3
 ```
 
 Restart DSH after installation. With no desktop CLI, add the same package in the plugin manager. Requires Node `>=24.9`; minimum Host `0.2.2-rc.3`. Every member retains its own Host compatibility declaration.
 
 ## What's New
 
-**2.2.2: light/dark distinction restored for the effort slider, with DeepSeek dark mode kept blue.**
+**2.2.3: DSH 0.2.2-rc.4 support, and a dedicated deep-blue DeepSeek dark palette.**
 
-- **2.2.2 colours**: the dark and light track, track-glow and radiation palettes are distinct again. DeepSeek in dark mode no longer uses the dark violet palette — it falls back to the same blue as light mode (track, progress fill, glow, knob and radiation all switch to blue); every other model family keeps its own dark theme.
-- **2.2.2 text**: the model-row reasoning-effort text follows the active model theme; in dark mode DeepSeek takes the blue at the end of its blue track.
-- **2.2.2 includes the 2.1.1 fix**: the `agent_teams_*` availability check resolves the optional native team-mode service through `ctx.get('agentTeams')` instead of reading `ctx.agentTeams`, so `cannot get property "agentTeams" without inject` can no longer break every team tool.
-- **New DSH support**: all eleven members and the aggregate declare `dsh.engines.dsh` / peers / dev dependencies on `>=0.2.2-rc.3` / `^0.2.2-rc.3`.
-- **AgentTeams upstream sync**: `dsh-agent-teams-fish` syncs upstream v0.1.30 for the 0.2.2-rc.2/rc.3 subagent tree manager and `subagent-settled.stopReason`.
+- **DSH 0.2.2-rc.4 support**: every package now declares a top-level `engines.dsh` (`>=0.2.2-rc.3 <0.3.0`). DSH decides plugin compatibility from the top-level `engines.dsh` only; without it the check fell back to enumerating every `@deepseek-ai` peer, so 0.2.2-rc.4 disabled the whole `agent-teams` row — which removed both the Enable AgentTeam switch and the team tools. With the field in place the whole 0.2.2 prerelease line is accepted, and `scripts/compatibility-tdd.mjs` guards it.
+- **DeepSeek dark palette**: in dark mode DeepSeek now uses a dedicated deep-blue variant (deep navy track, deep-blue → light-blue progress fill, blue glow and knob), clearly distinct from the white-blue light track and with no violet left; other model families keep their own dark themes, and the effort text follows the model theme (`#6cb6ff` for dark DeepSeek).
+- **Since 2.2.2**: separate dark and light track, track-glow, flare and radiation palettes.
+- **2.1.1 fix included**: `agent_teams_*` reads the optional team service through `ctx.get('agentTeams')`, so `cannot get property "agentTeams" without inject` can no longer break every team tool.
+- **AgentTeams upstream sync**: upstream v0.1.30 for the 0.2.2 subagent tree manager and `subagent-settled.stopReason`.
 - **Enable AgentTeam takeover**: the model/reasoning menu team switch is Fish-owned; the official team task tools and official team UI rows are disabled in the bundle layer.
 - **Empty-input send dedupe**: Approval Guide allows only one successful write path and normalizes the editor to a single copy before submit.
-- **Version**: all eleven members and the aggregate are **2.2.2**, with exact dependency pins.
+- **Version**: all eleven members and the aggregate are **2.2.3**, with exact dependency pins.
 - **Still unbundled**: Git Graph remains retired; Jailbreak still installs separately.
 
 ## Included Plugins
 
-All 11 members are **2.2.2** and live in `packages/` here. The aggregate itself is **2.2.2**, with exact dependency pins.
+All 11 members are **2.2.3** and live in `packages/` here. The aggregate itself is **2.2.3**, with exact dependency pins.
 
 | Plugin | npm | Capabilities |
 | --- | --- | --- |
@@ -62,7 +62,7 @@ Its own `cordis.patch.yml` performs the host prompt rewrite; the bundle no longe
 - **Effort and AgentTeams are now bundle members**: if the profile installed `@fish-under-sea/dsh-better-reasoning-effort-fish` (0.5.x) or `@fish-under-sea/dsh-agent-teams-fish` (1.1.0) separately, remove that standalone install and its bundle row before upgrading to avoid double mounting. Package names, row ids and state directories are unchanged.
 - **Git Graph is still not bundled**: install `@fish-under-sea/dsh-client-ui-git-graph-fish@1.0.2` separately if needed, never alongside the bundle.
 - **Jailbreak is still standalone**: its four rows and `system-prompt` rewrite belong to its own package.
-- Versions below `2.2.2` are marked deprecated on npm; install `@fish-under-sea/dsh-fish@2.2.2`.
+- Versions below `2.2.3` are marked deprecated on npm; install `@fish-under-sea/dsh-fish@2.2.3`.
 - Upgrading the bundle does not remove standalone packages, bundles or override rows from the profile; review and remove old entries in the plugin manager before restarting.
 
 ## Coexistence and data
@@ -83,7 +83,7 @@ pnpm -r --if-present test
 pnpm -r --if-present build
 ```
 
-The aggregate itself is an empty entry; `cordis.patch.yml` is the mount point. All eleven members live in `packages/`, with `lib` committed, and remain independently buildable and publishable. Browser modules must be rebuilt under their actual package names. The aggregate and its members share version 2.2.2.
+The aggregate itself is an empty entry; `cordis.patch.yml` is the mount point. All eleven members live in `packages/`, with `lib` committed, and remain independently buildable and publishable. Browser modules must be rebuilt under their actual package names. The aggregate and its members share version 2.2.3.
 
 Fish-native: Approval Guide, Git Sync, Settings Navigation, Visual Companion. Fork sources:
 

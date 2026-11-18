@@ -1,12 +1,13 @@
 {
   "name": "@fish-under-sea/dsh-ssh-fish",
   "description": "Remote SSH operations for the dsh web GUI: host config store (~/.dsh/dsh-ssh.json, import from ~/.ssh/config), a persistent ssh2 connection pool with jump-host support, exec / PTY web terminal / SFTP transfer / local port-forward tunnels / cluster execution, plus agent tools (ssh_list, ssh_exec, ssh_upload, ssh_download, ssh_tunnel, ssh_cluster). Hot-pluggable — mounted via ~/.dsh/cordis.patch.yml + a profile node_modules symlink, no dsh source changes.",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "icon": "./icon.png",
   "type": "module",
   "packageManager": "pnpm@11.7.0",
   "engines": {
-    "node": ">=24.9.0"
+    "node": ">=24.9.0",
+    "dsh": ">=0.2.2-rc.3 <0.3.0"
   },
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -26,7 +27,7 @@
   },
   "dsh": {
     "engines": {
-      "dsh": ">=0.2.2-rc.3"
+      "dsh": ">=0.2.2-rc.3 <0.3.0"
     },
     "bundle": {
       "patch": "./cordis.patch.yml"
@@ -55,7 +56,7 @@
     "ws": "^8.18.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh": ">=0.2.2-rc.3",
+    "@deepseek-ai/dsh": "^0.2.2-rc.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
